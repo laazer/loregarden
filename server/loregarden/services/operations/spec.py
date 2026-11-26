@@ -96,6 +96,7 @@ class OperationId(StrEnum):
     MEMORY_RELATION_CREATE = "memory_relation_create"
     DOCKER_CAPACITY_STATUS = "docker_capacity_status"
     DOCKER_LEASE_FORCE_RELEASE = "docker_lease_force_release"
+    DOCKER_LEASE_PRIORITIZE = "docker_lease_prioritize"
     #: An agent's one-call answer about disk use; may start a scan.
     DISK_USAGE = "disk_usage"
     DISK_OVERVIEW = "disk_overview"

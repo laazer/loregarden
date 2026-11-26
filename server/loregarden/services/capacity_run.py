@@ -154,6 +154,10 @@ class CapacityRequest:
     workspace_id: str | None = None
     #: Nest under this lease: draw on its grant first, never wait in line.
     parent_lease_id: str | None = None
+    #: Join the priority tier, ahead of every normal waiter, for this reason
+    #: (`capacity_priority`). Empty joins the normal line. A nested claim never
+    #: waits, so it has no use for one.
+    priority_reason: str = ""
 
 
 def fit_to_ceiling(session: Session, request: CapacityRequest, report: Report) -> tuple[float, int]:
@@ -224,6 +228,7 @@ def acquire(
         workspace_id=request.workspace_id,
         holder_pid=os.getpid(),
         pool=request.pool,
+        priority_reason=request.priority_reason,
     )
     if reservation.state is DockerGrantState.REJECTED:
         raise CapacityNotGranted(f"{reservation.error_kind}: {reservation.message}")

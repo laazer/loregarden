@@ -291,6 +291,13 @@ def normalize_force_release_docker_lease(args: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def normalize_prioritize_capacity_lease(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lease_id": coerce_string(args.get("lease_id"), field="lease_id"),
+        "reason": coerce_string(args.get("reason"), field="reason"),
+    }
+
+
 def normalize_list_instances(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "project": coerce_optional_string(args.get("project")),
@@ -391,6 +398,7 @@ TABLE_NORMALIZERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
     McpTool.RELEASE_DOCKER_CAPACITY.value: normalize_release_docker_capacity,
     McpTool.DOCKER_CAPACITY_STATUS.value: normalize_docker_capacity_status,
     McpTool.FORCE_RELEASE_DOCKER_LEASE.value: normalize_force_release_docker_lease,
+    McpTool.PRIORITIZE_CAPACITY_LEASE.value: normalize_prioritize_capacity_lease,
     McpTool.LIST_INSTANCES.value: normalize_list_instances,
     McpTool.LAUNCH_INSTANCE.value: normalize_launch_instance,
     McpTool.INSTANCE_STATUS.value: normalize_instance_status,

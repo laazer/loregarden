@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, NamedTuple
 
 from fastapi import HTTPException
+from loregarden.services.capacity_priority import LeaseNotWaiting
 from loregarden.services.dependency_hold import DependencyHold
 from loregarden.services.docker_leases import UnknownLease
 from loregarden.services.github_pr_listing import GitHubReadError
@@ -76,6 +77,8 @@ _STATUSES: Mapping[type[Exception], _Status] = {
     # there, a bad edge, a state of this installation (not a bad request), and
     # a disk scan whose stored result cannot be read.
     UnknownLease: _Status(404),
+    # A holder or an ended lease has no place in line to move.
+    LeaseNotWaiting: _Status(409),
     NoDiskScan: _Status(404),
     DiskNodeNotFound: _Status(404),
     IssueNotLinked: _Status(404),

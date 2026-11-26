@@ -65,6 +65,7 @@ from loregarden.services.docker_ledger import (
     load_gate_cpus,
     load_pool,
     pool_ceiling,
+    priority_position,
     shortfalls,
 )
 from loregarden.services.docker_subprocess import run_docker
@@ -410,7 +411,7 @@ def _return_capacity(session: Session, lease: DockerLease) -> None:
 # ---- the queue ---------------------------------------------------------
 
 
-def _take_position(session: Session) -> int:
+def take_position(session: Session) -> int:
     """The next place in line, incremented and read in one statement.
 
     `UPDATE … RETURNING` rather than compare-and-set on the value read first.
@@ -702,6 +703,7 @@ def reserve(
     holder_pid: int | None = None,
     pool: CapacityPool = CapacityPool.DOCKER,
     takes_slot: bool = True,
+    priority_reason: str = "",
     invoke: DockerInvoke = run_docker,
 ) -> DockerReservation:
     """Claim capacity in `pool`, take a place in line, or be told why neither.
@@ -709,7 +711,13 @@ def reserve(
     Refusals are returned, not raised, and each carries an `error_kind` — an
     agent that cannot tell "wait your turn" from "this will never fit" will do
     the wrong one of the two.
+
+    A `priority_reason` puts a new waiter in the priority tier, ahead of every
+    normal waiter and behind earlier priority ones; it never preempts a holder.
+    A retried priority reservation that finds its pending duplicate keeps the
+    place that duplicate already has.
     """
+    priority_reason = priority_reason.strip()
     if not settings.docker_capacity_enabled:
         return DockerReservation(
             state=DockerGrantState.REJECTED,
@@ -778,7 +786,11 @@ def reserve(
         footprint=footprint,
         cpus=price_cpus,
         memory_mb=price_memory,
-        position=_take_position(session),
+        position=(
+            priority_position(take_position(session)) if priority_reason else take_position(session)
+        ),
+        priority_reason=priority_reason,
+        prioritized_at=_now() if priority_reason else None,
         ttl_seconds=ttl,
     )
     session.add(lease)

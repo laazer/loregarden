@@ -345,3 +345,87 @@ def test_a_command_under_a_held_parent_reserves_as_a_child_or_not_at_all(
         "the wrapper dropped the held lease; the CLI inside it would then take a "
         "top-level claim and wait behind the very lease that is holding it"
     )
+
+
+# ---- --priority ------------------------------------------------------------
+
+
+def _wrap_priority(tmp_path: Path, fake_cli: Path, *priority: str, **extra: str):
+    return subprocess.run(
+        ["bash", str(WRAPPER), "fix push", "--footprint", "heavy", *priority, "--", "true"],
+        env=_env(tmp_path, fake_cli, **extra),
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_a_priority_reason_is_passed_to_the_cli(tmp_path, fake_cli) -> None:
+    result = _wrap_priority(tmp_path, fake_cli, "--priority", "unblocks the queue")
+
+    assert result.returncode == 0, result.stderr
+    assert "--priority unblocks the queue " in (tmp_path / "args").read_text()
+
+
+@pytest.mark.parametrize(
+    "priority",
+    [pytest.param(("--priority", "  "), id="blank"), pytest.param(("--priority",), id="missing")],
+)
+def test_a_priority_with_no_reason_stops_before_the_ledger(tmp_path, fake_cli, priority) -> None:
+    """Refused here: a CLI refusal would be retried for an hour as a broken ledger."""
+    result = _wrap_priority(tmp_path, fake_cli, *priority)
+
+    assert result.returncode == 2
+    assert "--priority needs a reason" in result.stderr
+    assert _calls(tmp_path) == 0
+
+
+def test_an_old_primary_queues_normally_and_says_the_priority_was_dropped(
+    tmp_path, fake_cli
+) -> None:
+    """A primary checkout whose CLI predates --priority would refuse the flag, and
+    the refusal would be retried as a broken ledger. The wrapper drops it instead."""
+    tree = tmp_path / "old-checkout"
+    scripts = tree / ".lefthook" / "scripts"
+    scripts.mkdir(parents=True)
+    for name in ("capacity-run.sh", "hook-noninteractive.sh"):
+        (scripts / name).write_text((WRAPPER.parent / name).read_text())
+    lib = tree / "scripts" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "primary-checkout.sh").write_text(
+        (REPO_ROOT / "scripts" / "lib" / "primary-checkout.sh").read_text()
+    )
+    (tree / "scripts" / "loregarden-cli.sh").write_text(fake_cli.read_text())
+    (tree / "scripts" / "loregarden-cli.sh").chmod(0o755)
+    cli_module = tree / "server" / "loregarden" / "cli" / "capacity.py"
+    cli_module.parent.mkdir(parents=True)
+    cli_module.write_text('run.add_argument("--stall-timeout")\n')
+    env = _env(tmp_path, fake_cli)
+    del env["LOREGARDEN_CAPACITY_CLI"]
+
+    result = subprocess.run(
+        [
+            "bash",
+            str(scripts / "capacity-run.sh"),
+            "fix",
+            "--footprint",
+            "heavy",
+            "--priority",
+            "urgent",
+            "--",
+            "true",
+        ],
+        env=env,
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "predates --priority" in result.stderr
+    args = (tmp_path / "args").read_text()
+    assert "--priority" not in args and "--footprint heavy" in args

@@ -11,7 +11,8 @@ The Review rail already answers the same question the same way — it fetches it
 operations only while its tab is selected — so this follows a pattern the
 dashboard had already settled rather than inventing a second one.
 
-Reads, plus one write: an operator ending a lease from the board. Nothing here
+Reads, plus two writes: an operator ending a lease from the board, or putting
+a waiter ahead of the line for a stated reason. Nothing here
 reserves or reaps — that stays with the callers and the sweep. Ending a lease
 is the same `force_release_lease` the MCP tool calls, so the board and an agent
 cannot leave the ledger in two different states for one decision.
@@ -45,6 +46,30 @@ class ForceReleaseRequest(
     OperationBody, operation=OperationId.DOCKER_LEASE_FORCE_RELEASE, supplied={"lease_id"}
 ):
     """Why the lease is ended; kept on it."""
+
+
+class PrioritizeRequest(
+    OperationBody, operation=OperationId.DOCKER_LEASE_PRIORITIZE, supplied={"lease_id"}
+):
+    """Why the lease goes ahead of the line; kept on it and shown on the board."""
+
+
+@router.post("/capacity/leases/{lease_id}/prioritize")
+def prioritize_docker_lease(
+    lease_id: str,
+    body: PrioritizeRequest,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Put a waiting lease ahead of every normal waiter.
+
+    A 409 when it holds capacity or has ended (nothing to move), a 404 for an
+    id nothing answers to.
+    """
+    return run_rest_operation(
+        session,
+        OperationId.DOCKER_LEASE_PRIORITIZE,
+        {"lease_id": lease_id, "reason": body.reason},
+    )
 
 
 @router.post("/capacity/leases/{lease_id}/release")

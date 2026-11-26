@@ -277,6 +277,30 @@ describe("DockerQueueBoard", () => {
     expect(screen.queryByText(/likely/)).not.toBeInTheDocument();
   });
 
+  it("says why a claim was put ahead of the line, on a waiter and on a holder", () => {
+    render(
+      <DockerQueueBoard
+        status={status({
+          holders: [lease({ lease_id: "h1", priority_reason: "unblocks every suite" })],
+          waiting: [
+            lease({
+              lease_id: "w1",
+              status: "waiting",
+              position: 1,
+              priority_reason: "fix push stuck behind 16 suites",
+            }),
+            lease({ lease_id: "w2", status: "waiting", position: 2 }),
+          ],
+        })}
+        {...idle}
+      />,
+    );
+
+    expect(screen.getByTestId("docker-priority-w1")).toHaveTextContent("fix push stuck behind 16 suites");
+    expect(screen.getByTestId("docker-priority-h1")).toHaveTextContent("unblocks every suite");
+    expect(screen.queryByTestId("docker-priority-w2")).not.toBeInTheDocument();
+  });
+
   it("says a wait is unknown rather than guessing", () => {
     render(
       <DockerQueueBoard
