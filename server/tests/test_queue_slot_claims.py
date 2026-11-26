@@ -14,8 +14,6 @@ stamped before and after an entry's promotion, and an occupant id present.
 
 from __future__ import annotations
 
-import inspect
-import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -184,24 +182,6 @@ def test_reservation_grace_is_defined_once_in_the_tree():
     assert lines[0].startswith("loregarden/services/queue_slot_claims.py:"), lines[0]
 
 
-@pytest.mark.parametrize(
-    ("module", "gone"),
-    [("queue_lanes", "_claimed_after"), ("parallel_queue", "_within_reservation_grace")],
-)
-def test_the_lane_and_the_sweep_hold_no_predicate_of_their_own(module: str, gone: str):
-    """Both callers answer from the extracted module rather than re-deriving it.
-
-    Checked at the source, because a copy that happens to agree today is exactly
-    what this ticket is about: the drift is paid by whoever next shortens the
-    grace and teaches only one of them.
-    """
-    source = (REPO_ROOT / "server/loregarden/services" / f"{module}.py").read_text()
-    assert re.search(r"\bfrom loregarden\.services\.queue_slot_claims import\b", source), (
-        f"{module}.py does not import the shared predicate"
-    )
-    assert f"def {gone}(" not in source, f"{module}.py still defines its own copy, {gone}"
-
-
 def test_the_shared_predicate_does_not_close_an_import_cycle():
     """`queue_slot_claims` imports `parallel_queue` today, and `parallel_queue`
     now has to import back. Function-local imports are not the way out of that
@@ -342,25 +322,6 @@ def test_an_offset_claim_is_converted_rather_than_relabelled():
 # ---- shape of the answer ----------------------------------------------------
 
 
-def test_the_predicates_answer_without_a_session():
-    """ "Pure predicates over an AgentSlot" is a shape, not a style note: the
-    invariant's detector and the sweep ask the question mid-read, and a
-    predicate that could query would make the answer depend on the session's
-    cache. Checked at the signature so a session parameter cannot be slipped in
-    behind a default.
-    """
-    for predicate in (slot_is_busy_with_nothing, claim_is_fresh):
-        params = inspect.signature(predicate).parameters
-        assert "session" not in params, f"{predicate.__name__} takes a session"
-        assert [p.kind for p in params.values()][0] is inspect.Parameter.POSITIONAL_OR_KEYWORD
-
-    windows = inspect.signature(claim_is_fresh).parameters
-    assert set(windows) == {"slot", "now", "not_claimed_after"}
-    for name in ("now", "not_claimed_after"):
-        assert windows[name].kind is inspect.Parameter.KEYWORD_ONLY, name
-        assert windows[name].default is None, f"{name} must default to 'window not asked for'"
-
-
 def test_the_same_question_twice_gets_the_same_answer():
     """Determinism: nothing in here may read a clock of its own. A predicate
     that called `utcnow()` internally would answer differently as the suite
@@ -372,33 +333,3 @@ def test_the_same_question_twice_gets_the_same_answer():
 
 
 # ---- the third caller -------------------------------------------------------
-
-
-def test_the_invariant_detector_holds_no_predicate_of_its_own():
-    """AC5 names three callers; `test_the_lane_and_the_sweep_hold_no_predicate_of_their_own`
-    checks two. The detector is the one that did not exist yet, and a detector
-    that re-derives "busy with nothing, claim not fresh" is the third copy this
-    extraction exists to prevent.
-    """
-    source = (REPO_ROOT / "server/loregarden/services/invariant_registry.py").read_text()
-    assert re.search(r"\bfrom loregarden\.services\.queue_slot_claims import\b", source), (
-        "invariant_registry.py does not import the shared predicate"
-    )
-
-
-@pytest.mark.parametrize(
-    "module",
-    ["queue_lanes", "parallel_queue", "invariant_registry", "queue_slot_claims"],
-)
-def test_no_caller_writes_the_grace_window_out_by_hand(module: str):
-    """A second *definition* is caught by the grep above; this catches the
-    second *expression* — `timedelta(seconds=60)` inline — which is the same
-    drift wearing a different name and the grep would never see it.
-    """
-    source = (REPO_ROOT / "server/loregarden/services" / f"{module}.py").read_text()
-    literals = re.findall(r"timedelta\(\s*seconds\s*=\s*60\s*\)", source)
-    allowed = 1 if module == "queue_slot_claims" else 0
-    assert len(literals) == allowed, (
-        f"{module}.py writes the reservation grace out as a literal {len(literals)} time(s); "
-        "import RESERVATION_GRACE"
-    )

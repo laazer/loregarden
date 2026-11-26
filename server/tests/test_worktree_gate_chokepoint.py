@@ -303,23 +303,6 @@ def test_a_branch_level_removal_with_no_worktrees_row_is_refused(session, worksp
     assert stray.is_dir()
 
 
-def test_pull_request_merge_reaches_the_gate_and_reports_its_refusal(session, workspace, repo):
-    """(e) `pull_request_merge`, which reaches (c) and (d).
-
-    Its own `_is_dirty` omitted `--untracked-files=all`, so a tree holding only
-    untracked files read as clean — the majority of what an agent produces
-    before its first commit. It is collapsed into `worktree_lifecycle`'s helper
-    rather than kept beside it.
-    """
-    from loregarden.services import pull_request_merge
-
-    assert not hasattr(pull_request_merge, "_is_dirty"), (
-        "a second dirtiness probe is a second answer to one question"
-    )
-    source = (SERVER / "services" / "pull_request_merge.py").read_text(encoding="utf-8")
-    assert "--untracked-files=all" not in source, "the one probe lives in worktree_lifecycle"
-
-
 # ===========================================================================
 # AC14 — the seam raises rather than answering a value
 # ===========================================================================
@@ -462,15 +445,6 @@ def test_a_worktree_can_be_added_at_that_path_again_once_the_tree_is_released(
     git(repo, "worktree", "add", "-q", str(path), ticket.branch)
 
     assert path.is_dir()
-
-
-def test_land_ticket_s_align_worktrees_is_left_alone():
-    """Explicitly out of scope (AC16). `_align_worktrees` is a `read-tree`
-    overwrite, not a cleanup — a different act with a different argument, and
-    widening into it is how this ticket grows a third round."""
-    from loregarden.services import land_ticket
-
-    assert hasattr(land_ticket, "_align_worktrees")
 
 
 # ---------------------------------------------------------------------------

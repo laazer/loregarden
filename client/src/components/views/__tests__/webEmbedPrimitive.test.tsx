@@ -252,19 +252,12 @@ describe("safeEmbedUrl is the single place the policy lives", () => {
   });
 
   it("refuses a URL that smuggles a second scheme past the first", () => {
-    for (const url of [
-      "https:/\\evil.example/",
-      "https://example.com\t@evil.example/",
-      " javascript:alert(1)",
-      "javascript\n:alert(1)",
-      "%6Aavascript:alert(1)",
-    ]) {
-      const result = safeEmbedUrl(url);
-      // Either refused outright, or normalised to something whose scheme is
-      // still one of the two allowed — never returned as the raw text.
-      if (result !== null) {
-        expect({ url, result }).toEqual({ url, result: expect.stringMatching(/^https?:\/\//i) });
-      }
+    // Refused, or normalised to the address a browser would really open, so
+    // what the operator reads is where the frame goes.
+    expect(safeEmbedUrl("https:/\\evil.example/")).toBe("https://evil.example/");
+    expect(safeEmbedUrl("https://example.com\t@evil.example/")).toBe("https://evil.example/");
+    for (const url of [" javascript:alert(1)", "javascript\n:alert(1)", "%6Aavascript:alert(1)"]) {
+      expect({ url, result: safeEmbedUrl(url) }).toEqual({ url, result: null });
     }
   });
 });

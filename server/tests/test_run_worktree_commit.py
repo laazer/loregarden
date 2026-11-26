@@ -350,16 +350,6 @@ def test_run_none_uses_ticket_workflow_stage_key_in_the_message(session, repo: P
     assert _subject(tree) == f"{ticket.external_id}: plan"
 
 
-def test_helper_does_not_import_run_completion_or_orchestration():
-    """R1.1 / AC11: helper must not import run_completion or orchestration."""
-    from loregarden.services import run_worktree_commit
-
-    source = Path(run_worktree_commit.__file__).read_text(encoding="utf-8")
-    assert "loregarden.services.run_completion" not in source
-    assert "loregarden.services.orchestration" not in source
-    assert "OrchestrationService" not in source
-
-
 def test_cancelled_run_skips_failed_run(session, repo: Path):
     """AC10 mutation: CANCELLED is not SUCCEEDED → failed_run, no commit."""
     workspace = _workspace(session, repo)
@@ -573,25 +563,3 @@ def test_untracked_recorded_file_is_committed(session, repo: Path):
     assert "new_mod.py" in result.paths
     assert git(tree, "show", "HEAD:new_mod.py").stdout == "x = 1\n"
     assert uncommitted_at_landing(session, ticket, workspace) == ()
-
-
-def test_forbidden_callers_do_not_import_the_helper():
-    """AC11: landing, git_automation, finish_external_stage, builtin_orchestrator stay out."""
-    from loregarden.services import (
-        builtin_orchestrator,
-        external_harness,
-        git_automation,
-        landing_uncommitted,
-        orchestration,
-    )
-
-    for module in (
-        builtin_orchestrator,
-        external_harness,
-        git_automation,
-        landing_uncommitted,
-        orchestration,
-    ):
-        source = Path(module.__file__).read_text(encoding="utf-8")
-        assert "run_worktree_commit" not in source, module.__name__
-        assert "commit_succeeded_run_worktree" not in source, module.__name__

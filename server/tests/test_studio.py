@@ -433,7 +433,7 @@ def test_studio_mcp_tool_guides(client: TestClient):
     guides = res.json()
     assert len(guides) >= 10
     get_ticket = next(item for item in guides if item["name"] == "loregarden_get_ticket")
-    assert "When to use" in get_ticket["when_to_use"] or get_ticket["when_to_use"]
+    assert get_ticket["when_to_use"]
     assert get_ticket["example"].startswith("tools/call")
 
 
@@ -528,13 +528,12 @@ def test_studio_lists_builtin_workflows(client: TestClient):
     assert res.status_code == 200
     workflows = res.json()
     slugs = {item["slug"] for item in workflows}
-    assert "loregarden-tdd" in slugs or any(item.get("built_in") for item in workflows)
+    assert "loregarden-tdd" in slugs
 
-    if "loregarden-tdd" in slugs:
-        detail = client.get("/api/studio/workflows/loregarden-tdd")
-        assert detail.status_code == 200
-        assert detail.json()["read_only"] is True
-        assert len(detail.json()["stages"]) >= 1
+    detail = client.get("/api/studio/workflows/loregarden-tdd")
+    assert detail.status_code == 200
+    assert detail.json()["read_only"] is True
+    assert len(detail.json()["stages"]) >= 1
 
 
 def test_builtin_agent_has_role_body(client: TestClient):

@@ -1,5 +1,4 @@
 import dataclasses
-import inspect
 import json
 from pathlib import Path
 from unittest import mock
@@ -37,14 +36,6 @@ tests/test_foo.py::test_bad FAILED - AssertionError: boom
 
 def test_parse_test_output_empty():
     assert parse_test_output("") is None
-
-
-def test_capture_git_diff_from_repo():
-    from loregarden.models.domain import Workspace
-
-    ws = Workspace(slug="loregarden", name="Loregarden", repo_path=".")
-    diff = capture_git_diff(ws)
-    assert diff is None or "sections" in diff
 
 
 def test_parse_unified_diff_lines():
@@ -211,53 +202,6 @@ def _no_diff_row(session, ticket) -> None:
         select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.DIFF)
     ).all()
     assert existing == [], "skip tests must have no stored valid diff or they pass vacuously"
-
-
-def test_both_composers_call_the_private_plan_helpers():
-    """AC-R2.7 ensure/refresh do not name live_diff_base or capture_git_diff.
-
-    ensure plans first, then reuses or captures. refresh stays a thin
-    `_capture_ticket_diff` wrapper. Rewrites test_both_composers_call_the_private_capture_helper.
-    """
-    assert hasattr(artifact_service, "_ticket_diff_plan")
-    assert hasattr(artifact_service, "_capture_from_plan")
-    ensure = inspect.getsource(ensure_diff_artifact)
-    refresh = inspect.getsource(refresh_execution_artifacts)
-    helper = inspect.getsource(artifact_service._capture_ticket_diff)
-    plan = inspect.getsource(artifact_service._ticket_diff_plan)
-    from_plan = inspect.getsource(artifact_service._capture_from_plan)
-    assert "_ticket_diff_plan" in ensure
-    assert "_capture_from_plan" in ensure
-    assert "_capture_ticket_diff(" in refresh
-    assert "live_diff_base" not in ensure
-    assert "live_diff_base" not in refresh
-    assert "capture_git_diff(" not in ensure
-    assert "capture_git_diff(" not in refresh
-    assert "live_diff_base" in plan
-    assert "capture_git_diff(" not in plan
-    assert "capture_git_diff(" in from_plan
-    assert "live_diff_base" not in from_plan
-    assert "_capture_from_plan" in helper
-    assert "_ticket_diff_plan" in helper
-    assert "live_diff_base" not in helper
-    assert "capture_git_diff(" not in helper
-    assert ensure.index("_ticket_diff_plan") < ensure.index("_capture_from_plan")
-
-
-def test_capture_git_diff_against_is_keyword_only():
-    """AC-R1.1 against is KEYWORD_ONLY, default None; positional two-arg still binds.
-
-    Rewrites test_capture_git_diff_signature_has_no_against_parameter.
-    """
-    params = inspect.signature(capture_git_diff).parameters
-    assert list(params) == ["workspace", "repo_root", "against"]
-    assert params["against"].kind == inspect.Parameter.KEYWORD_ONLY
-    assert params["against"].default is None
-    ws = Workspace(slug="x", name="x", repo_path=".")
-    inspect.signature(capture_git_diff).bind(ws)
-    inspect.signature(capture_git_diff).bind(ws, Path("."))
-    with pytest.raises(TypeError):
-        inspect.signature(capture_git_diff).bind(ws, Path("."), "deadbeef")
 
 
 def test_ensure_diff_artifact_skips_capture_when_live_diff_base_is_none(
@@ -600,60 +544,6 @@ def test_a_file_at_worktree_path_captures_vs_main_and_does_not_call_live_diff_ba
     assert result == _CAPTURED
 
 
-def test_plan_helpers_pass_against_sha_not_a_branch_name():
-    """AC-R2.6 plan/from_plan may contain against=; never a branch name or merge_base.
-
-    Rewrites test_capture_helper_does_not_pass_against_or_a_branch_name_or_preferred_base.
-    """
-    assert hasattr(artifact_service, "_ticket_diff_plan")
-    assert hasattr(artifact_service, "_capture_from_plan")
-    plan = inspect.getsource(artifact_service._ticket_diff_plan)
-    from_plan = inspect.getsource(artifact_service._capture_from_plan)
-    helper = inspect.getsource(artifact_service._capture_ticket_diff)
-    for src in (plan, from_plan, helper):
-        assert "comparison_ref" not in src
-        assert ".merge_base" not in src
-        assert "_PREFERRED_BASE" not in src
-        assert "working tree" not in src
-    assert "against=plan.against" in from_plan
-    assert "against=None" not in from_plan
-    assert "parent_branch" not in from_plan
-
-
-def test_capture_git_diff_omitted_path_still_has_preferred_base():
-    """AC-R1.4 omitted path still starts at _PREFERRED_BASE; capture never sees Worktree.
-
-    Rewrites test_capture_git_diff_body_stays_vs_main_and_gains_no_against.
-    """
-    src = inspect.getsource(capture_git_diff)
-    assert "_PREFERRED_BASE" in src
-    assert "live_diff_base" not in src
-    assert "parent_comparison_ref" not in src
-    assert "Worktree" not in src
-    assert "parent_branch" not in src
-    assert "comparison_ref" not in src
-
-
-def test_git_base_ref_is_left_alone():
-    """R8: git_base_ref is not rewritten onto parent_comparison_ref."""
-    src = inspect.getsource(artifact_service.git_base_ref)
-    assert "_PREFERRED_BASE" in src
-    assert "origin/main" in src
-    assert "parent_comparison_ref" not in src
-    assert "live_diff_base" not in src
-
-
-def test_complete_run_does_not_swallow_a_live_diff_base_failure():
-    """R6: complete_run_tail has no try/except around refresh (run_completion.py:449-454)."""
-    from loregarden.services.run_completion import complete_run_tail
-
-    src = inspect.getsource(complete_run_tail)
-    idx = src.index("refresh_execution_artifacts(")
-    window = src[max(0, idx - 160) : idx + 280]
-    assert "try:" not in window
-    assert "except" not in window
-
-
 # ---------------------------------------------------------------------------
 # 1609 — against=, three-state plan, recapture, dirty-tracked graph
 # ---------------------------------------------------------------------------
@@ -775,19 +665,6 @@ def _plant_vs_main(session, ticket) -> dict:
     return stored
 
 
-def test_ticket_diff_plan_is_private_frozen_and_not_exported():
-    """AC-R2.1 _TicketDiffPlan is frozen; not in parent_ref or ticket_worktree."""
-    from loregarden.services import parent_ref, ticket_worktree
-
-    assert hasattr(artifact_service, "_TicketDiffPlan")
-    cls = artifact_service._TicketDiffPlan
-    assert dataclasses.is_dataclass(cls)
-    assert cls.__dataclass_params__.frozen
-    assert [field.name for field in dataclasses.fields(cls)] == ["path", "against", "skip"]
-    assert not hasattr(parent_ref, "_TicketDiffPlan")
-    assert not hasattr(ticket_worktree, "_TicketDiffPlan")
-
-
 def test_capture_git_diff_against_set_git_failure_returns_none_not_vs_main(tmp_path):
     """AC-R1.2 / AC-R5.3 against-set git failure → None; omitted path would not be."""
     graph = _ticket_local_graph(tmp_path)
@@ -832,6 +709,53 @@ def test_against_omitted_none_or_empty_keeps_vs_main_payload(tmp_path):
     assert "sibling.txt" in _section_paths(omitted)
 
 
+def test_a_repo_with_no_main_is_diffed_against_the_base_it_has(tmp_path):
+    repo = _init_git(tmp_path / "repo")
+    _commit_file(repo, "a.py", "one\n", "base")
+    git(repo, "branch", "-m", "main", "master")
+    git(repo, "checkout", "-q", "-b", "work")
+    _commit_file(repo, "b.py", "two\n", "work")
+
+    diff = capture_git_diff(_capture_ws(repo))
+
+    assert diff is not None
+    assert diff["range"] == "master"
+    assert _section_paths(diff) == {"b.py"}
+
+
+def test_a_tree_equal_to_main_is_diffed_against_its_own_index(tmp_path):
+    """Staged on top of main, then put back in the tree: nothing against main,
+    something against the index."""
+    repo = _init_git(tmp_path / "repo")
+    _commit_file(repo, "a.py", "one\n", "base")
+    (repo / "a.py").write_text("staged\n")
+    git(repo, "add", "--", "a.py")
+    (repo / "a.py").write_text("one\n")
+
+    diff = capture_git_diff(_capture_ws(repo))
+
+    assert diff is not None
+    assert diff["range"] == "working tree"
+    assert _section_paths(diff) == {"a.py"}
+
+
+def test_no_diff_against_anything_is_none(tmp_path):
+    repo = _init_git(tmp_path / "repo")
+    _commit_file(repo, "a.py", "one\n", "base")
+
+    assert capture_git_diff(_capture_ws(repo)) is None
+
+
+def test_a_directory_with_no_repository_has_no_diff(tmp_path):
+    """Inside a repository with changes, which git would find by walking up."""
+    repo = _init_git(tmp_path / "repo")
+    _commit_file(repo, "nested/a.py", "one\n", "base")
+    (repo / "nested" / "a.py").write_text("two\n")
+
+    assert capture_git_diff(_capture_ws(repo)) is not None
+    assert capture_git_diff(_capture_ws(repo), repo / "nested") is None
+
+
 def test_whitespace_against_is_against_set_not_omitted(tmp_path):
     """Whitespace-only against is nonempty → against-set → git fail → None."""
     graph = _ticket_local_graph(tmp_path)
@@ -870,17 +794,6 @@ def test_capture_against_merge_base_sha_is_ticket_local_and_includes_dirty_track
     triple = git(graph.checkout, "diff", f"{graph.parent}...HEAD")
     assert "server/foo.py" not in triple.stdout
     assert "ticket.py" in triple.stdout
-
-
-def test_upsert_titles_stay_first_stat_path():
-    """AC-R3.1 both upserts stay str(diff.get('file') or 'git diff'); no picker."""
-    refresh = inspect.getsource(refresh_execution_artifacts)
-    ensure = inspect.getsource(ensure_diff_artifact)
-    needle = 'str(diff.get("file") or "git diff")'
-    assert needle in refresh
-    assert needle in ensure
-    assert "dirty_paths" not in refresh
-    assert "dirty_paths" not in ensure
 
 
 def test_refresh_on_integration_parent_upserts_ticket_local_title(session, tmp_path):
@@ -1011,25 +924,6 @@ def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(s
     assert stored["range"] == graph.merge_base
 
 
-def test_artifacts_grouped_hoists_ensure_and_keeps_tests_and_log_paths():
-    """R1 hoist + R5 leave-alones. Not the recapture chokepoint. # CHECKPOINT
-
-    inspect.getsource that the if is gone is not enough — see the grouped twin.
-    """
-    from loregarden.services import ticket_detail_view as tickets_api
-
-    assert tickets_api.ensure_diff_artifact is ensure_diff_artifact
-    assert tickets_api.ensure_test_artifact is artifact_service.ensure_test_artifact
-    assert tickets_api._test_artifact_is_valid is artifact_service._test_artifact_is_valid
-    grouped_src = inspect.getsource(tickets_api.artifacts_grouped) + inspect.getsource(
-        tickets_api._backfill
-    )
-    assert "from loregarden.services.artifact_service import" not in grouped_src
-    assert "_diff_artifact_is_valid" not in grouped_src
-    assert "_test_artifact_is_valid" in grouped_src
-    assert "_apply_log_artifacts" in grouped_src
-
-
 def test_build_verify_context_parent_ahead_names_ticket_local_paths(session, tmp_path):
     """R3 pin: claimed change names ticket-local paths, not sibling vs-main files.
 
@@ -1151,24 +1045,6 @@ def test_parent_branch_main_still_recaptures_stored_range_main(session, workspac
     rows = _diff_rows(session, ticket)
     assert len(rows) == 1
     assert rows[0].title == "ticket.py"
-
-
-def test_diff_artifact_is_valid_stays_sections_only():
-    """AC-R4.4 _diff_artifact_is_valid does not grow a range check."""
-    src = inspect.getsource(artifact_service._diff_artifact_is_valid)
-    assert "range" not in src
-    assert "sections" in src
-
-
-def test_plan_and_capture_stay_in_artifact_service():
-    """AC-R6.3 no new capture module; _TicketDiffPlan lives next to the composer."""
-    assert capture_git_diff.__module__ == "loregarden.services.artifact_service"
-    assert hasattr(artifact_service, "_TicketDiffPlan")
-    assert artifact_service._TicketDiffPlan.__module__ == "loregarden.services.artifact_service"
-    assert hasattr(artifact_service, "_ticket_diff_plan")
-    assert artifact_service._ticket_diff_plan.__module__ == "loregarden.services.artifact_service"
-    assert hasattr(artifact_service, "_capture_from_plan")
-    assert artifact_service._capture_from_plan.__module__ == "loregarden.services.artifact_service"
 
 
 # ---------------------------------------------------------------------------

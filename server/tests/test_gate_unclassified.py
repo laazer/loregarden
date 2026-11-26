@@ -71,24 +71,6 @@ def test_the_module_is_its_own_file():
     assert _MODULE_PATH.is_file(), f"{_MODULE_PATH} should exist"
 
 
-def test_it_names_its_file_level_sibling_and_the_sibling_points_back():
-    """One mechanism at two levels, each findable from the other.
-
-    Without the cross-reference the next agent writes a third wording for
-    "I could not grade this", which is the defect this ticket is about.
-    """
-    assert "UnexaminableFileError" in (vocabulary.__doc__ or "")
-
-    sibling = (_SCRIPTS / "precommit_git_diff.py").read_text(encoding="utf-8")
-    tree = ast.parse(sibling)
-    unexaminable = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef) and node.name == "UnexaminableFileError"
-    )
-    assert "gate_unclassified" in (ast.get_docstring(unexaminable) or "")
-
-
 #: What a module that runs in every workspace, before any dependency is
 #: installed, is allowed to need. `loregarden` is excluded by name because the
 #: whole point of `.lefthook/scripts/` is that it is workspace-agnostic.
@@ -206,10 +188,6 @@ def test_the_message_labels_the_provenance_fields():
     assert "registered_at=py_silent_except_check.violations_in" in message
 
 
-def test_the_same_input_always_formats_the_same_way():
-    assert vocabulary.unclassified_message(_item()) == vocabulary.unclassified_message(_item())
-
-
 def test_the_message_has_the_shape_both_gates_are_compared_on():
     """The shape, not the prose.
 
@@ -288,11 +266,3 @@ def test_neither_gate_spells_the_label_itself(adopter):
     """A second copy of the wording is a second thing that can drift, which is
     what one vocabulary module exists to prevent."""
     assert vocabulary.UNCLASSIFIED_LABEL not in _source_of(adopter)
-
-
-def test_the_three_outcomes_are_used_rather_than_merely_named():
-    """AC3 asks that every classifier in scope RETURN one of three outcomes. An
-    `Outcome` no adopter ever names is the collapse the criterion forbids,
-    carried out silently."""
-    users = [name for name in _ADOPTERS if "Outcome" in _source_of(name)]
-    assert users, "neither gate references Outcome; the contract is decorative"

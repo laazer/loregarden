@@ -340,17 +340,8 @@ describe("every fixed scroll region has its own keyboard, empty-state and Escape
   });
 
   it("puts each site's tests in the file AC3 names for its component", () => {
-    // AC3's placement rule, reported rather than enforced into existence: a
-    // component with no suite today gets a NEW file named for it, and no
-    // unrelated suite is widened to hold it. This lists which files those are,
-    // so the work is visible before it is missing.
-    const needNewFile = fixedSites
-      .filter((site) => !site.testFileExists)
-      .map((site) => `${site.where} (${site.selector}) -> new file ${site.testFile}`);
-    // Not an assertion about the count: it is reported, and the assertions
-    // below are what fail. A site whose component already has a suite must use
-    // it rather than a new file beside it.
-    expect(needNewFile.length).toBeGreaterThanOrEqual(0);
+    // A site whose component already has a suite must use it rather than a new
+    // file beside it.
     expect(
       fixedSites
         .filter((site) => site.testFileExists)

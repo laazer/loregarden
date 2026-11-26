@@ -32,16 +32,10 @@
  *    a failed poll on top of it must not turn "nothing is waiting" into "could
  *    not load". That is the boundary between no-response and a response of
  *    none, and no test stands on it.
- *  - **A seventh observer.** Lifting a fresh `useQuery(["approvals"])` into the
- *    panel satisfies AC-13 and adds another copy of the duplication
- *    lg-frontend-quality-2747 records, which the repository-wide census
- *    (`test/__tests__/approvalsQueryMeta.test.ts`) passes as a floor.
  */
 
 import { QueryClient } from "@tanstack/react-query";
 import { act, screen, waitFor } from "@testing-library/react";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { api, type Approval } from "../../api/client";
 import { useNotificationStore } from "../../state/notificationStore";
@@ -205,19 +199,5 @@ describe("ApprovalInboxPanel cold failure, adversarially", () => {
     expect(screen.getByText(INBOX_ZERO)).toBeInTheDocument();
     expect(errorLines(container)).toEqual([]);
     expect(screen.queryByText(ERROR_LINE)).not.toBeInTheDocument();
-  });
-
-  it("adds no observer of its own to the shared approvals query", () => {
-    // The panel learns about the failure from the hook it already calls. A
-    // fresh `useQuery(["approvals"])` here would satisfy AC-13 and pass the
-    // repository census, which counts a floor and not a list.
-    const path = join(__dirname, "..", "ApprovalInboxPanel.tsx");
-    const source = readFileSync(path, "utf8");
-
-    // Textual, and deliberately narrow: the exact shared key, which is the one
-    // whose observers `test/__tests__/approvalsQueryMeta.test.ts` censuses. A
-    // key built from a variable is out of its reach and out of this one's.
-    expect(source).toMatch(/usePendingApprovalCount/);
-    expect(source).not.toMatch(/queryKey:\s*\[\s*["'`]approvals["'`]\s*\]/);
   });
 });

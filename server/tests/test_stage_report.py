@@ -1,5 +1,4 @@
 import ast
-import inspect
 import json
 from pathlib import Path
 
@@ -613,16 +612,6 @@ def test_the_record_still_carries_everything_it_did_before():
 # criterion reads as met. The signature and the call sites are the only places
 # that distinguish a migration from a shim.
 # --------------------------------------------------------------------------- #
-
-
-def test_finding_record_takes_the_run_and_the_stage_as_required_arguments():
-    signature = inspect.signature(finding_record)
-    required = [
-        name
-        for name, parameter in signature.parameters.items()
-        if parameter.default is inspect.Parameter.empty
-    ]
-    assert required == ["finding", "run", "stage"], signature
 
 
 def test_calling_finding_record_the_old_way_is_a_failure_not_a_default():

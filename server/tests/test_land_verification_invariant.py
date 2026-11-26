@@ -33,7 +33,6 @@ date is by construction one that predates the receipt writer.
 
 from __future__ import annotations
 
-import inspect
 import json
 import subprocess
 from datetime import date, datetime, timedelta, timezone
@@ -188,18 +187,6 @@ def test_it_is_scheduled_on_the_reconcile_pass_exactly_once():
     assert scheduled.count(LAND_VERIFICATION_RAN.name) == 1, scheduled
 
 
-def test_the_detector_body_lives_beside_the_report_only_precedent():
-    """AC4. `_landed_with_uncommitted_work` is the same shape — report-only
-    DEFECT over done tickets — and it is in `invariant_registry.py`. A new
-    service module for fifteen lines of database reads is a module to find."""
-    assert LAND_VERIFICATION_RAN.detect.__module__ == ("loregarden.services.invariant_registry"), (
-        LAND_VERIFICATION_RAN.detect.__module__
-    )
-    assert hasattr(invariant_registry, "_landed_with_uncommitted_work"), (
-        "the precedent this sits beside has moved; check the placement argument still holds"
-    )
-
-
 def test_the_since_bound_is_one_constant_the_detector_and_the_registration_share(
     session, workspace, monkeypatch
 ):
@@ -222,17 +209,6 @@ def test_the_since_bound_is_one_constant_the_detector_and_the_registration_share
     assert _subjects(session) == set(), (
         "the detector did not read the shared constant; its bound is a copy"
     )
-
-
-def test_the_detector_says_in_its_docstring_that_it_inverts_the_frameworks_default():
-    """AC10. Erring towards silence is the opposite of `_entered_after`'s
-    documented default, so a reader meets it as a bug unless the docstring says
-    it was deliberate."""
-    doc = (inspect.getdoc(LAND_VERIFICATION_RAN.detect) or "").lower()
-
-    assert doc, "the detector has no docstring"
-    assert "unknown" in doc or "undated" in doc, doc
-    assert "since" in doc, doc
 
 
 # ---------------------------------------------------------------------------

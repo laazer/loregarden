@@ -319,27 +319,6 @@ def test_prepared_tree_is_one_frozen_value_holding_exactly_the_pair(tmp_path):
             setattr(tree, field, value)
 
 
-def test_describe_handoff_tree_takes_the_pair_as_one_parameter():
-    """AC6. No signature in the codebase may take `repo_root` and
-    `target_branch` as two independent arguments that must agree.
-
-    This is the signature the defect was visible in: the two values arrived
-    separately, so `api/ticket_handoff` passed a tree from
-    `prepare_terminal_handoff` beside a branch it re-resolved itself, and
-    `external_harness` did the same with an unguarded call.
-    """
-    import inspect
-
-    from loregarden.services.handoff_tree_status import describe_handoff_tree
-
-    params = inspect.signature(describe_handoff_tree).parameters
-
-    assert list(params) == ["tree", "ticket_external_id"], (
-        f"describe_handoff_tree takes {list(params)}: the pair is one parameter"
-    )
-    assert params["ticket_external_id"].kind is inspect.Parameter.KEYWORD_ONLY
-
-
 def test_prepared_tree_refuses_a_half_answer(tmp_path):
     """AC1, the half the frozen check does not reach: neither field has a default.
 

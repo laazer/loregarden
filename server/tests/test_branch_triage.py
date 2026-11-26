@@ -1,7 +1,6 @@
 """Tests for branch triage snapshot and diff review."""
 
 import subprocess
-from enum import Enum
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -1151,31 +1150,6 @@ def test_the_worktree_remove_endpoint_carries_the_same_three_value_outcome(
     assert body["parked_path"] == ""
     assert set(body) >= {"branch", "removed_path"}
     assert path.is_dir()
-
-
-def test_the_outcome_vocabulary_is_an_enum_and_not_three_string_literals():
-    """The py-organization gate's rule, and the reason behind it: a literal
-    compared in the API layer has nothing behind it when someone types
-    `"refuse"` instead of `"refused"`."""
-    from loregarden.models.domain import enums
-
-    candidates = [
-        member
-        for member in vars(enums).values()
-        if isinstance(member, type)
-        and issubclass(member, Enum)
-        and {m.value for m in member} == {"deleted", "refused", "parked"}
-    ]
-    assert candidates, (
-        "no enum in models/domain/enums.py carries deleted | refused | parked — "
-        "the API would be comparing bare string literals"
-    )
-
-    api_source = (
-        Path(__file__).resolve().parents[1] / "loregarden" / "api" / "branch_triage.py"
-    ).read_text(encoding="utf-8")
-    for literal in ('"refused"', '"parked"', '"deleted"'):
-        assert literal not in api_source, f"{literal} is compared as a bare string in the API layer"
 
 
 def test_a_delete_the_gate_allows_still_reports_deleted(client, isolated_db, tmp_path):

@@ -59,4 +59,4 @@ def test_parent_orchestration_runs_child_workflow_first(client: TestClient, tmp_
 
     child_progress = any(s["status"] != "pending" for s in child_after["stages"])
     parent_progress = any(s["status"] != "pending" for s in parent_after["stages"])
-    assert child_progress or parent_progress
+    assert (child_progress, parent_progress) == (True, False)

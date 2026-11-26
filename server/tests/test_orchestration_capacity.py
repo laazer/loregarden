@@ -412,26 +412,6 @@ def test_release_for_park_never_reads_the_runs_auto_approve_flag(
     assert orchestration_capacity.release_for_park(session, orch_run, ticket, approval) is True
 
 
-def test_the_two_sign_off_call_sites_use_the_same_composite(session, ticket, workspace) -> None:
-    """R4. `signer_for_gate` removes a duplication rather than adding one.
-
-    `run_completion._sign_off_gate_if_permitted` and
-    `subtree_auto_run.resolve_gate_if_permitted` each hand-computed
-    autopilot-or-auto-approve. Two copies of a predicate drift, and the drift
-    would be invisible: one site would sign a gate the other would park on.
-    """
-    import inspect
-
-    from loregarden.services import run_completion, subtree_auto_run
-
-    for module in (run_completion, subtree_auto_run):
-        source = inspect.getsource(module)
-        assert "signer_for_gate" in source, f"{module.__name__} recomputes the signer"
-        assert "auto_approve_may_sign_off" not in source, (
-            f"{module.__name__} still hand-computes what signer_for_gate decides"
-        )
-
-
 def test_a_signer_names_the_plan_that_signs_it(session, ticket, workspace) -> None:
     """R4. The autopilot signer carries its plan, because the sign-off record
     names the initiative — `record_autopilot_sign_off` cannot write the

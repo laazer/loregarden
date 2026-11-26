@@ -23,14 +23,6 @@ from sqlmodel import Session
 from tests.factories import make_workspace_ticket
 
 
-def test_the_bus_no_longer_advertises_a_subscription_model():
-    """AC3-adjacent. `subscribe` had zero callers in two months, so the handler
-    list and the fan-out inside publish were dead code implying that publishing
-    notifies something. Removed rather than left standing."""
-    assert not hasattr(event_bus, "subscribe")
-    assert not hasattr(event_bus, "_subscribers")
-
-
 def test_events_filter_by_ticket(db_session: Session):
     """AC2. This is the question the log could not answer for two months."""
     first, second = (

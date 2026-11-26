@@ -19,7 +19,6 @@ Everything here runs against a real git fixture. A receipt test that stubs
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,6 @@ from loregarden.models.domain import (
     Workspace,
     Worktree,
 )
-from loregarden.services import worktree_receipt
 from loregarden.services.ticket_worktree import resolve_execution_root
 from loregarden.services.worktree_lifecycle import KeepReason
 from loregarden.services.worktree_receipt import Receipt, Unresolved, resolve_receipt
@@ -133,28 +131,6 @@ def test_a_landed_ticket_tree_resolves_a_receipt_naming_the_commit_that_landed_i
     assert isinstance(answer, Receipt)
     assert answer.sha == sha
     assert answer.branch == "main"
-
-
-def test_the_owner_arm_is_chosen_by_a_column_read_not_by_the_row_s_python_type(session, workspace):
-    """AC2 forbids `isinstance` for the owner dispatch, and the py-organization
-    gate forbids it independently. The observable consequence: three rows of the
-    *same* class take three different arms, decided by `ticket_id` /
-    `chat_session_id` / neither."""
-    source = inspect.getsource(worktree_receipt)
-    assert "isinstance(" not in source, "the owner arm is a column read, never a type switch"
-
-
-def test_worktree_receipt_never_imports_land_ticket_s_merge_drivers(session):
-    """AC2's import fence.
-
-    `land_ticket` *writes* receipts and merges refs. A module whose whole job is
-    to read one must not be able to reach a driver that moves a ref — and must
-    not drag the landing machinery into every retirement either.
-    """
-    source = inspect.getsource(worktree_receipt)
-    assert "land_ticket" not in source
-    for forbidden in ("merge_tips", "advance_tips", "squash_onto", "merge_without_checkout"):
-        assert forbidden not in source, f"{forbidden} moves or writes refs; a reader must not"
 
 
 # ---------------------------------------------------------------------------

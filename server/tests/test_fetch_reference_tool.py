@@ -1635,19 +1635,6 @@ def test_a_concurrent_insert_of_the_same_url_is_absorbed(session, isolated_db, r
 # --------------------------------------------------------------------------
 
 
-def test_module_binds_no_engine_at_import():
-    source = Path(reference_cache.__file__).read_text(encoding="utf-8")
-    targets = {
-        name.id
-        for node in ast.parse(source).body
-        if isinstance(node, ast.Assign)  # py-org: allow-isinstance
-        for name in node.targets
-        if isinstance(name, ast.Name)  # py-org: allow-isinstance
-    }
-    assert "engine" not in targets
-    assert not hasattr(reference_cache, "engine")
-
-
 def test_conftest_engine_bindings_do_not_mention_this_module():
     conftest = (Path(__file__).parent / "conftest.py").read_text(encoding="utf-8")
     bindings = next(

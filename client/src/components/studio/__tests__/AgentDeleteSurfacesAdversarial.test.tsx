@@ -252,6 +252,7 @@ describe("AgentDeleteConfirm at its edges", () => {
     // ModalShell keeps the panel mounted for its exit, and marks it
     // `aria-hidden` and `inert` the moment it starts leaving.
     const dialog = document.querySelector('[role="dialog"]');
-    if (dialog) expect(dialog).toHaveAttribute("aria-hidden", "true");
+    expect(dialog).not.toBeNull();
+    expect(dialog).toHaveAttribute("aria-hidden", "true");
   });
 });

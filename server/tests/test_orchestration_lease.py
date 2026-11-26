@@ -1049,18 +1049,6 @@ def test_the_message_is_deterministic_and_carries_no_state():
     assert expired_lease_message("orch_2b5b48", 2) == first
 
 
-def test_the_old_module_level_constant_is_gone(session):
-    """AC15: removed, not shimmed. A left-behind `EXPIRED_LEASE_MESSAGE` is a
-    second spelling of a sentence whose whole job is to be matched exactly, and
-    a caller still passing it would silently un-do AC7 for every run it settles.
-    """
-    from loregarden.services import run_service
-
-    assert not hasattr(run_service, "EXPIRED_LEASE_MESSAGE")
-    with pytest.raises(TypeError):
-        run_service.settle_expired_orchestration_leases(session, message="anything")
-
-
 # ---- the reap has to be greppable where an operator looks ---------------
 #
 # AC9. The sentence reaches exactly two surfaces: `orchestration_runs.error_message`

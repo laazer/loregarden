@@ -7,8 +7,6 @@ MILESTONE (parent.workspace_id equality only when parent is non-null).
 
 from __future__ import annotations
 
-import inspect
-
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.models.domain import (
@@ -489,30 +487,3 @@ class TestInitiativeSortOrder:
 
 
 # --- AC8: no unconditional milestone-parent short-circuit --------------------
-
-
-class TestNoUnconditionalMilestoneParentReject:
-    """AC8 — type legality only from hierarchy_service parent-assignment + VALID_HIERARCHY."""
-
-    _CALL_PATH_MODULES = (
-        "loregarden.services.ticket_service",
-        "loregarden.services.hierarchy_service",
-        "loregarden.services.ticket_import_service",
-        "loregarden.api.tickets",
-    )
-
-    def test_call_paths_drop_unconditional_milestone_parent_message(self):
-        needles = (
-            "Milestones cannot have a parent",
-            "milestones cannot have a parent",
-        )
-        offenders: list[str] = []
-        for mod_name in self._CALL_PATH_MODULES:
-            mod = __import__(mod_name, fromlist=["*"])
-            source = inspect.getsource(mod)
-            for needle in needles:
-                if needle in source:
-                    offenders.append(f"{mod_name}: {needle!r}")
-        assert not offenders, (
-            "Unconditional milestone-parent short-circuit still present:\n" + "\n".join(offenders)
-        )

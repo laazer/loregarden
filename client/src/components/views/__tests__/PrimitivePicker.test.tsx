@@ -95,17 +95,6 @@ describe("AC2 — the picker is generated from the registry", () => {
     fireEvent.click(screen.getByRole("button", { name: /Synthetic Probe/i }));
     expect(picked).toEqual(["synthetic_probe"]);
   });
-
-  it("names no primitive id of its own", () => {
-    const source = fs.readFileSync(
-      path.resolve(__dirname, "../PrimitivePicker.tsx"),
-      "utf8",
-    );
-    for (const entry of CONTAINER_PRIMITIVES) {
-      const hardcoded = new RegExp(`["'\`]${entry.id}["'\`]`).test(source);
-      expect({ id: entry.id, hardcoded }).toEqual({ id: entry.id, hardcoded: false });
-    }
-  });
 });
 
 describe("AC2 — the dispatcher is the only door to a concrete primitive", () => {

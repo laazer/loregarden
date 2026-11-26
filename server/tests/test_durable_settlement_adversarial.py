@@ -398,8 +398,8 @@ def test_a_settlement_that_fails_is_not_reported_as_a_settlement(
 
     CLAUDE.md's rule, not a spec line: a swallow here is the exact shape the
     control plane's characteristic bug takes — the stage never routed, the
-    worktree was never committed, and the row says SUCCEEDED. Either the
-    failure propagates or it is logged where the default handler can see it.
+    worktree was never committed, and the row says SUCCEEDED. The
+    failure propagates, and is logged with its traceback.
     """
     _write_output(adopted, out="done\n" + _report("pass"), rc="0")
 
@@ -410,14 +410,12 @@ def test_a_settlement_that_fails_is_not_reported_as_a_settlement(
         ),
         caplog.at_level(logging.WARNING),
     ):
-        propagated = False
-        try:
+        with pytest.raises(RuntimeError, match="routing exploded"):
             run_resupervise.resupervise(adopted.id, interval_seconds=0)
-        except RuntimeError:
-            propagated = True
 
-    logged = any(record.levelno >= logging.WARNING for record in caplog.records)
-    assert propagated or logged, "settlement failed and nothing above INFO said so"
+    errors = [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert [record.name for record in errors] == ["loregarden.services.run_resupervise"]
+    assert errors[0].exc_info
 
 
 # --- AC12: what `.rc` can actually contain ------------------------------------

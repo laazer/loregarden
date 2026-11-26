@@ -143,10 +143,13 @@ def test_the_untouched_sentence_covers_the_queried_workspace_only(service):
     """Naming zero-hit areas in other workspaces would mean opening their
     SQLite files, which is the speculative work `store_readiness` avoids."""
     _node(service, "ws", "A memory about retrieval")
-    _node(service, "other", "A memory about retrieval")
+    for slug, kind in (("ws", "decision"), ("other", "gotcha")):
+        service.require_graph(slug).upsert_node(
+            title="Something unrelated", workspace_slug=slug, node_type=kind
+        )
     sentence = service.search("retrieval", workspace_slug="ws")["basis"].untouched_sentence
-    assert "other" not in sentence
-    assert sentence == "" or "ws" in sentence
+    assert "decision" in sentence and "workspace ws" in sentence
+    assert "gotcha" not in sentence and "other" not in sentence
 
 
 # --- AC7(c) the slug is resolved once, at the boundary ----------------------

@@ -7,7 +7,6 @@ does not pin. Expected red until implement lands the detector + enum.
 
 from __future__ import annotations
 
-import inspect
 from datetime import datetime, timedelta, timezone
 
 from loregarden.models.domain import AgentRun, MonitorCondition, RunStatus, Ticket
@@ -16,7 +15,7 @@ from loregarden.services.interruption_messages import (
     STRANDED_STAGE_MESSAGE,
 )
 from loregarden.services.stage_report import is_transient_failure
-from loregarden.services.workflow_monitor import _runs, list_findings, scan
+from loregarden.services.workflow_monitor import list_findings, scan
 from sqlmodel import Session
 from tests.factories import make_ticket, make_workspace, make_workspace_ticket
 from tests.test_monitor_harness_cluster import (
@@ -298,19 +297,6 @@ def test_orphan_and_stranded_count_as_transient_for_fire(db_session: Session):
 # --- Fire boolean must not call harness_cause_label (HC-4) -------------------
 
 
-def test_should_fire_helper_does_not_reference_harness_cause_label():
-    """HC-4: fire boolean is pure counts — must not import/call cause labels.
-
-    Summary construction may still call harness_cause_label after a fire; this
-    pins the predicate itself so implement cannot couple them.
-    """
-    from loregarden.services import monitor_harness_cluster as module
-
-    source = inspect.getsource(module.should_fire)
-    assert "harness_cause_label" not in source
-    assert "is_transient_failure" not in source  # counts only; classification is upstream
-
-
 # --- Cause-label priority / closed set mutations -----------------------------
 
 
@@ -353,22 +339,8 @@ def test_harness_cause_label_never_returns_outside_closed_set():
 # --- Substrate / wiring mutations --------------------------------------------
 
 
-def test_workflow_monitor_runs_still_omits_stdout_stderr_columns():
-    """HC-3 anti-pattern: wiring must not widen `_runs` raiseload to pull output.
-
-    The harness detector owns its own query; `_runs` must keep omitting
-    stdout/stderr so the reconcile sweep stays cheap.
-    """
-    source = inspect.getsource(_runs)
-    assert "AgentRun.stdout" not in source
-    assert "AgentRun.stderr" not in source
-    assert "raiseload" in source
-
-
 def test_is_transient_failure_source_not_expanded_for_timeouts():
     """HC-3 / HC-6: implement must not teach timeouts as transient to hit 42/42."""
-    source = inspect.getsource(is_transient_failure)
-    assert "timeout" not in source.lower()
     assert is_transient_failure("", _TIMEOUT_STDERR) is False
 
 

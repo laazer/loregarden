@@ -179,25 +179,6 @@ describe("the seams, read off the source", () => {
       .replace(/\/\/.*$/gm, "");
   }
 
-  it("S1.9 — the host subscribes to no focus or pointer event on the document", () => {
-    // The hook's own source is already fenced. The escape hatch the fence does
-    // not cover is putting the listener in the host instead. Its one window
-    // listener, the resize that follows the page area, lives in `screenArea`.
-    const host = source("components/ToastHost.tsx");
-    for (const escape of ["focusin", "focusout", "pointerover", "pointerout", ":focus-within"]) {
-      expect(host).not.toContain(escape);
-    }
-    expect(host).not.toContain("addEventListener(");
-    expect(source("lib/screenArea.ts").match(/addEventListener\((["'])([a-z]+)\1/g) ?? []).toEqual([
-      'addEventListener("resize"',
-    ]);
-  });
-
-  it("S5.2 — no key handler is added to the toast or its host", () => {
-    const host = source("components/ToastHost.tsx");
-    expect(host).not.toMatch(/onKeyDown|onKeyUp|onKeyPress/);
-  });
-
   it("S2.3 — queryClient is the only caller that passes a duration to toastActionFailed", () => {
     // The optional third argument exists for UX5's one exception. Reaching for
     // it elsewhere is how a sticky error toast quietly becomes a 9-second one

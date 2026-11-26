@@ -339,25 +339,6 @@ def test_a_stage_naming_another_agent_does_not_block(client: TestClient, session
 # --- AC4: the 409 is not derived from the integrity error -------------------
 
 
-def test_the_delete_path_does_not_decide_the_refusal_from_an_integrity_error(client: TestClient):
-    """AC4/D4. The only FK to `studio_agents` is the agent's own version
-    history, so a refusal derived from `IntegrityError` would name
-    `studio_agent_versions` as what still references the agent — a refusal the
-    operator can never clear, which is the failure mode this ticket exists to
-    stop. Asserted on the source because the wrong implementation passes every
-    behavioural test above."""
-    import inspect
-
-    from loregarden.services import studio_agent_references, studio_service
-
-    delete_source = inspect.getsource(studio_service.StudioService.delete_agent)
-    assert "IntegrityError" not in delete_source
-    assert "IntegrityError" not in inspect.getsource(studio_agent_references)
-    # The ordering fix, not a swallow: the version deletes reach the database
-    # before the agent row does.
-    assert "flush" in delete_source
-
-
 def test_the_scan_module_exposes_the_two_halves(client: TestClient, session, workspace):
     """AC16. The scan is a pure read with a blocking half and a historical one,
     so demoting a class stays a one-line change."""

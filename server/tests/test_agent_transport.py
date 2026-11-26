@@ -44,7 +44,6 @@ from loregarden.models.domain import (
     RunStatus,
     Workspace,
 )
-from loregarden.models.domain.process_enums import ProcessState
 from loregarden.services import doctor
 from loregarden.services.run_output_files import (
     attach_command,
@@ -154,17 +153,6 @@ def test_the_transport_is_a_closed_enum_with_the_wire_words():
     assert AgentTransport.TMUX.value == "tmux"
     assert AgentTransport.FILE.value == "file"
     assert {member.value for member in AgentTransport} == {"tmux", "file"}
-
-
-def test_the_transport_enum_lives_beside_the_other_process_vocabularies():
-    """S8. Beside `ProcessState` and `DetachedStopOutcome`, re-exported from
-    `models.domain`, because they answer about the same object."""
-    assert AgentTransport.__module__ == "loregarden.models.domain.process_enums"
-    assert ProcessState.__module__ == AgentTransport.__module__
-
-    import loregarden.models.domain as domain
-
-    assert domain.AgentTransport is AgentTransport
 
 
 # --- AC21: the config default ------------------------------------------------

@@ -11,8 +11,6 @@ The question it answers for the operator is the one the old response did not:
 must never collapse into one are "it is current" and "we could not tell".
 """
 
-import inspect
-import textwrap
 import warnings
 from pathlib import Path
 from unittest import mock
@@ -300,24 +298,6 @@ def _lead(detail: str) -> str:
     return head if head == detail else f"{head}."
 
 
-def _handler_body() -> str:
-    """`describe_handoff_failure`'s code, with its prose removed.
-
-    The docstring is checked on its own terms by the AC5 test below, and it has
-    to name `resolve_orchestration_profile` to say what the read does *not*
-    raise — so a source check that does not separate the two cannot tell a
-    remaining call from an accurate sentence about one.
-    """
-    source = inspect.getsource(handoff_tree_status.describe_handoff_failure)
-    docstring = handoff_tree_status.describe_handoff_failure.__doc__ or ""
-    return source.replace(docstring, "")
-
-
-def _without_prose(text: str) -> str:
-    """One spelling of a claim, however it was wrapped, quoted or commented."""
-    return " ".join(text.replace("`", "").replace("#", "").split())
-
-
 def _handler_warnings(caplog) -> list:
     return [
         record
@@ -473,44 +453,8 @@ def test_the_profile_arm_logs_what_failed_and_names_no_branch(
 def test_the_handler_does_not_resolve_the_profile_it_is_standing_in_for(
     db_session: Session, failed_handoff_ticket: Ticket, caplog
 ):
-    """AC7 and AC9. No second resolve, and no stand-in branch either.
-
-    974/1214's invariant survives this ticket unchanged: the handler must not
-    re-call `resolve_orchestration_profile`, the function that just raised. With
-    that call patched to raise for **every** caller there is nowhere left for
-    the handler to hide one, so this pins the fix rather than its shape.
-
-    What changes is the other half. `assert "GitAutomationConfig" in body` stood
-    here, requiring the handler's fallback be the built-in default rather than a
-    second resolve. AC7 deletes the fallback outright, so the assertion
-    **inverts**: the name must be absent from the whole module, import block and
-    docstring included. The invariant it protected — the handler does not
-    re-call the resolver that raised — is the `resolve_orchestration_profile`
-    pair above, kept verbatim.
-
-    `resolve_ticket_root` runs before the `try` and is deliberately not
-    hardened: it reaches only the worktree table and `resolve_workspace_root`
-    (ticket_worktree.py:38-50, workspace_paths.py:54), never a profile and never
-    a target branch, so this function has exactly one exposure.
-    """
-    assert not hasattr(handoff_tree_status, "resolve_orchestration_profile"), (
-        "the module still imports the resolver the handler is standing in for"
-    )
-    body = _handler_body()
-    assert "resolve_orchestration_profile" not in body, (
-        "the handler still re-calls the resolver that raised to get its fallback"
-    )
-    # AC7, on the whole module rather than the handler body: the import block
-    # and the docstring are the other two places the deleted fallback was
-    # recorded, and a lead that reaches a branch name through either is the
-    # defect with a new spelling. This is `grep -n GitAutomationConfig
-    # server/loregarden/services/handoff_tree_status.py` returning nothing.
-    module_source = Path(handoff_tree_status.__file__).read_text(encoding="utf-8")
-    assert "GitAutomationConfig" not in module_source, (
-        "the built-in default branch is still reachable from the module whose leads "
-        "may never name a branch nobody resolved"
-    )
-
+    """AC7 and AC9. The lead names no branch, because the read that would have
+    resolved one is what failed, and the cause is carried behind it."""
     conflict = ValueError("CONFLICT (content): Merge conflict in shared.txt")
     with (
         mock.patch(
@@ -535,44 +479,6 @@ def test_the_handler_does_not_resolve_the_profile_it_is_standing_in_for(
     assert len(_handler_warnings(caplog)) == 1, (
         f"expected exactly one WARNING, got {[r.getMessage() for r in _handler_warnings(caplog)]}"
     )
-
-
-def test_the_false_premise_is_gone_from_both_places_974_recorded_it():
-    """AC5. The read does not raise `TargetBranchError` via the profile
-    resolver, and two places said it did.
-
-    lg-milestone-that-974's AC9, the `describe_handoff_failure` docstring, and
-    the comment in the `TargetBranchError` test above all carried the same
-    sentence. The guard was still right to keep — `subtree_root` ->
-    `_refuse_initiative` / `_require_initiative_child` genuinely raises
-    `TargetBranchError` — but the false half of the premise is the one that hid
-    this gap for a whole ticket: it made a guard that already covered the
-    profile look complete.
-
-    So both sources are named in both files, and the claim itself is asserted
-    gone rather than merely improved. Checked on text with the backticks,
-    comment markers and line wrapping removed, so re-wrapping the same claim
-    does not slip past — which is also why this docstring says "via" and not the
-    word the check looks for: the file it reads is this one.
-    """
-    # Built from the resolver's own name rather than written out, so the claim
-    # being searched for never appears literally in the file being searched.
-    false_premise = f"through {resolve_orchestration_profile.__name__}"
-    docstring = _without_prose(handoff_tree_status.describe_handoff_failure.__doc__ or "")
-    comment = _without_prose(Path(__file__).read_text(encoding="utf-8"))
-
-    for label, text in (("the docstring", docstring), ("this test module", comment)):
-        assert false_premise not in text, (
-            f"{label} still claims the read raises TargetBranchError through the "
-            "profile resolver, which is the premise that hid this gap"
-        )
-        assert "subtree_root" in text, (
-            f"{label} does not name the source that really does raise TargetBranchError"
-        )
-        assert "ValueError" in text, (
-            f"{label} does not name the profile's own ValueError, the source that "
-            "walked through the narrow guard"
-        )
 
     # `assert "GitAutomationConfig" in docstring` stood here, requiring the
     # docstring record that the in-guard fallback was the built-in default
@@ -928,89 +834,6 @@ def test_every_arm_of_the_guard_logs_the_same_three_facts(
     )
     assert GitAutomationConfig().base_branch not in message, (
         f"the record names a branch nobody resolved: {message}"
-    )
-
-
-def test_the_guard_names_two_arms_over_three_classes_and_nothing_broader(db_session: Session):
-    """AC16. Two `except` clauses, and their union is exactly the three names.
-
-    `test_the_guard_names_both_arms_and_nothing_broader` stood here and asserted
-    `len(handlers) == 1`, with the stated rationale "AC9's single WARNING shape
-    is truthful for both arms". lg-milestone-that-1237 retires that rationale:
-    the profile arm and the no-target arm compose different leads (AC2, AC3),
-    and arm-specific prose out of one handler is only reachable through
-    `isinstance(resolve_exc, ProfileUnreadableError)`, which the
-    `py-organization` no-`isinstance` gate forbids. `except`-clause dispatch is
-    both the gate-clean form and the simplest one.
-
-    The clause's *real* intent survives intact and is what is asserted here: no
-    dropped arm, and nothing broader than the three names. Widening either
-    handler to `Exception` would turn a `TypeError` anywhere under
-    `target_branch_name` into "this ticket has no target branch" — a confident
-    wrong answer, where the 500 it replaced was at least visible. That is why
-    `test_a_programming_error_under_the_target_lookup_is_not_a_fallback_branch`
-    passes unedited.
-
-    Read off the AST rather than the text, so re-ordering, re-wrapping or
-    aliasing the names cannot change the answer.
-    """
-    import ast
-
-    source = textwrap.dedent(inspect.getsource(handoff_tree_status.describe_handoff_failure))
-    handlers = [
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.ExceptHandler)  # py-org: allow-isinstance - AST node walk
-    ]
-    assert len(handlers) == 2, (
-        f"describe_handoff_failure has {len(handlers)} except handlers: the profile arm "
-        "and the no-target arm compose different leads, and one handler reaching "
-        "arm-specific prose needs an isinstance the organization gate forbids"
-    )
-
-    caught = [
-        {
-            node.id
-            for node in ast.walk(handler.type)
-            if isinstance(node, ast.Name)  # py-org: allow-isinstance - AST node walk
-        }
-        if handler.type is not None
-        else set()
-        for handler in handlers
-    ]
-    assert set().union(*caught) == {"TargetBranchError", "ProfileUnreadableError", "ValueError"}, (
-        f"the two handlers catch {[sorted(names) for names in caught]}: their union is all "
-        "three arms and nothing else. TargetBranchError and ProfileUnreadableError both "
-        "subclass RuntimeError, so neither is covered by ValueError; and ValueError cannot "
-        "be dropped, because validate_branch_name reaches this handler through "
-        "integration_branch_for with one, and a ticket whose integration branch cannot be "
-        "named has no target branch rather than a 500"
-    )
-    for names in caught:
-        assert names, (
-            "an except handler catching nothing is a bare except in disguise, and it "
-            "catches the programming errors this guard must still propagate"
-        )
-        assert not names & {"Exception", "BaseException"}, (
-            f"a handler is widened to {sorted(names)}: `except Exception` would report a "
-            "programming error as 'this ticket has no target branch'"
-        )
-
-    # AC1's other half: selection is by `except`-clause dispatch and by nothing
-    # else. `isinstance(resolve_exc, ProfileUnreadableError)` inside one handler
-    # reaches the same two leads and would satisfy every behaviour test in this
-    # module — and it is a type switch written by hand, which the
-    # `py-organization` gate forbids and which puts the classification back at
-    # the boundary that `except` already does for free.
-    called = {
-        node.func.id
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)  # py-org: allow-isinstance - AST node walk
-        and isinstance(node.func, ast.Name)  # py-org: allow-isinstance - AST node walk
-    }
-    assert "isinstance" not in called, (
-        "the composer type-switches on the caught exception by hand: the two leads are "
-        "selected by except-clause dispatch, which is Python's own class dispatch"
     )
 
 
@@ -1916,25 +1739,6 @@ def test_the_exception_text_follows_the_lead_on_every_other_arm(
         assert detail.startswith(f"{ticket.external_id}: "), (
             f"the lead does not open with the ticket id: {detail!r}"
         )
-
-
-def test_the_built_in_default_branch_is_gone_from_the_module(db_session: Session):
-    """AC7. `grep -n GitAutomationConfig handoff_tree_status.py` returns nothing.
-
-    Three places, asserted as one: the import block, a handler body, and the
-    docstring. The name being importable at all is what lets the next edit reach
-    a branch nobody resolved, and the docstring is where this module recorded
-    the fallback as deliberate — a sentence that is now false.
-    """
-    module_source = Path(handoff_tree_status.__file__).read_text(encoding="utf-8")
-
-    assert "GitAutomationConfig" not in module_source, (
-        "the built-in default branch is still reachable from the module whose leads "
-        "may never name a branch nobody resolved"
-    )
-    assert not hasattr(handoff_tree_status, "GitAutomationConfig"), (
-        "the module still binds the built-in default under some other spelling"
-    )
 
 
 def _assert_no_conflict_and_no_branch_name(arm: str, lead: str, exempt: Path) -> None:

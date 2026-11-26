@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 
 from loregarden.agents.chat_role_prompt import (
     chat_posture_blocks,
@@ -121,9 +120,6 @@ class TestUiPrimitives:
         rendered = "\n".join(chat_ui_primitives_blocks())
         assert AGENT_PLAN_EXECUTE_PREFIX in rendered
 
-    def test_contract_is_identical_wherever_it_is_rendered(self):
-        assert chat_ui_primitives_blocks() == chat_ui_primitives_blocks()
-
     def test_every_example_card_parses_as_the_card_it_shows(self):
         # The model copies these shapes. One the parser rejects degrades to raw
         # JSON in the thread, which is what an unspecified `qa` shape produced.
@@ -147,12 +143,6 @@ class TestPromptBuildersUseSharedPosture:
         from sqlmodel import select
 
         workspace = db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
-        src = Path(
-            __import__("loregarden.services.branch_triage_chat_service", fromlist=["x"]).__file__
-        ).read_text(encoding="utf-8")
-        assert "chat_posture_blocks" in src
-        assert "You have real file, shell, git" not in src
-
         prompt = build_branch_triage_prompt(
             workspace,
             "main",

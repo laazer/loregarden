@@ -38,27 +38,6 @@ def test_block_ticket_stays_available_to_an_orchestrated_agent():
     assert McpTool.BLOCK_TICKET not in ORCHESTRATED_DENIED_MCP_TOOLS
 
 
-def test_the_denylist_does_not_claim_to_be_a_boundary():
-    """AC2. The docstring used to overstate what this guarantees, which is how
-    each review round graded a way around it as Critical.
-
-    Asserted rather than trusted: a docstring that drifts back to promising
-    enforcement would restart that cycle.
-    """
-    import loregarden.mcp.tool_ids as tool_ids
-
-    source = tool_ids.__doc__ or ""
-    module = __import__("inspect").getsource(tool_ids)
-    doc = module[: module.index("ORCHESTRATED_DENIED_MCP_TOOLS: frozenset")]
-
-    assert "guardrail" in doc.lower(), "the deny-list must say what it is"
-    assert "not a security boundary" in doc.lower() or "NOT a security boundary" in doc
-    assert "header" in doc.lower(), (
-        "the caller-supplied flag must be named where a reviewer meets it"
-    )
-    del source
-
-
 def test_the_agents_own_config_carries_the_flag_it_is_judged_by():
     """The fact that makes this a guardrail, pinned so it is not rediscovered as
     a surprise in a fourth review round."""

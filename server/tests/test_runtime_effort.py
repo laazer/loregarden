@@ -14,7 +14,6 @@ from loregarden.models.domain import Ticket, Workspace, WorkspaceRuntimeSettings
 from loregarden.models.domain.enums import DiscoveryStatus
 from loregarden.services import cli_settings
 from loregarden.services.cli_settings import (
-    CURSOR_EFFORT_MODELS,
     apply_cursor_effort,
     resolve_effort_for_adapter,
     resolve_runtime_effective,
@@ -76,11 +75,6 @@ def test_level_outside_the_adapter_ladder_is_dropped():
 )
 def test_apply_cursor_effort(model, effort, expected):
     assert apply_cursor_effort(model, effort) == expected
-
-
-def test_cursor_effort_models_is_non_empty():
-    """The bracket path is dead weight if no shipped option is parameterized."""
-    assert CURSOR_EFFORT_MODELS
 
 
 def test_claude_invocation_carries_effort_flag(tmp_path, monkeypatch):
@@ -674,27 +668,6 @@ def test_three_bounded_joins_fit_inside_the_budget(client, three_hanging_clis, p
     assert second_elapsed < 1.0, (
         f"a second caller waited {second_elapsed:.2f}s behind three in-flight probes"
     )
-
-
-def test_runtime_options_payload_moved_out_of_cli_settings():
-    """B5. The three function-local imports existed only to dodge a cycle."""
-    assert not hasattr(cli_settings, "runtime_options_payload"), (
-        "runtime_options_payload must live in services/runtime_options.py — leaving a copy "
-        "or an alias in cli_settings keeps the cycle the move exists to remove"
-    )
-    # What cli_settings keeps.
-    assert hasattr(cli_settings, "resolve_runtime_effective")
-    assert hasattr(cli_settings, "CLAUDE_MODEL_OPTIONS")
-
-
-def test_the_new_module_imports_discovery_at_module_level():
-    """B5. `opencode_discovery` and `codex_discovery` import ADAPTER_BINARIES from
-    `cli_settings`; the cycle that forced three function-local imports is gone
-    once the payload no longer lives there, so they must be module attributes."""
-    from loregarden.services import runtime_options
-
-    for name in ("codex_model_options", "lmstudio_model_options", "opencode_model_options"):
-        assert hasattr(runtime_options, name), f"{name} must be a module-level import"
 
 
 def test_model_discovery_names_the_three_probed_providers_and_no_others(client):

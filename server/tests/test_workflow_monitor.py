@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+import pytest
 from loregarden.models.domain import (
     AUTO_FIXABLE_CONDITIONS,
     AgentRun,
@@ -25,6 +26,8 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowTemplate,
 )
+from loregarden.models.domain.workflow_monitor import MonitorFinding
+from loregarden.services import workflow_monitor
 from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.run_duration_stats import DEFAULT_LOOKBACK_DAYS, MIN_SAMPLES
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
@@ -37,6 +40,7 @@ from loregarden.services.workflow_monitor import (
     sweep,
 )
 from sqlalchemy import event
+from sqlalchemy.exc import InvalidRequestError
 from sqlmodel import Session, select
 from tests.factories import make_workspace, make_workspace_ticket
 
@@ -926,3 +930,61 @@ def test_the_sweep_does_not_load_run_output(db_session: Session):
     for sql in agent_run_selects:
         assert "agent_runs.stdout" not in sql, sql
         assert "agent_runs.stderr" not in sql, sql
+
+
+def test_reading_a_run_the_monitor_loaded_never_pulls_its_output(db_session: Session):
+    """`agent_runs` stores output inline; a lazy load here was 277MB per sweep."""
+    ticket = make_workspace_ticket(db_session, "monitor-no-output")
+    ticket_id = ticket.id
+    _run(db_session, ticket, stage_key="implement", orch_id=None)
+    db_session.expunge_all()
+
+    (run,) = _runs(db_session, ticket_id)
+
+    with pytest.raises(InvalidRequestError):
+        _ = run.stdout
+    with pytest.raises(InvalidRequestError):
+        _ = run.stderr
+
+
+def test_a_sweep_records_before_it_escalates_and_escalates_before_it_repairs(
+    db_session: Session,
+):
+    """Recording first keeps the evidence of what a repair removes; escalating
+    from this sweep's start counts only findings this sweep saw again."""
+    order: list[str] = []
+    started: list[datetime] = []
+    before = datetime.now(timezone.utc)
+
+    def scanned(_session: Session) -> list[MonitorFinding]:
+        order.append("scan")
+        return []
+
+    def escalated(_session: Session, *, sweep_started_at: datetime) -> None:
+        order.append("escalate")
+        started.append(sweep_started_at)
+
+    def recorded(_session: Session, _findings: list[MonitorFinding]) -> int:
+        order.append("record")
+        return 7
+
+    with (
+        patch.object(workflow_monitor, "scan", side_effect=scanned),
+        patch.object(workflow_monitor, "record_findings", side_effect=recorded),
+        patch.object(workflow_monitor, "escalate_recurring_findings", side_effect=escalated),
+        patch.object(
+            workflow_monitor, "apply_autofixes", side_effect=lambda *_: order.append("repair")
+        ),
+        patch.object(
+            workflow_monitor,
+            "clear_resolved_findings",
+            side_effect=lambda *_: order.append("clear"),
+        ),
+        patch.object(
+            workflow_monitor, "_utcnow", side_effect=lambda: order.append("clock") or before
+        ),
+    ):
+        assert sweep(db_session) == 7
+
+    assert order == ["clock", "scan", "record", "escalate", "repair", "clear"]
+    assert started == [before]

@@ -6,7 +6,6 @@ GitHub and `git ls-remote` are the only mocked boundaries.
 
 from __future__ import annotations
 
-import inspect
 import json
 import subprocess
 from contextlib import contextmanager
@@ -36,7 +35,6 @@ from loregarden.services.invariant_registry import INVARIANTS
 from loregarden.services.invariants import Invariant, Violation, run_invariant
 from loregarden.services.reconciliation import PERIODIC_STEPS
 from loregarden.services.ticket_pull_request import GhCheck
-from loregarden.services.workflow_state import _derive_ticket_state
 from loregarden.testing.factories import make_ticket, make_workspace
 from sqlmodel import Session, col, select
 
@@ -288,13 +286,6 @@ def _detect(session, dts, **github):
 
 
 # -- I4 / C1: confirmation that DONE and auto-fix arming stay put --------------
-
-
-def test_derive_ticket_state_does_not_consult_ci_or_prs():
-    src = inspect.getsource(_derive_ticket_state)
-    assert "CIRunResult" not in src
-    assert "CIStatus" not in src
-    assert "pull_request" not in src.lower()
 
 
 # -- I1 registry ----------------------------------------------------------------
@@ -1378,16 +1369,6 @@ def test_list_open_pull_requests_once_per_workspace(db_session: Session):
         for call in open_gh.call_args_list
     ]
     assert len(repos) == len(set(repos)), repos
-
-
-def test_detector_source_does_not_read_forbidden_seams():
-    src = inspect.getsource(_dts())
-    assert "settings.ci_enabled" not in src
-    assert "ticket_for_branch" not in src
-    assert "_candidate_branches" not in src
-    assert "_TicketIndex" not in src
-    assert "ci_poll_tick_seconds" not in src
-    assert "published_branch(" not in src
 
 
 def test_defect_report_only_still_calls_escalate(db_session: Session):

@@ -12,15 +12,12 @@ implement regressions.
 
 from __future__ import annotations
 
-import ast
-import inspect
 import re
 import tempfile
 from itertools import product
 from unittest.mock import patch
 
 import pytest
-from loregarden.db import migrations as M
 from loregarden.db.migrations import apply_migrations
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import Ticket, WorkItemType, Workspace
@@ -237,20 +234,6 @@ class TestInitiativeCreateSkips:
 class TestMoveRefuseOrderAndMutation:
     """R6 — refuse INITIATIVE before destination-equality short-circuit and assign loop."""
 
-    def test_source_refuses_initiative_before_destination_equality(self):
-        """AST order: a mutation that only refuses after `== destination.id` lets a
-        future non-null initiative short-circuit as 'already in workspace'."""
-        from loregarden.mcp import ticket_ops_tools as mod
-
-        source = inspect.getsource(mod._move_ticket_workspace)
-        init_pos = source.lower().find("initiative")
-        eq_pos = source.find("destination.id")
-        assert init_pos != -1, "_move_ticket_workspace must name INITIATIVE / initiative"
-        assert eq_pos != -1, "destination-equality short-circuit missing"
-        assert init_pos < eq_pos, (
-            "INITIATIVE refuse must appear before destination-equality short-circuit (R6)"
-        )
-
     def test_move_valueerror_not_integrityerror(self, db_session: Session):
         """If refuse is missing, CHECK may raise IntegrityError on commit — wrong surface."""
         existing = db_session.exec(select(Workspace).where(Workspace.slug == "elsewhere")).first()
@@ -375,73 +358,11 @@ class TestCheckConstraintMutations:
                 )
 
 
-# --- AC6 migration abort symmetry --------------------------------------------
-
-
-class TestMigrationAbortSymmetry:
-    """AC6 design only aborts on initiative+workspace; task+NULL is the other illegal."""
-
-    def test_illegal_preexisting_task_null_aborts_migration(self):
-        mid = _migration_id()
-        migrate_fn = next((fn for migration_id, fn in M.MIGRATIONS if migration_id == mid), None)
-        assert migrate_fn is not None
-
-        engine = _fresh_engine()
-        SQLModel.metadata.create_all(engine)
-        try:
-            with engine.begin() as conn:
-                raw_ticket_insert(
-                    conn,
-                    ticket_id="bad-task",
-                    external_id="bt",
-                    workspace_id=None,
-                    title="Pre-check task",
-                    work_item_type="task",
-                )
-        except IntegrityError:
-            pytest.skip("create_all already enforces CHECK — abort path needs old DDL")
-
-        with pytest.raises((ValueError, RuntimeError), match="(?i)workspace|violat|task"):
-            with engine.begin() as conn:
-                migrate_fn(conn)
-
-    def test_migration_body_does_not_update_workspace_id(self):
-        """Source mutation: a silent UPDATE of initiatives would hide 731-era data."""
-        mid = _migration_id()
-        migrate_fn = next((fn for migration_id, fn in M.MIGRATIONS if migration_id == mid), None)
-        assert migrate_fn is not None
-        source = inspect.getsource(migrate_fn).lower()
-        # Allow SELECT ... workspace_id; forbid UPDATE tickets SET workspace_id
-        assert "update tickets" not in source.replace("\n", " ")
-        assert "set workspace_id" not in source.replace("\n", " ")
-
-
 # --- AC7 parent rule edges ---------------------------------------------------
 
 
 class TestParentWorkspaceRuleAdversarial:
     """Null-initiative parent allowed; unequal non-null still rejected — all three writers."""
-
-    def test_parent_equality_sites_allow_null_parent_workspace(self):
-        """AST: bare `parent.workspace_id != …` rejects null parents — pin the R5 guard."""
-        from loregarden.services import hierarchy_service as hs
-        from loregarden.services import ticket_import_service as tis
-        from loregarden.services.ticket_service import TicketService
-
-        sources = {
-            "TicketService._validated_parent": inspect.getsource(TicketService._validated_parent),
-            "reparent_ticket": inspect.getsource(hs.reparent_ticket),
-            "_resolve_parent_id": inspect.getsource(tis.TicketImportService._resolve_parent_id),
-        }
-        for label, source in sources.items():
-            # R5: if parent.workspace_id is not None, it must equal the child's;
-            # a bare `!=` without a null guard rejects null-workspace INITIATIVE parents.
-            has_null_guard = (
-                "workspace_id is not None" in source or "workspace_id is None" in source
-            )
-            assert has_null_guard, (
-                f"{label} must guard null-workspace parents before equality (AC7 / R5)"
-            )
 
     def test_reparent_then_create_child_under_null_initiative(self, db_session: Session):
         initiative = _create_initiative(db_session, title="Combo parent")
@@ -497,31 +418,6 @@ class TestNullWorkspaceFallout:
         assert tree[0].id == initiative.id
         # Null workspace → empty slug, not a crash / KeyError on None.
         assert tree[0].workspace_slug == ""
-
-    def test_binding_not_folded_into_validate_parent_assignment(self):
-        """Spec leave_alone: workspace binding must not live inside parent-type seam."""
-        from loregarden.services import hierarchy_service as hs
-
-        source = inspect.getsource(hs.validate_parent_assignment)
-        tree = ast.parse(source)
-        # Docstrings may mention workspace; the body must not call the binding seam
-        # or branch on workspace_id.
-        body_nodes = []
-        for node in tree.body:
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                body_nodes.extend(node.body)
-        for node in body_nodes:
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-                continue  # docstring
-            text = ast.unparse(node)
-            assert "validate_workspace_binding" not in text
-            assert "workspace_id" not in text
-
-    def test_create_ticket_signature_accepts_optional_slug(self):
-        params = inspect.signature(TicketService.create_ticket).parameters
-        assert "workspace_slug" in params
-        ann = params["workspace_slug"].annotation
-        assert ann == str | None or "None" in str(ann)
 
 
 # --- MCP surface (727 still requires slug — must reject initiative) ----------

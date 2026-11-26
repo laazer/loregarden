@@ -443,9 +443,17 @@ def test_mcp_complete_stage_schema_stays_pass_reject():
 # --------------------------------------------------------------------------- #
 
 
+def _rework_rounds(session: Session, ticket: Ticket) -> dict[str, int]:
+    """Charged rework rounds by the stage they send work to, zero ones left out."""
+    counts = {
+        key: rework_reroute_count(session, ticket, key) for key in ("plan", "spec", "implement")
+    }
+    return {key: count for key, count in counts.items() if count}
+
+
 def test_tool_then_sentinel_does_not_upgrade_or_double_reroute(db_session, tmp_path):
     """R8.1. Tool pass vetoed by incomplete checklist, then sentinel pass for
-    the same run: stage is not DONE; rework budget is not incremented twice."""
+    the same run: stage is not DONE; one rework round, back to the same stage."""
     ticket, orch, stage, _ = _running_ticket(db_session, tmp_path)
     _incomplete_handoff(db_session, ticket)
     run = _agent_run(
@@ -454,15 +462,13 @@ def test_tool_then_sentinel_does_not_upgrade_or_double_reroute(db_session, tmp_p
     OrchestrationCallbackService(db_session).complete_stage(
         orch, ticket, stage_key=stage.key, outcome="pass"
     )
-    after_tool = rework_reroute_count(db_session, ticket, stage.key)
+    assert _rework_rounds(db_session, ticket) == {}
     OrchestrationService(db_session).complete_run(
         run, status=RunStatus.SUCCEEDED, stdout=_pass_stdout()
     )
     db_session.refresh(ticket)
     assert _stage_status(db_session, ticket, stage.key) is not StageStatus.DONE
-    after_both = rework_reroute_count(db_session, ticket, stage.key)
-    assert after_both == after_tool or after_both == 1
-    assert after_both < 2 or after_tool == after_both
+    assert _rework_rounds(db_session, ticket) == {"spec": 1}
 
 
 def test_sentinel_then_tool_does_not_mark_done(db_session, tmp_path):
@@ -1088,7 +1094,8 @@ def test_agent_reroute_context_is_kept_above_unresolved_names(db_session, tmp_pa
 
 
 def test_tool_pass_then_sentinel_fail_does_not_upgrade_or_double_reroute(db_session, tmp_path):
-    """Breaker / R8. Tool pass vetoed, then sentinel fail: fail wins, one rework round."""
+    """Breaker / R8. Tool pass vetoed, then sentinel fail: fail wins, one rework
+    round, along the stage's reject route."""
     ticket, orch, stage, _ = _running_ticket(db_session, tmp_path)
     _incomplete_handoff(db_session, ticket)
     run = _agent_run(
@@ -1097,15 +1104,13 @@ def test_tool_pass_then_sentinel_fail_does_not_upgrade_or_double_reroute(db_sess
     OrchestrationCallbackService(db_session).complete_stage(
         orch, ticket, stage_key=stage.key, outcome="pass"
     )
-    after_tool = rework_reroute_count(db_session, ticket, stage.key)
+    assert _rework_rounds(db_session, ticket) == {}
     OrchestrationService(db_session).complete_run(
         run, status=RunStatus.SUCCEEDED, stdout=_fail_stdout()
     )
     db_session.refresh(ticket)
     assert _stage_status(db_session, ticket, stage.key) is not StageStatus.DONE
-    after_both = rework_reroute_count(db_session, ticket, stage.key)
-    assert after_both == after_tool or after_both == 1
-    assert after_both < 2 or after_tool == after_both
+    assert _rework_rounds(db_session, ticket) == {"plan": 1}
 
 
 def test_member_result_from_run_is_a_failure_when_derived_not_pass(db_session, tmp_path):

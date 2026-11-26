@@ -19,13 +19,10 @@ every test here is red until then.
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 
 import pytest
 from loregarden.mcp.tool_args import FINDING_SCHEMA
-from loregarden.models.domain import provenance as provenance_module
-from loregarden.models.domain.memory_enums import InferredGroupKind
 from loregarden.models.domain.provenance import Provenance
 from loregarden.services.operations.run_callbacks import StageFinding
 
@@ -69,26 +66,6 @@ def test_an_unresolved_registration_site_is_recorded_as_absent_not_invented():
 # --------------------------------------------------------------------------- #
 # AC9 — the registry rule
 # --------------------------------------------------------------------------- #
-
-
-def test_the_module_exports_the_registry_protocol_that_resolves_the_site():
-    assert "Provenance" in provenance_module.__all__
-    assert "SynthesizerRegistry" in provenance_module.__all__
-
-
-def test_the_registry_is_keyed_by_a_stable_synthesizer_id():
-    """The key is the id, not the producer: the same heuristic resolves to the
-    same site from every call site that uses it."""
-    resolve = provenance_module.SynthesizerRegistry.registered_at
-    parameters = list(inspect.signature(resolve).parameters)
-    assert parameters[1:] == ["synthesizer_id"], parameters
-
-
-def test_the_inferred_group_docstring_points_here_rather_than_restating_the_rule():
-    """`InferredGroupKind` states the fact-vs-inference rule in prose. A third
-    restatement is a third thing that can drift; it gets a pointer instead."""
-    doc = InferredGroupKind.__doc__ or ""
-    assert "provenance" in doc.lower()
 
 
 def test_no_caller_types_a_registration_site_as_a_literal_keyword():

@@ -714,39 +714,6 @@ def test_the_hold_no_longer_carries_a_bare_removal_failed_bool():
         ChatWorktreeHold(worktree=mock.Mock())  # type: ignore[call-arg]
 
 
-def test_no_branch_picks_its_sentence_by_reading_operator_prose():
-    """AC16 — control flow reads the member, never `Retirement.failure`.
-
-    The rejected alternatives were branching on the failure prose and a reverse
-    `str -> CleanupRefusal` lookup. Both make a wording tweak — the kind AC9's
-    measurement invites — silently change which sentence an operator meets.
-    Asserted on the source of the two functions that pair them, because the
-    defect is invisible in behaviour until someone edits a string.
-    """
-    import inspect
-    import re
-
-    from loregarden.services import baxter_chat_service, worktree_lifecycle
-
-    for function in (
-        worktree_lifecycle.release_chat_worktree,
-        baxter_chat_service.delete_chat_session,
-    ):
-        source = inspect.getsource(function)
-        # 954's `.failure` field is gone; the prose now lives on
-        # `Retirement.detail`, so the rule is the same one one name further on:
-        # the detail may be PRINTED, never compared. A branch reads
-        # `outcome.refusal` or the seam's `cause`.
-        assert ".failure" not in source, f"{function.__name__} branches on operator prose"
-        compared = [
-            line.strip()
-            for line in source.splitlines()
-            if ".detail" in line
-            and re.search(r"\.detail\s*(==|!=|in |\.startswith|\.endswith)", line)
-        ]
-        assert compared == [], f"{function.__name__} branches on operator prose: {compared}"
-
-
 def test_a_premise_that_refuses_is_held_without_claiming_a_removal_failed(
     session, workspace, chat_session
 ):

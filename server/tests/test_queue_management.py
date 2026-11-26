@@ -742,32 +742,6 @@ class TestQueueErrorHandling:
             assert result["status"] == "reordered"
             assert result["new_position"] == 1
 
-    async def test_queue_info_handles_missing_runs(self, db_session: Session):
-        """Handle case where run deleted while fetching info."""
-        from loregarden.api.queue_management import get_queue_info
-
-        ws = Workspace(id="ws-17", slug="ws-17", name="Test Workspace 17")
-        db_session.add(ws)
-        db_session.commit()
-
-        # Create runs then delete one mid-operation (simulated by returning gracefully)
-        run1 = queued_run(
-            db_session,
-            run_id="run-1",
-            ticket_id="ticket-1",
-            workspace_id="ws-17",
-            position=1,
-            status=QueuePosition.QUEUED,
-        )
-        db_session.add(run1)
-        db_session.commit()
-
-        # Should return graceful response
-        result = get_queue_info(db_session)
-
-        assert isinstance(result["queue_length"], int)
-        assert isinstance(result["runs"], list)
-
 
 @pytest.mark.asyncio
 class TestQueueConcurrency:

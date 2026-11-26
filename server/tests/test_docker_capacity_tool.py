@@ -203,9 +203,13 @@ def test_a_vague_claim_is_told_what_the_sizes_are(client) -> None:
 
 
 def test_operating_on_an_unknown_lease_says_so(client) -> None:
-    for tool in (McpTool.RENEW_DOCKER_LEASE.value, McpTool.RELEASE_DOCKER_CAPACITY.value):
-        payload = _payload(call_mcp(client, tool, {"lease_id": "nope"}))
-        assert payload["ok"] is False or payload["released"] is False
+    renewed = _payload(call_mcp(client, McpTool.RENEW_DOCKER_LEASE.value, {"lease_id": "nope"}))
+    assert (renewed["ok"], renewed["error_kind"]) == (False, "unknown_lease")
+    released = _payload(
+        call_mcp(client, McpTool.RELEASE_DOCKER_CAPACITY.value, {"lease_id": "nope"})
+    )
+    assert released["released"] is False
+    assert "nothing to release" in released["message"]
 
 
 def test_the_inline_wait_is_clamped_however_long_the_caller_asks() -> None:

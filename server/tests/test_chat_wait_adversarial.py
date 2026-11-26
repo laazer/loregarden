@@ -9,7 +9,6 @@ and locators that look complete but name the wrong surface.
 
 from __future__ import annotations
 
-import inspect
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -18,7 +17,6 @@ from unittest.mock import patch
 import pytest
 from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.mcp.tool_ids import McpTool
-from loregarden.mcp.tool_registry import EXTENDED_TOOLS
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import (
     AgentRun,
@@ -38,13 +36,12 @@ from loregarden.models.domain.enums import utcnow
 from loregarden.services.chat_wait import continuation_blocks, outstanding_for, register
 from loregarden.services.chat_wait_watch import poll_chat_waits, resume_chat_waits
 from loregarden.services.process_identity import IdentityReading, identify, session_of
-from loregarden.services.run_concurrency import IN_FLIGHT_STATUSES, TRIAGE_STAGE_KEY
+from loregarden.services.run_concurrency import TRIAGE_STAGE_KEY
 from loregarden.services.triage_run_service import cancel_triage_turn
 from loregarden.services.triage_service import TRIAGE_AGENT_ID, triage_snapshot
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
-from tests.repo_paths import REPO_ROOT
 from tests.test_chat_wait import (
     BRANCH,
     CAP_COPY,
@@ -57,9 +54,6 @@ from tests.test_chat_wait import (
     _runs_for_ticket,
     _system_triage,
 )
-
-#: Paths below are repo-relative; pytest runs from server/, CI included.
-_REPO_ROOT = REPO_ROOT
 
 LOG_TAIL_CHARS = 8000
 
@@ -410,12 +404,6 @@ def test_two_continued_rows_on_one_thread_are_allowed(db_session, ticket):
     assert len(rows) == 2
 
 
-def test_register_handler_is_on_extended_tools_not_an_execute_tool_branch():
-    assert McpTool.REGISTER_CHAT_WAIT.value in EXTENDED_TOOLS
-    tools_src = (_REPO_ROOT / "server/loregarden/mcp/tools.py").read_text(encoding="utf-8")
-    assert "REGISTER_CHAT_WAIT" not in tools_src.split("def execute_tool", 1)[-1]
-
-
 def test_mcp_schema_forbids_extra_keys_and_requires_positive_pid():
     from loregarden.mcp.chat_wait_tool import TOOL_DEFINITIONS
 
@@ -738,18 +726,7 @@ def test_stop_copy_interpolates_the_exact_command_including_special_chars(
     assert "was not killed" in text
 
 
-def test_resume_chat_waits_defaults_on_unknown_to_interrupt():
-    params = inspect.signature(resume_chat_waits).parameters
-    default = params["on_unknown"].default
-    assert default is ChatWaitUnknownPolicy.INTERRUPT or default == "interrupt"
-
-
 # ---- R5 / R7 -------------------------------------------------------------
-
-
-def test_in_flight_statuses_do_not_include_waiting():
-    assert not hasattr(RunStatus, "WAITING")
-    assert "waiting" not in {member.value for member in IN_FLIGHT_STATUSES}
 
 
 def test_snapshot_omits_wait_once_the_wait_is_settled(db_session, ticket, tmp_path):

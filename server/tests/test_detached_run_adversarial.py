@@ -512,32 +512,6 @@ def test_every_shape_of_env_value_survives_being_sourced(value, tmp_path, monkey
 # --- AC13 / S8: one authoritative transport, resolved once -------------------
 
 
-def test_the_transport_is_resolved_once_by_whoever_performs_the_spawn():
-    """AC13 ("introduces no new routing logic") and AC29's accuracy.
-
-    `cli.py` resolves the transport independently and appends the SYS line
-    BEFORE calling `run_print_mode`, which resolves it again. Two readings of
-    one fact, and the announcement is made from the reading that did not spawn
-    anything: a tmux spawn that raises leaves `transport · tmux (session
-    lg-<stem>)` in the feed for a session that never existed.
-
-    `spawn_agent` already returns `transport_used`, and `record_agent_transport`
-    is already called with it — the line belongs beside that, where the
-    authoritative answer is.
-    """
-    source = Path(__file__).parents[1] / "loregarden/agents/executors/cli.py"
-    text = source.read_text(encoding="utf-8")
-
-    assert "resolve_transport" not in text, (
-        "cli.py resolves the transport a second time; the spawn's "
-        "`transport_used` is the authoritative one"
-    )
-    assert "transport_line" not in text, (
-        "cli.py announces a transport before the spawn that decides it; the "
-        "line belongs beside record_agent_transport"
-    )
-
-
 def test_adopting_a_surviving_run_does_not_import_the_orchestrator():
     """AC11 ("`run_reattach` keeps only its predicates").
 

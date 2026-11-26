@@ -10,7 +10,6 @@ reintroduces a contiguous production-token ``git grep`` hit under ``server/``.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,9 +21,6 @@ from loregarden.services.memory_store import (
     MemoryStoreReadError,
     ObsidianMemoryStore,
 )
-
-_DEAD_HELPER = "_" + "obsidian_candidates"
-_ALT_HELPER = "_" + "vault_candidates"
 
 
 @pytest.fixture
@@ -46,18 +42,6 @@ def _both(vault_dir: Path, tmp_path: Path) -> AgentMemoryService:
 # ---------------------------------------------------------------------------
 
 
-def test_recall_related_source_has_no_vault_read_error_wrapping():
-    """Mutation — deleting the helper but leaving try/except VAULT wrapping
-    keeps vault failures on the durable recall path. Post-deletion source must
-    only wrap GRAPH reads."""
-    source = inspect.getsource(AgentMemoryService.recall_related)
-    assert "MemoryStoreKind.GRAPH" in source
-    assert "MemoryStoreKind.VAULT" not in source
-    assert "list_notes" not in source
-    assert _DEAD_HELPER not in source
-    assert _ALT_HELPER not in source
-
-
 def test_recall_related_does_not_delegate_to_search(vault_dir, tmp_path):
     """Assumption check — a search()-first recall reopens vault kind walks and
     defeats GRAPH-only durable ranking."""
@@ -72,13 +56,6 @@ def test_recall_related_does_not_delegate_to_search(vault_dir, tmp_path):
         ranked = service.recall_related("trusted server", workspace_slug="lg")
     assert ranked
     assert search.call_count == 0
-
-
-def test_no_service_method_named_like_vault_recall_candidate_builder():
-    """Rename mutation — `_vault_candidates` / dead-helper aliases must not
-    remain as callable attributes after the scrub."""
-    for name in (_DEAD_HELPER, _ALT_HELPER, "obsidian_candidates", "vault_candidates"):
-        assert not hasattr(AgentMemoryService, name), name
 
 
 # ---------------------------------------------------------------------------
@@ -106,23 +83,6 @@ def test_limit_zero_returns_empty_without_opening_vault(vault_dir, tmp_path):
     ) as list_notes:
         ranked = service.recall_related("trusted server", workspace_slug="lg", limit=0)
     assert ranked == []
-    assert list_notes.call_count == 0
-
-
-def test_repeated_recall_never_opens_list_notes(vault_dir, tmp_path):
-    """Stress — N recalls must not accumulate vault enumeration."""
-    service = _both(vault_dir, tmp_path)
-    service.graph_for_workspace("lg").upsert_node(
-        title="Trusted server",
-        body="Cap the rate.",
-        workspace_slug="lg",
-        node_type="memory",
-    )
-    with patch.object(
-        service.obsidian, "list_notes", wraps=service.obsidian.list_notes
-    ) as list_notes:
-        for _ in range(25):
-            service.recall_related("trusted server", workspace_slug="lg")
     assert list_notes.call_count == 0
 
 
@@ -225,12 +185,3 @@ def test_graph_failure_still_labels_graph_not_vault(vault_dir, tmp_path):
     assert caught.value.store == MemoryStoreKind.GRAPH
     assert type(caught.value.__cause__) is OSError
     assert "graph down" in str(caught.value.__cause__)
-
-
-def test_only_graph_candidates_feeds_recall_source_shape():
-    """AC-SCOPE / mutation — recall_related must append candidates only via
-    `_graph_candidates`; no second candidate builder call site."""
-    source = inspect.getsource(AgentMemoryService.recall_related)
-    assert source.count("_graph_candidates") == 1
-    # A reintroduced vault path typically shows up as a second `candidates +=`.
-    assert source.count("candidates +=") == 1

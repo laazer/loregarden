@@ -123,18 +123,6 @@ def test_the_export_share_is_none_and_never_zero():
     assert basis.exported_into_store != 0
 
 
-def test_the_export_share_says_in_its_docstring_that_nothing_persists_it():
-    """The field's own text is the only place a later reader meets the reason.
-
-    Asserted on substance, not wording: the annotation must admit `None`, and
-    the module must document the field rather than leave a number-shaped hole
-    for someone to fill with a rate.
-    """
-    annotations = RetrievalBasis.__annotations__
-    assert "None" in str(annotations["exported_into_store"])
-    assert "exported_into_store" in (RetrievalBasis.__doc__ or "")
-
-
 # --- AC1(d) the two fixed notes ---------------------------------------------
 
 

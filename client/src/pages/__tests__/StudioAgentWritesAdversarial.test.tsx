@@ -336,8 +336,7 @@ describe("the refusal notice's lifetime", () => {
 
     await waitFor(() => expect(mockApi.deleteStudioAgent).toHaveBeenCalled());
     expect(await screen.findByDisplayValue(AGENT.name)).toBeInTheDocument();
-    const notice = screen.queryByRole("status");
-    if (notice) expect(notice.textContent?.trim().length ?? 0).toBeGreaterThan(0);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 

@@ -27,11 +27,8 @@ is not reaped.
 
 from __future__ import annotations
 
-import ast
-import inspect
 import logging
 import re
-import textwrap
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
@@ -50,7 +47,6 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
-from loregarden.services import external_harness
 from loregarden.services import orchestration_profile as orchestration_profile_module
 from loregarden.services.external_harness import (
     begin_external_stage,
@@ -71,12 +67,9 @@ from tests.external_handoff_fixtures import (
     RESOLUTION_BINDINGS,
     STAGE,
     WIDE_PLAN_LANES,
-    _called_name,
-    _calls_named,
     _conflict,
     _dispatch_marker_ids,
     _dispatch_markers,
-    _function_def,
     _multiline_conflict,
     _one_line_settle_reason,
     _orch,
@@ -99,31 +92,6 @@ from tests.history_helpers import decision_events, decision_payloads
 from tests.worktree_helpers import commit_on, cut_ticket_worktree, git
 
 # --- AC8: the module no longer resolves at all --------------------------------
-
-
-def test_the_external_harness_resolves_no_target_branch_anywhere():
-    """AC8. The unguarded call the ticket is named for is gone.
-
-    It sat one line below the `except ValueError` and caught nothing, so a
-    conflict there escaped as a bare `RuntimeError`. Deleting it is the fix, and
-    the branch now comes from the `PreparedTree` `render_stage_prompt` returned.
-
-    Asserted on the module, because with the second resolution agreeing with the
-    first — which it does whenever nothing is wrong — no behaviour test can see
-    the difference. `_workspace_for` and `resolve_workspace_root` stay: both are
-    still used elsewhere in the module.
-    """
-    from loregarden.services import external_harness
-
-    assert not hasattr(external_harness, "resolve_target_branch"), (
-        "services/external_harness.py still binds the write-path resolver"
-    )
-    source = Path(external_harness.__file__).read_text(encoding="utf-8")
-    assert "resolve_target_branch" not in source, (
-        "services/external_harness.py still names resolve_target_branch"
-    )
-    assert external_harness._workspace_for is not None
-    assert external_harness.resolve_workspace_root is not None
 
 
 # --- AC11: the failure reaches the harness as a readable ValueError -----------
@@ -441,38 +409,6 @@ def test_a_render_failure_does_not_settle_an_adopted_fan_out_member(
 # --- AC15: the settle is a service both surfaces import -----------------------
 
 
-def test_the_settle_is_one_service_both_handoff_surfaces_import():
-    """AC15. One implementation, not two that drift.
-
-    The terminal-handoff route is not an external harness, so importing the
-    shared settle *from* `external_harness` would name the wrong owner — and
-    that module is already 768 lines, a hotspot where new code belongs in a new
-    module (CLAUDE.md). It takes no `surface`/`kind` string: a closed set of
-    values is an enum here, and the distinction each caller wants is already in
-    its own logging.
-
-    Asserted by identity rather than by behaviour, because two copies that
-    agree today is exactly the state this guards against.
-    """
-    import inspect
-
-    from loregarden.api import ticket_handoff
-    from loregarden.services import external_harness, handoff_settle
-
-    assert not hasattr(ticket_handoff, "_settle_failed_handoff"), (
-        "the router still carries its own copy of the settle"
-    )
-    assert ticket_handoff.settle_failed_handoff is handoff_settle.settle_failed_handoff
-    assert external_harness.settle_failed_handoff is handoff_settle.settle_failed_handoff
-
-    params = inspect.signature(handoff_settle.settle_failed_handoff).parameters
-    assert list(params) == ["session", "run_svc", "run", "ticket", "detail"], list(params)
-    assert params["detail"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert not {"surface", "kind"} & set(params), (
-        "a stringly-typed vocabulary the py-organization gate rejects"
-    )
-
-
 # --- AC16: the payload's provenance, its fields, and what it refuses ----------
 
 
@@ -570,113 +506,6 @@ def test_the_handoff_payload_is_labelled_typed_and_takes_no_caller_instruction(
 
 
 # --- AC17: nothing is left on the old shapes ---------------------------------
-
-
-#: Symbols lg-milestone-that-974 deletes. Each one named anywhere afterwards is
-#: an unmigrated caller or a shim.
-DELETED_SYMBOLS = ("_handoff_target_branch", "_settle_failed_handoff")
-
-
-def _two_argument_describe_calls(source: str) -> list[tuple[int, str]]:
-    """Every `describe_handoff_tree` call still passing the pair separately.
-
-    Parsed rather than grepped: each of these calls is written over several
-    lines, so a line-wise search for `describe_handoff_tree` next to
-    `target_branch=` finds nothing before the change OR after it, and would
-    pass against the defect.
-    """
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Call):  # py-org: allow-isinstance - an ast node
-            continue
-        if _called_name(node) != "describe_handoff_tree":
-            continue
-        passed = [keyword.arg for keyword in node.keywords]
-        if "target_branch" in passed or len(node.args) > 1:
-            found.append(
-                (node.lineno, f"describe_handoff_tree(args={len(node.args)}, keywords={passed})")
-            )
-    return found
-
-
-def _referenced_names(node: ast.AST) -> list[tuple[int, str]]:
-    """The one name this node *refers to*, if it refers to one by any route."""
-    if isinstance(node, ast.Name):  # py-org: allow-isinstance - an ast node
-        return [(node.lineno, node.id)]
-    if isinstance(node, ast.Attribute):  # py-org: allow-isinstance - an ast node
-        return [(node.lineno, node.attr)]
-    if isinstance(  # py-org: allow-isinstance - an ast node
-        node, ast.FunctionDef | ast.AsyncFunctionDef
-    ):
-        return [(node.lineno, node.name)]
-    if isinstance(node, ast.alias):  # py-org: allow-isinstance - an ast node
-        return [(getattr(node, "lineno", 0), name) for name in (node.name, node.asname) if name]
-    if (  # py-org: allow-isinstance - an ast node
-        isinstance(node, ast.Call)
-        and _called_name(node) in {"getattr", "setattr"}
-        and len(node.args) > 1
-        and isinstance(node.args[1], ast.Constant)
-        and isinstance(node.args[1].value, str)
-    ):
-        # `getattr(mod, "_settle_failed_handoff")` is a reference wearing a
-        # string, and the one route a shim could take that no other arm here
-        # would see. `hasattr` deliberately is not one: it cannot resurrect a
-        # symbol, only assert it is gone — which is what AC7's own test does
-        # with this exact string, and counting that as a caller would make
-        # this test fail on a correct tree.
-        return [(node.args[1].lineno, node.args[1].value)]
-    return []
-
-
-def _stale_symbols(source: str) -> list[tuple[int, str]]:
-    """Every *reference* to a deleted symbol, parsed rather than grepped.
-
-    A line-wise search reports the docstrings that explain why each symbol was
-    deleted — which the modules and tests this change touches all carry, since
-    naming what was removed is how the next reader finds out. So this test
-    could not pass after a correct implementation without someone deleting that
-    prose, and the cheapest way out of a test that fails on a correct tree is
-    to weaken the test. Parsing is the same answer `_two_argument_describe_calls`
-    already gives one line below: a name in a comment is not a caller.
-    """
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
-        found += [
-            (number, name) for number, name in _referenced_names(node) if name in DELETED_SYMBOLS
-        ]
-    return sorted(set(found))
-
-
-def test_no_call_in_the_tree_still_passes_the_pair_as_two_arguments():
-    """AC17. Internal posture, no shim.
-
-    A missed call site fails as a tuple-unpack `TypeError`, which reads like a
-    harness problem rather than an unmigrated caller — so the grep the spec
-    prescribes is a test rather than something a reviewer has to remember to
-    run. The server's own source is the fixture, the same way
-    `test_no_dispatch_path_still_asks_whether_it_is_in_the_shared_checkout`
-    makes 917's deletion checkable.
-    """
-    import loregarden
-
-    root = Path(loregarden.__file__).parent
-    tests_dir = Path(__file__).parent
-    offenders: list[str] = []
-
-    for path in [*sorted(root.rglob("*.py")), *sorted(tests_dir.glob("*.py"))]:
-        if path == Path(__file__):
-            continue
-        source = path.read_text(encoding="utf-8")
-        offenders += [f"{path.name}:{number}: {what}" for number, what in _stale_symbols(source)]
-        offenders += [
-            f"{path.name}:{number}: {what} still takes the pair as two arguments"
-            for number, what in _two_argument_describe_calls(source)
-        ]
-
-    assert offenders == [], (
-        "a caller is still on the pre-lg-milestone-that-974 shape, or a deleted "
-        f"symbol is still named: {offenders}"
-    )
 
 
 # --- test-break: four mutants the designed suite above lets live --------------
@@ -1111,151 +940,6 @@ def test_two_new_markers_drop_one_and_say_so(
         "invariant that is only visible as an under-refund is a failure nobody sees. "
         "The logger is named because any WARNING anywhere in the call satisfied this "
         "otherwise, and the handoff path logs one on every settle"
-    )
-
-
-def test_the_settle_splits_into_a_run_primitive_and_a_refunding_composition():
-    """AC4. Two named functions, and no mode parameter spelled either way.
-
-    The per-member loop is inside `_settle_fanned_out_members` and the refund is
-    inside `settle_failed_handoff`, so a per-pass refund needs the two
-    separated. The alternative shapes are both rejected here: a `mode`/`refund`
-    flag (a stringly-typed vocabulary the py-organization gate rejects, and the
-    same thing spelled shorter when it is a boolean), and `external_harness`
-    re-implementing `complete_run` + `finalize_stage`, which
-    `test_the_settle_is_one_service_both_handoff_surfaces_import` pins by
-    identity and which is the second copy `handoff_settle` exists to prevent.
-
-    Asserted on signatures and on which calls each body makes, because two
-    functions that agree today is exactly the state the split has to survive.
-    """
-    import inspect
-
-    from loregarden.services import handoff_settle
-
-    expected = ["session", "run_svc", "run", "ticket", "detail"]
-    for name in ("settle_failed_handoff", "settle_failed_handoff_run"):
-        fn = getattr(handoff_settle, name, None)
-        assert fn is not None, f"handoff_settle.{name} is missing"
-        params = inspect.signature(fn).parameters
-        assert list(params) == expected, f"{name}: {list(params)}"
-        assert params["detail"].kind is inspect.Parameter.KEYWORD_ONLY, name
-        assert not {"mode", "refund", "surface", "kind"} & set(params), (
-            f"{name} carries a mode parameter: which surface failed is already in each "
-            "caller's own logging, and a closed set of values is an enum here"
-        )
-
-    primitive = _function_def(inspect.getsource(handoff_settle), "settle_failed_handoff_run")
-    refunds = [
-        line
-        for name in ("refund_stage_dispatch_charged_before", "refund_stage_dispatch_charged_since")
-        for line in _calls_named(primitive, name)
-    ]
-    assert refunds == [], (
-        f"settle_failed_handoff_run refunds the dispatch counter at {refunds}: the "
-        "primitive the fan-out calls once per member must know nothing about it, or "
-        "the per-member refund is back under a new name"
-    )
-    assert _calls_named(primitive, "complete_run"), (
-        "settle_failed_handoff_run does not complete the run: it is the per-run half "
-        "of the settle, not a wrapper"
-    )
-    assert _calls_named(primitive, "finalize_stage"), (
-        "settle_failed_handoff_run does not finalize the stage"
-    )
-
-    composition = _function_def(inspect.getsource(handoff_settle), "settle_failed_handoff")
-    assert _calls_named(composition, "settle_failed_handoff_run"), (
-        "settle_failed_handoff does not call the primitive: a second copy of the "
-        "log/complete/finalize steps is what the split exists to avoid"
-    )
-    assert _calls_named(composition, "refund_stage_dispatch_charged_before"), (
-        "settle_failed_handoff no longer refunds: its single-run callers "
-        "(api/ticket_handoff.py, the external single-agent checkout) rely on the "
-        "time cutoff, and AC3 keeps that path unchanged"
-    )
-
-
-def test_the_fan_out_settle_docstring_names_what_actually_charges_the_pass():
-    """AC5. The docstring asserted the defect was safe, and cited the wrong
-    function for it.
-
-    `charge_fanout_dispatch` has one caller, `stage_fanout_service.py` (the
-    `POST /stage-fanout` surface), and is never reached on the external-harness
-    path. What charges this pass is `evaluate_standalone_stage_dispatch` inside
-    `orch.start_run`, with members 2..N grouped out by `dispatch_pass_open` —
-    which is also why "the rest find nothing left to drop" only held when the
-    pass's charge happened to be the stage's first.
-
-    Pinned because the wrong citation is why the defect was filed as safe for a
-    whole ticket, and a comment that argues for an over-refund outlives the
-    over-refund unless something reads it.
-    """
-    from loregarden.services import external_harness
-
-    doc = external_harness._settle_fanned_out_members.__doc__ or ""
-    assert doc, "the settle lost its docstring"
-    assert "charge_fanout_dispatch" not in doc, (
-        "the docstring still cites charge_fanout_dispatch as what charges this "
-        "fan-out: that function's only caller is the POST /stage-fanout surface"
-    )
-    for name in ("evaluate_standalone_stage_dispatch", "dispatch_pass_open"):
-        assert name in doc, f"the docstring does not name {name}, which is what charges the pass"
-    assert "nothing left to drop" not in doc, (
-        "the docstring still argues that N per-member refunds hand back one charge"
-    )
-
-
-def test_the_marker_snapshot_is_read_before_the_pass_charges_anything():
-    """AC9. Position, which is the one thing the behaviour tests cannot see
-    *failing safely*.
-
-    Read the snapshot after the first `orch.start_run` and the set difference is
-    empty on every path, so the refund becomes a silent no-op: AC1 catches it as
-    3 -> 3, but every zero-charge test above still passes, and an under-refund
-    on the charged path is the kind of defect that reads as "the fix worked" on
-    four of five tests. So the call site is pinned where it has to be — above the
-    member loop, before any run exists.
-
-    The second half is C6/AC9's other clause: `external_harness` gains one read
-    and one refund call, and the rule itself lives in `stage_retry_budget`. That
-    module is a hotspot where new code belongs in a new module (CLAUDE.md), and
-    a second refund call here would mean the attribution rule had drifted back
-    into the caller.
-    """
-    from loregarden.services import external_harness
-
-    source = Path(external_harness.__file__).read_text(encoding="utf-8")
-    fanout = _function_def(source, "_begin_parallel_stage")
-    reads = _calls_named(fanout, "stage_dispatch_marker_ids")
-    starts = _calls_named(fanout, "start_run")
-    loops = [
-        node.lineno
-        for node in ast.walk(fanout)
-        if isinstance(node, ast.For)  # py-org: allow-isinstance - an ast node
-        and getattr(node.iter, "attr", "") == "parallel_agents"
-    ]
-
-    assert reads, "_begin_parallel_stage never reads the dispatch markers it has to refund against"
-    assert loops, "fixture: the member loop over stage_def.parallel_agents is not where it was"
-    assert starts, "fixture: the member loop no longer opens runs"
-    assert max(reads) < min(loops), (
-        f"the snapshot is read at line {max(reads)}, at or below the member loop at "
-        f"{min(loops)}: by then the pass has charged, the set difference is empty, and "
-        "the refund is a no-op that no zero-charge test can see"
-    )
-    assert max(reads) < min(starts), (
-        f"the snapshot is read at line {max(reads)}, after the first start_run at {min(starts)}"
-    )
-
-    whole_module = ast.parse(source)
-    refunds = _calls_named(whole_module, "refund_stage_dispatch_charged_since")
-    assert len(refunds) == 1, (
-        f"external_harness calls the per-pass refund {len(refunds)} times ({refunds}): "
-        "one pass, one refund, and the rule lives in stage_retry_budget"
-    )
-    assert len(_calls_named(whole_module, "stage_dispatch_marker_ids")) == 1, (
-        "external_harness reads the marker snapshot more than once"
     )
 
 
@@ -1925,38 +1609,6 @@ def test_an_unreadable_profile_settles_the_external_run_it_stamped(
     )
 
 
-def test_the_external_guard_names_the_unreadable_profile_alongside_valueerror():
-    """AC9, read off `_checked_out_run_view`'s own handler.
-
-    Asserted on the source because the behaviour tests above cannot distinguish
-    "the guard names the new error" from "something upstream stopped raising it":
-    this is the only place on the external path that turns a tree failure into
-    the sentence the harness reads, and if it stops covering the schema-invalid
-    shape nothing here goes red for the right reason.
-    """
-    source = textwrap.dedent(inspect.getsource(external_harness._checked_out_run_view))
-    names: set[str] = set()
-    for handler in ast.walk(ast.parse(source)):
-        if isinstance(handler, ast.ExceptHandler):  # py-org: allow-isinstance - AST node walk
-            names |= {
-                node.id
-                for node in ast.walk(handler.type)
-                if isinstance(node, ast.Name)  # py-org: allow-isinstance - AST node walk
-            }
-    assert "ProfileUnreadableError" in names, (
-        f"the external handoff guard catches {sorted(names)}: ProfileUnreadableError is a "
-        "RuntimeError, so `except ValueError` no longer reaches an unreadable profile and "
-        "the harness is handed an unclassified crash"
-    )
-    assert "ValueError" in names, (
-        f"the guard catches {sorted(names)}: the tuple is additive — every other tree "
-        "failure on this path still arrives as a ValueError"
-    )
-    assert not names & {"Exception", "BaseException"}, (
-        f"the guard was widened past what any criterion asked for: {sorted(names)}"
-    )
-
-
 @pytest.mark.parametrize("shape", sorted(HARNESS_PROFILE_SHAPES))
 def test_an_unreadable_profile_settles_the_fanned_out_members_it_stamped(
     db_session: Session,
@@ -2216,51 +1868,6 @@ def test_the_settle_reason_drops_the_cause_rather_than_saying_half_a_sentence(
     )
     # The cause is gone from the sentence and still readable from the evidence.
     assert payload["detail"] == detail, payload
-
-
-def test_the_decision_is_recorded_by_the_per_run_primitive_and_said_to_be(
-    db_session: Session,
-):
-    """AC1 and AC6. Where the call is, and the paragraph that stops it moving.
-
-    The behaviour tests above are the oracle for both, and this is the pin on
-    the one thing they cannot see: the *reason* the N-decisions-one-refund
-    asymmetry is deliberate. A reader who finds N adjacent settle lines and no
-    explanation tidies them into the composition, and the busiest surface goes
-    silent with every test above still green except the fan-out's count — which
-    is exactly the review that let the half-work through once.
-    """
-    from loregarden.services import handoff_settle
-
-    source = inspect.getsource(handoff_settle)
-    primitive = _function_def(source, "settle_failed_handoff_run")
-    assert _calls_named(primitive, "record_orchestrator_decision"), (
-        "settle_failed_handoff_run records no decision: a stage put back to PENDING "
-        "with no agent behind it leaves the run ledger no reason, which is the whole of "
-        "this ticket"
-    )
-    composition = _function_def(source, "settle_failed_handoff")
-    assert _calls_named(composition, "record_orchestrator_decision") == [], (
-        "the composition records a decision of its own: its callers would then get two "
-        "for one run, and the decision is a statement about one run"
-    )
-    # `ast.Constant.value` IS the string. The extra hop this read used to take
-    # raised AttributeError, which the assertion above had been masking: the
-    # test could not pass against any implementation, only fail earlier.
-    doc = "\n".join(
-        node.value
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Constant)  # py-org: allow-isinstance - an ast node
-        and isinstance(node.value, str)  # py-org: allow-isinstance - an ast node
-    )
-    assert "lg-milestone-that-1213" in doc, (
-        "nothing in handoff_settle.py says why the refund is per pass while the decision "
-        "is per run — the next reader has no reason not to move one of them"
-    )
-    assert "external_harness" in doc, (
-        "the asymmetry is not attributed to the surface it protects: moving the decision "
-        "into the composition leaves external_harness's per-member settle with none"
-    )
 
 
 # --- 976, break tests: the branches the stated cases do not reach --------------

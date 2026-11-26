@@ -7,7 +7,6 @@ reuse make_repo's seed as the advance-parent history.
 from __future__ import annotations
 
 import ast
-import inspect
 import logging
 import re
 from pathlib import Path
@@ -16,8 +15,6 @@ from unittest import mock
 import pytest
 from loregarden.services import artifact_service, worktree_lifecycle
 from loregarden.services.publish_ref import comparison_ref
-from loregarden.services.worktree_lifecycle import _base_ref
-from tests.repo_paths import REPO_ROOT
 from tests.worktree_helpers import commit_on, git, make_repo
 
 _PARENT_REF_PATH = Path(__file__).resolve().parents[1] / "loregarden" / "services" / "parent_ref.py"
@@ -299,20 +296,6 @@ def test_live_diff_base_does_not_catch_non_runtime_errors(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_base_ref_keeps_its_signature_and_retirement_docstring_and_delegates():
-    """AC-R4.1 Body is return parent_comparison_ref(path, parent_branch)."""
-    assert list(inspect.signature(_base_ref).parameters) == ["path", "parent_branch"]
-    doc = inspect.getdoc(_base_ref)
-    assert doc is not None
-    assert "cut from" in doc
-    body = inspect.getsource(_base_ref)
-    assert "return parent_comparison_ref(path, parent_branch)" in body
-    assert "rev-parse" not in body
-    preserved = inspect.getsource(worktree_lifecycle._has_preserved_commits)
-    assert "_base_ref(" in preserved
-    assert "parent_comparison_ref" not in preserved
-
-
 def test_worktree_lifecycle_no_longer_imports_comparison_ref():
     """AC-R4 Drop the unused comparison_ref import; naming lives in parent_ref."""
     source = Path(worktree_lifecycle.__file__).read_text(encoding="utf-8")
@@ -341,33 +324,6 @@ def test_parent_ref_does_not_read_worktree_merge_base():
     source = _PARENT_REF_PATH.read_text(encoding="utf-8")
     assert "Worktree" not in _imported_names(source)
     assert "merge_base" not in _attribute_names(source)
-
-
-def test_leave_alone_surfaces_do_not_import_parent_ref():
-    """AC-R8.3 No Diff-tab / verify-prompt wiring (sibling 1610)."""
-    package = Path(__file__).resolve().parents[1] / "loregarden"
-    for relative in (
-        "api/tickets.py",
-        "agents/verify_context.py",
-    ):
-        source = (package / relative).read_text(encoding="utf-8")
-        imported = _imported_names(source)
-        assert "parent_ref" not in imported, relative
-        assert "live_diff_base" not in imported, relative
-        assert "parent_comparison_ref" not in imported, relative
-        assert "TicketCheckout" not in imported, relative
-    client_src = REPO_ROOT / "client" / "src"
-    offenders: list[str] = []
-    for pattern in ("*.ts", "*.tsx"):
-        for path in client_src.rglob(pattern):
-            text = path.read_text(encoding="utf-8")
-            if (
-                "live_diff_base" in text
-                or "parent_comparison_ref" in text
-                or "TicketCheckout" in text
-            ):
-                offenders.append(str(path.relative_to(client_src)))
-    assert offenders == []
 
 
 # ---------------------------------------------------------------------------

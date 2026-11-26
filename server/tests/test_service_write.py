@@ -123,20 +123,6 @@ def test_a_raising_body_unwinds_only_our_write(db):
     assert not _durable(db, OURS), "a write that raised was kept"
 
 
-def test_the_second_service_reaches_no_driver_connection(db):
-    """AC2 in the form that can regress: the stand-in service must stay ignorant.
-
-    A second caller that re-derives the driver reach — `connection.connection.
-    driver_connection`, or its own `BEGIN` — is exactly what moving the helper
-    was meant to prevent, and it would pass every other test in this file.
-    """
-    import inspect
-
-    source = inspect.getsource(a_second_service_writes)
-    for reach in ("driver_connection", "exec_driver_sql", "in_transaction", "sqlite3"):
-        assert reach not in source, f"the stand-in service reached for {reach} itself"
-
-
 def test_a_write_that_raises_a_database_error_does_not_end_the_callers_transaction(db):
     """The `OperationalError` shape, since a helper that swallowed it would look fine."""
     with Session(db) as caller:

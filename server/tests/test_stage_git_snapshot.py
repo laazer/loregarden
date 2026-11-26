@@ -48,7 +48,7 @@ from loregarden.services.doctor import preflight_run
 from loregarden.services.gate_producer import snapshot_worktree
 from loregarden.services.git_commit_push_service import commit_paths
 from loregarden.services.preflight_ledger import PreflightLedger
-from loregarden.services.ticket_worktree import resolve_ticket_root
+from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
 from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
 from tests.worktree_helpers import git, make_repo
@@ -391,3 +391,28 @@ def test_a_tree_changed_after_the_snapshot_is_recorded_as_changed(
     assert commit_paths(db_session, ticket, "freshness", ["README.md"])
     assert git(root, "show", "HEAD:README.md").stdout == _LATER_TEXT
     assert git(root, "status", "--porcelain").stdout == ""
+
+
+@pytest.mark.parametrize("killed", [False, True], ids=["finished", "timed out"])
+def test_a_path_dirty_before_the_run_is_not_attributed_to_it(
+    db_session: Session, implement_run: tuple[Ticket, AgentRun], killed: bool
+):
+    """The run's commit is scoped by these paths, so a path it inherited would
+    be swept into its ticket's commit."""
+    ticket, run = implement_run
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    root = resolve_execution_root(db_session, run, ticket, workspace)
+    (root / "inherited.txt").write_text("dirty before the run\n")
+
+    def agent(*, repo_root: Path, **_kwargs):
+        (repo_root / "agent.txt").write_text(_AGENT_TEXT)
+        if killed:
+            raise subprocess.TimeoutExpired(cmd="agent", timeout=60)
+        return "", "", RunStatus.SUCCEEDED
+
+    with mock.patch.object(stage_turn, "run_print_mode", side_effect=agent):
+        CliAgentExecutor(db_session).execute(run, ticket)
+
+    db_session.refresh(run)
+    assert run.status is (RunStatus.FAILED if killed else RunStatus.SUCCEEDED)
+    assert json.loads(run.changed_paths_json) == ["agent.txt"]

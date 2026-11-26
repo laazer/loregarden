@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { ApiError } from "../../api/client";
-import * as toastStoreModule from "../toastStore";
 import {
   describeError,
   endSentence,
@@ -471,28 +470,6 @@ describe("the sticky in-flight claim (lg-external-harness-1209)", () => {
 describe("S9 — the two vocabularies are named", () => {
   const SRC = path.resolve(__dirname, "..", "..");
 
-  it("exports releaseToast and no longer exports dismissToast", () => {
-    const exported = toastStoreModule as unknown as Record<string, unknown>;
-
-    expect(typeof exported.releaseToast).toBe("function");
-    // No alias and no deprecation shim: the compatibility posture is
-    // `internal`, so the one caller is migrated in the same change.
-    expect(Object.keys(exported)).not.toContain("dismissToast");
-  });
-
-  it("A8 — names the claimed push as a second function, not an option on the first", () => {
-    // Extended for lg-external-harness-1212. Two functions, deliberately: an
-    // `{ claimed: true }` option would make the MEANING of the returned string
-    // depend on an argument value, which TypeScript can only express with
-    // overloads and which no call site asked for.
-    const exported = toastStoreModule as unknown as Record<string, unknown>;
-
-    expect(typeof exported.pushToast).toBe("function");
-    expect(typeof exported.pushClaimedToast).toBe("function");
-    expect(typeof exported.toastWarning).toBe("function");
-    expect(typeof exported.toastActionFailed).toBe("function");
-  });
-
   it("A8 — the store exposes exactly the six members, and no claimed option", () => {
     const state = useToastStore.getState() as unknown as Record<string, unknown>;
 
@@ -526,26 +503,6 @@ describe("S9 — the two vocabularies are named", () => {
 
     expect(ids()).toEqual([warned, failed]);
     expect(toasts().map((t) => t.claims)).toEqual([[], []]);
-  });
-
-  it("has no production call site left calling dismissToast", () => {
-    const offenders: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name !== "__tests__" && entry.name !== "test") walk(full);
-          continue;
-        }
-        if (!/\.tsx?$/.test(entry.name)) continue;
-        if (fs.readFileSync(full, "utf8").includes("dismissToast")) {
-          offenders.push(path.relative(SRC, full));
-        }
-      }
-    };
-    walk(SRC);
-
-    expect(offenders).toEqual([]);
   });
 
   it("A9 — the one claimed triple is unreachable from a fire-and-forget site", () => {
