@@ -24,6 +24,7 @@ from unittest import mock
 from uuid import uuid4
 
 import pytest
+from loregarden.agents.executors.cli import CliAgentExecutor
 from loregarden.api import ticket_handoff as ticket_handoff_module
 from loregarden.models.domain import (
     AgentRun,
@@ -34,7 +35,8 @@ from loregarden.models.domain import (
 )
 from loregarden.services import orchestration_profile as orchestration_profile_module
 from loregarden.services.orchestration_profile import GitAutomationConfig
-from loregarden.services.stage_retry_budget import count_stage_dispatches
+from loregarden.services.run_service import RunService
+from loregarden.services.stage_retry_budget import StageRetryBudgetExceeded, count_stage_dispatches
 from loregarden.services.target_branch import resolve_target_branch
 from sqlmodel import Session, select
 from tests.handoff_lead_helpers import (
@@ -116,6 +118,34 @@ def _runs(db_session: Session, ticket: Ticket) -> list[AgentRun]:
 def _first_sentence(detail: str) -> str:
     head, _, _ = detail.partition(". ")
     return head if head == detail else f"{head}."
+
+
+# --- refused before a run starts ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raised", "status", "detail"),
+    [
+        (StageRetryBudgetExceeded("stage 'work' is at its retry budget"), 409, "retry budget"),
+        (ValueError("stage 'work' is not on this ticket"), 400, "not on this ticket"),
+        (None, 400, "This stage does not run a CLI agent"),
+    ],
+)
+def test_a_stage_that_cannot_start_is_refused_with_its_reason(
+    client, db_session, ticket, raised, status, detail
+):
+    start = mock.patch.object(
+        RunService,
+        "start_stage_execution",
+        side_effect=raised,
+        return_value=None,
+    )
+    prepare = mock.patch.object(CliAgentExecutor, "prepare_terminal_handoff")
+    with start, prepare as prepared:
+        res = _handoff(client, ticket)
+
+    assert (res.status_code, detail in res.json()["detail"]) == (status, True)
+    prepared.assert_not_called()
 
 
 # --- success ------------------------------------------------------------------

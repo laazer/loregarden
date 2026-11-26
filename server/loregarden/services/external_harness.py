@@ -51,6 +51,7 @@ from loregarden.services.criterion_gate import before_next_stage
 from loregarden.services.criterion_settle_check import refuse_pass_with_unsettled
 from loregarden.services.dependency_hold import DependencyHold, refuse_held_dispatch
 from loregarden.services.discovered_work import owned_children
+from loregarden.services.git_boundary import read_boundary, stamp_run_boundary
 from loregarden.services.handoff_settle import (
     settle_failed_handoff,
     settle_failed_handoff_run,
@@ -198,7 +199,12 @@ def _stage_name(session: Session, ticket: Ticket, stage_key: str) -> str:
 
 
 def _checked_out_run_view(
-    session: Session, orch_run: OrchestrationRun, run: AgentRun, ticket: Ticket
+    session: Session,
+    orch_run: OrchestrationRun,
+    run: AgentRun,
+    ticket: Ticket,
+    *,
+    opened_now: bool,
 ) -> ExternalStageRunView:
     """Stamp a started run as this harness's, and render its prompt.
 
@@ -245,6 +251,12 @@ def _checked_out_run_view(
     # boundary used to resolve the target a second time, one line below the
     # handler above and catching nothing, so a conflict there escaped as a bare
     # `RuntimeError` with none of this sentence (lg-milestone-that-974).
+    # The tree a run starts on is what its changes, a carried-forward pass and a
+    # recheck's "diff since your last run" are measured from; the terminal
+    # handoff stamps it too. Only for a run this checkout opened: a re-served run
+    # keeps the boundary it started on.
+    if opened_now:
+        stamp_run_boundary(session, run, read_boundary(tree.repo_root))
     status = describe_handoff_tree(tree, ticket_external_id=ticket.external_id)
     if status.warning:
         logger.warning("External handoff for %s: %s", ticket.external_id, status.warning)
@@ -429,7 +441,11 @@ def _begin_parallel_stage(
         )
 
     try:
-        views = [_checked_out_run_view(session, orch_run, run, ticket) for run in runs]
+        opened = {run.id for run in stamped}
+        views = [
+            _checked_out_run_view(session, orch_run, run, ticket, opened_now=run.id in opened)
+            for run in runs
+        ]
     except ValueError as exc:
         # The fan-out stamps one run per member, each committed as it goes, so a
         # failure on member k leaves 1..k-1 RUNNING with nothing behind them and
@@ -638,7 +654,7 @@ def _begin_external_stage(
         return ExternalStageView(
             stage_key=target_key,
             stage_name=_stage_name(session, ticket, target_key),
-            runs=[_checked_out_run_view(session, orch_run, resumed, ticket)],
+            runs=[_checked_out_run_view(session, orch_run, resumed, ticket, opened_now=False)],
         )
 
     # Nothing to re-serve, so this is a fresh attempt and it supersedes whoever
@@ -671,7 +687,7 @@ def _begin_external_stage(
     session.add(orch_run)
     session.commit()
     try:
-        view = _checked_out_run_view(session, orch_run, run, ticket)
+        view = _checked_out_run_view(session, orch_run, run, ticket, opened_now=True)
     except ValueError as exc:
         # This handoff stamped the run RUNNING and committed it one call ago,
         # and `start_stage_execution` charged the stage's dispatch budget one

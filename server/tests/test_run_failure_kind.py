@@ -11,7 +11,6 @@ around it.
 from __future__ import annotations
 
 import ast
-import functools
 import pathlib
 
 import pytest
@@ -114,18 +113,24 @@ def failed_status_writes(tree: ast.Module) -> list[str]:
     return found
 
 
-@functools.cache
-def _trees() -> dict[str, ast.Module]:
+def _parse(relative: str) -> ast.Module:
+    path = _SOURCE_ROOT / relative
+    return ast.parse(path.read_text(), filename=str(path))
+
+
+@pytest.fixture(name="trees", scope="module")
+def trees_fixture() -> dict[str, ast.Module]:
+    """Every server module, parsed once: the parse is most of this file's time."""
     return {
-        path.relative_to(_SOURCE_ROOT).as_posix(): ast.parse(path.read_text(), filename=str(path))
+        path.relative_to(_SOURCE_ROOT).as_posix(): _parse(path.relative_to(_SOURCE_ROOT).as_posix())
         for path in sorted(_SOURCE_ROOT.rglob("*.py"))
     }
 
 
-def test_no_writer_sets_a_failed_status_around_set_run_status():
+def test_no_writer_sets_a_failed_status_around_set_run_status(trees: dict[str, ast.Module]):
     offenders = {
         relative: writes
-        for relative, tree in _trees().items()
+        for relative, tree in trees.items()
         if relative != _HELPER and (writes := failed_status_writes(tree))
     }
     assert not offenders, (
@@ -136,7 +141,7 @@ def test_no_writer_sets_a_failed_status_around_set_run_status():
 
 def test_the_scan_sees_the_helpers_own_write():
     """A scan that finds nothing anywhere proves nothing; it must see this one."""
-    writes = failed_status_writes(_trees()[_HELPER])
+    writes = failed_status_writes(_parse(_HELPER))
     assert [w.split(":")[0] for w in writes] == ["set_run_status"], writes
 
 
@@ -158,7 +163,7 @@ def test_the_scan_catches_each_shape_of_direct_write(source: str):
 
 @pytest.mark.parametrize(("relative", "function"), _KNOWN_WRITERS)
 def test_every_known_writer_goes_through_the_helper(relative: str, function: str):
-    tree = _trees()[relative]
+    tree = _parse(relative)
     fn = next(
         node
         for node in ast.walk(tree)
