@@ -49,6 +49,12 @@ from tests.slow_test_ratchet import INHERITED as INHERITED_SLOW_TESTS
 from tests.tmux_reaper import TEST_SOCKET_PREFIX, reap_orphaned_test_servers
 from tests.worktree_helpers import seed_stage_report_contract
 
+# Every git a test runs, in-process or in a subprocess, sees CI's config, not the
+# developer's: no global identity, default branch or excludes. `run_git` keeps
+# these two variables (it scrubs only repo bindings and GIT_CONFIG_KEY_/VALUE_).
+os.environ["GIT_CONFIG_GLOBAL"] = str(Path(__file__).with_name("hermetic.gitconfig"))
+os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
+
 _RECEIPTS = importlib.util.spec_from_file_location(
     "pass_receipt", REPO_ROOT / ".lefthook" / "scripts" / "pass_receipt.py"
 )

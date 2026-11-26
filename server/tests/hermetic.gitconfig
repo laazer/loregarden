@@ -1,0 +1,8 @@
+# The only git config the server suite sees (conftest sets GIT_CONFIG_GLOBAL to
+# this file and GIT_CONFIG_NOSYSTEM=1). CI runners have no global identity, no
+# init.defaultBranch and no excludes file; a developer machine has all three, so
+# a test that leaned on them passed on push and failed in CI (#989: `git commit`
+# exit 128). Repos a test builds set their own identity, as the fixtures do.
+[user]
+	# Refuse to invent an identity from the hostname, as a CI runner does.
+	useConfigOnly = true
