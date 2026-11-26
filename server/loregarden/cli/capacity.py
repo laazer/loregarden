@@ -78,7 +78,7 @@ def _run(args: argparse.Namespace) -> str:
         )
 
     cwd = _caller_cwd()
-    db_session.init_db()
+    db_session.open_db(_report)
     request = CapacityRequest(
         label=args.label,
         pool=CapacityPool(args.pool),

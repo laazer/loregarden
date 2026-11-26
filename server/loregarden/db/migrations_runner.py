@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from loregarden.db.migration_ledger import prune_renumbered
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, Engine, inspect, text
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +79,17 @@ def unknown_migration_ids(engine: Engine, known_ids: set[str]) -> list[str]:
 
 
 def pending_migration_ids(engine: Engine, registered: list[str]) -> list[str]:
-    """The registered ids this database has not applied yet, in registry order."""
+    """The registered ids this database has not applied yet, in registry order.
+
+    Reads only. It is the guard's question, asked before anything may be
+    written, so a database with no ledger yet has every id pending rather than
+    a ledger created to say so; `apply_pending` creates it when it migrates.
+    """
     if not str(engine.url).startswith("sqlite"):
         return []
     with engine.connect() as conn:
-        _ensure_migrations_table(conn)
-        conn.commit()
+        if not inspect(conn).has_table("schema_migrations"):
+            return list(registered)
         applied = _applied_ids(conn)
     return [mid for mid in registered if mid not in applied]
 

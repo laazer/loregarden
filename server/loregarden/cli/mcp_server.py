@@ -7,11 +7,13 @@ JSON-RPC at this proxy by hand.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import sys
 
 import httpx
+from loregarden.db import session as db_session
 from loregarden.mcp.caller import (
     ORCHESTRATED_ENV,
     ORCHESTRATED_HEADER,
@@ -19,6 +21,7 @@ from loregarden.mcp.caller import (
     RUN_ID_HEADER,
 )
 from loregarden.mcp.protocol import handle_message
+from sqlmodel import Session
 
 API_BASE = os.environ.get("LOREGARDEN_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 USE_INPROCESS = os.environ.get("LOREGARDEN_MCP_INPROCESS", "").lower() in ("1", "true", "yes")
@@ -38,14 +41,22 @@ def _post_http(body: dict | list) -> dict | list:
         return res.json()
 
 
+def _report(line: str) -> None:
+    # stdout carries the protocol; anything for a person goes to stderr.
+    print(line, file=sys.stderr, flush=True)
+
+
+@functools.cache
+def _open_db_once() -> None:
+    """Open the database for this process: once, not on every message as it was."""
+    db_session.open_db(_report)
+
+
 def _handle_stdio_line(line: str) -> dict | list | None:
     req = json.loads(line)
     if USE_INPROCESS:
-        from loregarden.db.session import engine, init_db
-        from sqlmodel import Session
-
-        init_db()
-        with Session(engine) as session:
+        _open_db_once()
+        with Session(db_session.engine) as session:
             return handle_message(session, req, orchestrated=ORCHESTRATED, run_id=RUN_ID)
 
     if isinstance(req, dict):
