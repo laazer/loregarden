@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
+from loregarden.config import settings
 from loregarden.mcp.tool_ids import McpTool
 from loregarden.models.domain import (
     DockerCeilingSource,
@@ -147,13 +149,16 @@ def test_a_throttled_poll_still_reports_the_real_state(client) -> None:
     """Answering "slow down" instead of "you were granted" would strand work
     that already holds capacity."""
     held_id, queued_id = _seed(client)
-    call_mcp(client, McpTool.DOCKER_CAPACITY_STATUS.value, {"lease_id": queued_id})
-
-    # Free the capacity, then poll again immediately — inside the window.
-    call_mcp(client, McpTool.RELEASE_DOCKER_CAPACITY.value, {"lease_id": held_id})
-    board = _payload(
+    # These calls run on the wall clock, and on a loaded machine they took longer
+    # than the real 5s window, so the second poll was served. An hour cannot pass.
+    with patch.object(settings, "docker_poll_min_interval_seconds", 3600.0):
         call_mcp(client, McpTool.DOCKER_CAPACITY_STATUS.value, {"lease_id": queued_id})
-    )
+
+        # Free the capacity, then poll again immediately — inside the window.
+        call_mcp(client, McpTool.RELEASE_DOCKER_CAPACITY.value, {"lease_id": held_id})
+        board = _payload(
+            call_mcp(client, McpTool.DOCKER_CAPACITY_STATUS.value, {"lease_id": queued_id})
+        )
 
     assert board["poll"]["throttled"] is True
     assert board["poll"]["retry_after_seconds"] > 0

@@ -753,13 +753,12 @@ def test_the_bound_is_the_day_after_the_writer_landed_not_the_day_of_it(session,
 # ---------------------------------------------------------------------------
 
 
-def _unarmed_workspace(session: Session, slug: str = "blobert") -> Workspace:
-    """A workspace whose profile leaves `land_verify_commands` empty.
+def _unarmed_workspace(session: Session, slug: str = "no-profile") -> Workspace:
+    """A workspace that leaves `land_verify_commands` empty.
 
-    `blobert` is the measured case: it has an orchestration profile, that profile
-    sets no `land_verify_commands`, and it had 8 done-and-landed tickets on the
-    live database the day this landed. `default.yaml` keeps the empty list too,
-    per AC7, so a workspace with no profile at all reads the same.
+    It has no profile of its own, so it reads `default.yaml`, which AC7 keeps
+    empty. Naming a real workspace here ties these tests to its profile staying
+    off: `blobert` was the measured case until it was armed.
     """
     workspace = make_workspace(session, slug=slug)
     assert not resolve_git_automation(workspace).land_verify_commands, (
@@ -839,8 +838,8 @@ def test_the_off_workspace_is_reported_once_so_disarming_cannot_silence_the_dete
 def test_an_armed_workspaces_landings_are_judged_beside_the_off_workspaces_one_finding(
     session, workspace
 ):
-    """Both at once, because the live database has both: loregarden armed, and
-    blobert, lore-eden, loremaker and real929 on the empty default."""
+    """Both at once, because the live database has both: armed workspaces
+    such as loregarden, and lore-eden and real929 on the empty default."""
     unarmed = _unarmed_workspace(session)
     for index in range(3):
         _landed(session, unarmed, f"blob-mixed-{index}")

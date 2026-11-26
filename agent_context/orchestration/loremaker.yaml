@@ -1,0 +1,35 @@
+slug: loremaker
+name: loremaker
+driver: external_mcp
+workflow_template: loregarden-tdd
+orchestrator:
+  skill: autopilot
+  pipeline: agents/common_assets/pipeline_stages_v1.md
+gates:
+  # What default.yaml runs, which is what loremaker ran before it had a profile.
+  enabled: true
+  commands:
+    - bash {loregarden_root}/.lefthook/scripts/workspace-gates.sh --repo {workspace_root} --scope worktree
+  # The tests a criterion or a reviewer's reject names, rerun by id. No shell, cwd
+  # at the checkout root. The script borrows the primary checkout's Poetry
+  # environment in a worktree, and exits 69 when there is none.
+  #
+  # client/ has no entry: Create React App's jest exits 0 on a name that matched
+  # nothing, so it needs a wrapper like client/scripts/criterion-jest.cjs first.
+  # A criterion naming a client test is reported as not run.
+  criterion_test_commands:
+    - prefix: server/
+      command: sh ci/scripts/pytest_by_id.sh {tests}
+      strip_prefix: false
+subagents:
+  spawn_via: external
+callbacks:
+  mode: mcp
+max_stages_per_run: 0
+git:
+  # The suites the landing's diff reaches, on the candidate merge, before its ref
+  # moves. A candidate cut before these scripts existed is refused, not passed:
+  # merge master into it.
+  land_verify_commands:
+    - sh ci/scripts/land_verify.sh server
+    - sh ci/scripts/land_verify.sh client
