@@ -397,6 +397,9 @@ class DoctorCheck(str, Enum):
     SERVER_FOLLOWS_MAIN = "server_follows_main"
     #: The server's Python is translated (Rosetta): twice the cpu for the same work.
     NATIVE_PYTHON = "native_python"
+    #: The git the server and hooks spawn runs translated (Rosetta), or the hooks'
+    #: bash does, so the git a hook script runs itself starts translated.
+    NATIVE_GIT = "native_git"
     #: A module kept for a ticket (`kept-for:`) whose ticket is over or unknown.
     KEPT_CODE_TICKETS = "kept_code_tickets"
 

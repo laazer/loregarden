@@ -274,6 +274,7 @@ def pushing(repo: Path) -> Path:
         "push-server-tests.sh",
         "push-base.sh",
         "hook-noninteractive.sh",
+        "native-git.sh",
         "server_python.sh",
     ):
         shutil.copy(SCRIPTS / name, scripts)

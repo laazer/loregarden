@@ -52,6 +52,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.doctor_dev_server import (
     check_dev_server_reload,
+    check_native_git,
     check_native_python,
     check_server_follows_main,
 )
@@ -736,6 +737,7 @@ CHECKS: dict[DoctorCheck, Callable[[Session, Workspace, Path], DoctorFinding]] =
     DoctorCheck.DEV_SERVER_RELOAD: check_dev_server_reload,
     DoctorCheck.SERVER_FOLLOWS_MAIN: check_server_follows_main,
     DoctorCheck.NATIVE_PYTHON: check_native_python,
+    DoctorCheck.NATIVE_GIT: check_native_git,
     DoctorCheck.CLI_CREDENTIALS: check_cli_credentials,
     DoctorCheck.GIT_PORTABILITY: check_git_portability,
     DoctorCheck.STAGE_REPORT_CONTRACT: check_stage_report_contract,
