@@ -18,15 +18,46 @@ from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
 from loregarden.testing.prod_shape_findings import INVARIANT_FINDINGS
 from loregarden.testing.prod_shape_tree import TREE_CALIBRATION
 from sqlmodel import Session, select
+from tests.prod_shape_templates import (
+    ProdShapeTemplate,
+    build_prod_shape_template,
+    restore_prod_shape,
+)
+
+
+@pytest.fixture(name="seeded_prod_shape", scope="module")
+def seeded_prod_shape_fixture(tmp_path_factory, seeded_template) -> ProdShapeTemplate:
+    """The scenario over the seeded database `client` starts from, built once per module."""
+    root = tmp_path_factory.mktemp("seeded-prod-shape")
+    return build_prod_shape_template(root, seeded_template.database)
+
+
+@pytest.fixture(name="bare_prod_shape", scope="module")
+def bare_prod_shape_fixture(tmp_path_factory, schema_template) -> ProdShapeTemplate:
+    """The scenario alone, over the bare schema, built once per module."""
+    return build_prod_shape_template(tmp_path_factory.mktemp("bare-prod-shape"), schema_template)
 
 
 @pytest.fixture(name="prod_shape")
-def prod_shape_fixture(client, isolated_db):
+def prod_shape_fixture(client, isolated_db, seeded_prod_shape):
+    """The scenario in this test's database and memory store, behind a running app.
+
+    Copied after `client` starts, as it was built after it, then the seeded
+    workspace pointed back at the repo `client` gave this test.
+    """
     with Session(isolated_db) as session:
-        summary = build_prod_shape(
-            session, graph_path=AgentMemoryService.from_settings().graph_path
-        )
-    return summary
+        repo_path = _seeded_workspace(session).repo_path
+    restore_prod_shape(seeded_prod_shape, isolated_db, graphs=True)
+    with Session(isolated_db) as session:
+        workspace = _seeded_workspace(session)
+        workspace.repo_path = repo_path
+        session.add(workspace)
+        session.commit()
+    return seeded_prod_shape.summary
+
+
+def _seeded_workspace(session: Session) -> Workspace:
+    return session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one()
 
 
 def test_counts_match_the_calibration(prod_shape):
@@ -95,14 +126,14 @@ def test_one_initiative_claims_a_cross_workspace_theme(prod_shape, client):
     assert len(client.get("/api/initiatives/attachable-milestones").json()) >= 65
 
 
-def test_activity_digest_matches_the_live_two_weeks(isolated_db):
+def test_activity_digest_matches_the_live_two_weeks(isolated_db, bare_prod_shape):
     """Live, 2026-10-17: 405 loregarden tickets had something happen in 14 days.
 
     Over the scenario alone: the `client` fixture's bootstrap seed writes
     events of its own, which are not production's shape.
     """
+    restore_prod_shape(bare_prod_shape, isolated_db, graphs=False)
     with Session(isolated_db) as session:
-        build_prod_shape(session)
         for slug, shape in ACTIVITY_CALIBRATION.items():
             workspace = session.exec(select(Workspace).where(Workspace.slug == slug)).one()
             digest = workspace_activity(session, workspace, utcnow() - ACTIVITY_WINDOW)
@@ -110,14 +141,15 @@ def test_activity_digest_matches_the_live_two_weeks(isolated_db):
             assert len(digest.tickets) + digest.more_tickets == shape.tickets
 
 
-def test_the_tree_nests_parks_and_holds_like_production(isolated_db):
+def test_the_tree_nests_parks_and_holds_like_production(isolated_db, bare_prod_shape):
     """Live, 2026-10-19: four levels below the roots, 12 stages awaiting a person,
     and blocked work waiting on people, agents and other tickets.
 
     Over the scenario alone, as the recorded tree is: the seed adds tickets of its own.
     """
+    restore_prod_shape(bare_prod_shape, isolated_db, graphs=False)
+    summary = bare_prod_shape.summary
     with Session(isolated_db) as session:
-        summary = build_prod_shape(session)
         stored = len(session.exec(select(Ticket)).all())
     # Member links are copies of a ticket listed under the initiative tracking it.
     nodes = [(n, d) for n, d in _walk(_tree(isolated_db), depth=1) if not n["member_link"]]

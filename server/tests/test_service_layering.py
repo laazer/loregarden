@@ -11,9 +11,11 @@ rather than trusted.
 """
 
 import ast
+import functools
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -82,24 +84,53 @@ def test_the_queue_and_orchestrator_do_not_import_upward():
     assert "orchestration_callbacks" not in _service_imports(SERVICES / "orchestration.py")
 
 
-@pytest.mark.parametrize(
-    "entry_point",
-    ["loregarden.main", "loregarden.cli.mcp_server", "loregarden.cli.main", "loregarden.mcp.tools"],
-)
-def test_every_entry_point_installs_the_scheduler(entry_point):
-    """An uninstalled scheduler means an approved gate never resumes.
+ENTRY_POINTS = [
+    "loregarden.main",
+    "loregarden.cli.mcp_server",
+    "loregarden.cli.main",
+    "loregarden.mcp.tools",
+]
+
+
+@dataclass(frozen=True)
+class EntryPointWiring:
+    """What importing one entry point installed, read in a fresh interpreter."""
+
+    scheduler: bool
+    splitter: bool
+    stderr: str
+
+
+@functools.cache
+def _wiring(entry_point: str) -> EntryPointWiring:
+    """Import ``entry_point`` in a fresh interpreter and read both seams back.
 
     A fresh interpreter, because importing an already-imported entry point is a
-    no-op and would assert on wiring some earlier test did.
+    no-op and would assert on wiring some earlier test did. One per entry point,
+    shared by the two checks below: the import costs several seconds, and both
+    seams are read only after it, so the second read cannot see anything the
+    first did not.
     """
     probe = (
         f"import {entry_point};"
-        "from loregarden.services import scheduling;"
-        "import sys; sys.exit(0 if scheduling._scheduler else 1)"
+        "from loregarden.services import operation_criteria, scheduling;"
+        "print(bool(scheduling._scheduler), bool(operation_criteria._splitter))"
     )
     result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    if result.returncode != 0:
+        return EntryPointWiring(scheduler=False, splitter=False, stderr=result.stderr)
+    scheduler, splitter = result.stdout.split()[-2:]
+    return EntryPointWiring(
+        scheduler=scheduler == "True", splitter=splitter == "True", stderr=result.stderr
+    )
 
-    assert result.returncode == 0, f"{entry_point} installs no scheduler\n{result.stderr}"
+
+@pytest.mark.parametrize("entry_point", ENTRY_POINTS)
+def test_every_entry_point_installs_the_scheduler(entry_point):
+    """An uninstalled scheduler means an approved gate never resumes."""
+    wiring = _wiring(entry_point)
+
+    assert wiring.scheduler, f"{entry_point} installs no scheduler\n{wiring.stderr}"
 
 
 def test_an_uninstalled_scheduler_raises_rather_than_dropping_the_work():
@@ -124,18 +155,10 @@ def test_no_function_local_service_imports_in_the_queue_modules():
     assert offenders == []
 
 
-@pytest.mark.parametrize(
-    "entry_point",
-    ["loregarden.main", "loregarden.cli.mcp_server", "loregarden.cli.main", "loregarden.mcp.tools"],
-)
+@pytest.mark.parametrize("entry_point", ENTRY_POINTS)
 def test_every_entry_point_installs_the_operation_splitter(entry_point):
     """Uninstalled, a person's "split them out" answer to a spec raises instead
     of splitting. Same shape and reason as the scheduler check above."""
-    probe = (
-        f"import {entry_point};"
-        "from loregarden.services import operation_criteria;"
-        "import sys; sys.exit(0 if operation_criteria._splitter else 1)"
-    )
-    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    wiring = _wiring(entry_point)
 
-    assert result.returncode == 0, f"{entry_point} installs no splitter\n{result.stderr}"
+    assert wiring.splitter, f"{entry_point} installs no splitter\n{wiring.stderr}"

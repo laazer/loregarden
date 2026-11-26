@@ -51,6 +51,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 from unittest import mock
 
@@ -957,11 +958,19 @@ LANDED_SHA_WRITERS = frozenset(
 
 
 def _landed_sha_writers() -> set[tuple[str, str]]:
-    """Every `<expr>.landed_sha = …` under `loregarden/`, by file and function."""
+    """Every `<expr>.landed_sha = …` under `loregarden/`, by file and function.
+
+    Only files that spell the attribute are parsed: an assignment target names
+    it verbatim (after NFKC, as Python normalizes identifiers), and parsing the
+    whole package is most of this test's cost.
+    """
     package = REPO_ROOT / "server" / "loregarden"
     found: set[tuple[str, str]] = set()
     for source in sorted(package.rglob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
+        text = source.read_text(encoding="utf-8")
+        if "landed_sha" not in unicodedata.normalize("NFKC", text):
+            continue
+        tree = ast.parse(text)
         for node in ast.walk(tree):
             if not isinstance(
                 node, ast.FunctionDef | ast.AsyncFunctionDef
