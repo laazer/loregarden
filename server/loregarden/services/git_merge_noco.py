@@ -14,8 +14,11 @@ integration branch up to the base branch before a ticket is cut from it
 from __future__ import annotations
 
 import logging
+import re
+import subprocess
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
@@ -148,10 +151,53 @@ def rev(repo_root: Path, ref: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+#: A full object id (SHA-1 or SHA-256), as opposed to a ref name or an abbreviation.
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+
+#: How many commit pairs each memo below keeps per process.
+_COMMIT_PAIR_MEMO = 8192
+
+
+def _both_commits(one: str, other: str) -> bool:
+    """Whether both names are full object ids, so git's answer about them is fixed.
+
+    A commit's id covers its whole ancestry, so whether one commit is an
+    ancestor of another, and their merge base, never change; a ref name can
+    move between two asks, so its answers are never remembered. Only a
+    definitive answer is kept: git failing (a commit this repository does not
+    have yet) raises out of the memo, and `lru_cache` keeps no raise, so a
+    later fetch is seen. The same reasoning `work_landed.landing_commit` uses.
+    """
+    return bool(_OBJECT_ID.fullmatch(one) and _OBJECT_ID.fullmatch(other))
+
+
+class _AncestryUndecided(Exception):
+    """`merge-base --is-ancestor` exited with neither yes (0) nor no (1)."""
+
+
 def is_ancestor(repo_root: Path, ancestor: str, descendant: str) -> bool:
+    """Whether ``ancestor`` is ``descendant`` or in its history.
+
+    False when git cannot answer as well as when the answer is no, as it has
+    always been; a caller that must tell the two apart proves a False with a
+    call that raises (`work_landed.landing_commit`).
+    """
     if not ancestor or not descendant:
         return False
+    if _both_commits(ancestor, descendant):
+        try:
+            return _commit_is_ancestor(str(repo_root), ancestor, descendant)
+        except _AncestryUndecided:  # silent-ok: the uncached path below reads the same failure as False too; it is not remembered, and callers that must tell it from "no" prove it with raising calls
+            return False
     return _git(repo_root, "merge-base", "--is-ancestor", ancestor, descendant).returncode == 0
+
+
+@lru_cache(maxsize=_COMMIT_PAIR_MEMO)
+def _commit_is_ancestor(repo: str, ancestor: str, descendant: str) -> bool:
+    code = _git(Path(repo), "merge-base", "--is-ancestor", ancestor, descendant).returncode
+    if code not in (0, 1):
+        raise _AncestryUndecided(code)
+    return code == 0
 
 
 def first_containing(repo_root: Path, commit: str, ref: str) -> str:
@@ -195,8 +241,21 @@ def first_containing(repo_root: Path, commit: str, ref: str) -> str:
 
 
 def merge_base(repo_root: Path, one: str, other: str) -> str:
-    """The best common ancestor, or "" for unrelated histories. Raises when git fails."""
-    found = _git(repo_root, "merge-base", one, other)
+    """The best common ancestor, or "" for unrelated histories. Raises when git fails.
+
+    Remembered per process for a pair of commit ids (`_both_commits`).
+    """
+    if _both_commits(one, other):
+        return _commit_merge_base(str(repo_root), one, other)
+    return _merge_base_answer(_git(repo_root, "merge-base", one, other))
+
+
+@lru_cache(maxsize=_COMMIT_PAIR_MEMO)
+def _commit_merge_base(repo: str, one: str, other: str) -> str:
+    return _merge_base_answer(_git(Path(repo), "merge-base", one, other))
+
+
+def _merge_base_answer(found: subprocess.CompletedProcess[str]) -> str:
     if found.returncode == 1:
         return ""
     if found.returncode != 0:
