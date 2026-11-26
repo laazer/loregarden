@@ -21,7 +21,7 @@ cannot leave the ledger in two different states for one decision.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.services.operations import OperationId

@@ -11,7 +11,7 @@ record goes through the survey's MCP tools.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody
 from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain.survey_enums import SurveyQueueAction

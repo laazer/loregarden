@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from loregarden.api.operation_inputs import OperationQuery
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import DiskScanRoot
@@ -47,7 +49,7 @@ from loregarden.services.disk_usage.roots import added_roots
 from loregarden.services.disk_usage.scanner import DiskNode
 from loregarden.services.disk_usage.store import ScanStatus
 from loregarden.services.operations import OperationId
-from loregarden.services.operations.disk_operations import MAX_DEPTH, MAX_LIMIT, DiskOverview
+from loregarden.services.operations.disk_operations import DiskOverview
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -91,16 +93,15 @@ def disk_scan(session: Session = Depends(get_session)) -> ScanStatus:
     return run_rest_operation(session, OperationId.DISK_SCAN, {})
 
 
+class DiskTreeQuery(OperationQuery, operation=OperationId.DISK_TREE):
+    """Which part of the disk tree to read, and how much of it."""
+
+
 @router.get("/tree")
 def disk_tree(
-    path: str = Query("", description="A node's path; empty for every root."),
-    depth: int = Query(2, ge=1, le=MAX_DEPTH),
-    limit: int = Query(80, ge=1, le=MAX_LIMIT),
-    session: Session = Depends(get_session),
+    query: Annotated[DiskTreeQuery, Query()], session: Session = Depends(get_session)
 ) -> list[DiskNode]:
-    return run_rest_operation(
-        session, OperationId.DISK_TREE, {"path": path, "depth": depth, "limit": limit}
-    )
+    return run_rest_operation(session, OperationId.DISK_TREE, query.model_dump())
 
 
 def _validated_root(raw: str) -> Path:

@@ -10,7 +10,7 @@ import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from loregarden.api.github_signature import verify_github_signature
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import (

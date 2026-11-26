@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody, OperationQuery
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.services.operations import OperationId
@@ -38,12 +40,15 @@ class CaptureBody(
     """The pages to screenshot on the running build, and the ticket to file them under."""
 
 
+class ReviewQueueQuery(OperationQuery, operation=OperationId.REVIEW_QUEUE):
+    """Whose review queue to read."""
+
+
 @router.get("/queue")
 def get_review_queue(
-    workspace_slug: str = "",
-    session: Session = Depends(get_session),
+    query: Annotated[ReviewQueueQuery, Query()], session: Session = Depends(get_session)
 ) -> ReviewQueue:
-    return run_rest_operation(session, OperationId.REVIEW_QUEUE, {"workspace_slug": workspace_slug})
+    return run_rest_operation(session, OperationId.REVIEW_QUEUE, query.model_dump())
 
 
 @router.get("/captures/{ticket_id}/{capture_id}")
@@ -92,21 +97,41 @@ def try_request(body: TryRequest, session: Session = Depends(get_session)) -> Tr
     return run_rest_operation(session, OperationId.REVIEW_TRY, body.model_dump())
 
 
+class PreviewStatusQuery(
+    OperationQuery, operation=OperationId.REVIEW_PREVIEW_STATUS, supplied={"workspace_slug"}
+):
+    """The build whose preview to read."""
+
+
+class PreviewStartQuery(
+    OperationQuery, operation=OperationId.REVIEW_PREVIEW_START, supplied={"workspace_slug"}
+):
+    """The build to preview."""
+
+
 @router.get("/preview/{workspace_slug}")
 def get_preview(
-    workspace_slug: str, ref: str, session: Session = Depends(get_session)
+    workspace_slug: str,
+    query: Annotated[PreviewStatusQuery, Query()],
+    session: Session = Depends(get_session),
 ) -> PreviewView:
     return run_rest_operation(
-        session, OperationId.REVIEW_PREVIEW_STATUS, {"workspace_slug": workspace_slug, "ref": ref}
+        session,
+        OperationId.REVIEW_PREVIEW_STATUS,
+        {**query.model_dump(), "workspace_slug": workspace_slug},
     )
 
 
 @router.post("/preview/{workspace_slug}")
 def start_preview(
-    workspace_slug: str, ref: str, session: Session = Depends(get_session)
+    workspace_slug: str,
+    query: Annotated[PreviewStartQuery, Query()],
+    session: Session = Depends(get_session),
 ) -> PreviewView:
     return run_rest_operation(
-        session, OperationId.REVIEW_PREVIEW_START, {"workspace_slug": workspace_slug, "ref": ref}
+        session,
+        OperationId.REVIEW_PREVIEW_START,
+        {**query.model_dump(), "workspace_slug": workspace_slug},
     )
 
 

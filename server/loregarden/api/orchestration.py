@@ -3,7 +3,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody
 from loregarden.api.operation_routes import run_rest_operation
 from loregarden.core.terminal_text import strip_ansi
 from loregarden.db.session import get_session

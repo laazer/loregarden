@@ -1,5 +1,7 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from loregarden.api.operation_bodies import OperationBody
+from loregarden.api.operation_inputs import OperationBody, OperationQuery
 from loregarden.api.operation_routes import refusal, run_rest_operation
 from loregarden.db.session import get_session
 from loregarden.models.domain import MemoryNodeType, MemoryRelationType
@@ -53,11 +55,15 @@ def _memory_config_response() -> dict:
     }
 
 
+class MemoryStatusQuery(OperationQuery, operation=OperationId.MEMORY_STATUS):
+    """Whose memory graph to report on."""
+
+
 @router.get("/status")
-def memory_status(workspace_slug: str = "", session: Session = Depends(get_session)) -> dict:
-    return run_rest_operation(
-        session, OperationId.MEMORY_STATUS, {"workspace_slug": workspace_slug}
-    )
+def memory_status(
+    query: Annotated[MemoryStatusQuery, Query()], session: Session = Depends(get_session)
+) -> dict:
+    return run_rest_operation(session, OperationId.MEMORY_STATUS, query.model_dump())
 
 
 @router.get("/briefings")
