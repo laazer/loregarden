@@ -179,8 +179,15 @@ class DockerLease(SQLModel, table=True):
 
     #: FIFO order among waiters. Head-of-line: a large claim at the head is not
     #: skipped, except by a small standing claim that cannot delay it
-    #: (`services/capacity_passing.py`).
+    #: (`services/capacity_passing.py`). A prioritized waiter's position sits in
+    #: a band below every normal one (`docker_ledger.priority_position`), so the
+    #: one ordering key every reader already sorts by puts it first.
     position: int = 0
+    #: Why this lease was put ahead of the line; empty when it never was.
+    #: Required to prioritize, and shown on the board, so a jump is always
+    #: attributable.
+    priority_reason: str = ""
+    prioritized_at: datetime | None = None
     ttl_seconds: int = 900
 
     requested_at: datetime = Field(default_factory=utcnow)

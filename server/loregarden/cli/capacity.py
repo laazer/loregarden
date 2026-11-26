@@ -69,6 +69,10 @@ def _run(args: argparse.Namespace) -> str:
         raise UsageError("give the command to run after `--`")
     if not args.footprint and not (args.cpus and args.memory_mb):
         raise UsageError("pass --footprint, or both --cpus and --memory-mb")
+    if args.priority is not None and not args.priority.strip():
+        raise UsageError(
+            "--priority needs a reason; it is kept on the lease and shown on the board"
+        )
 
     cwd = _caller_cwd()
     db_session.init_db()
@@ -82,6 +86,7 @@ def _run(args: argparse.Namespace) -> str:
         ttl_seconds=args.ttl,
         workspace_id=_workspace_id(args.workspace),
         parent_lease_id=args.parent_lease or None,
+        priority_reason=args.priority or "",
     )
     try:
         code = run_holding(
@@ -137,6 +142,14 @@ def register(sub: argparse._SubParsersAction) -> None:
         help=(
             "Nest under this lease: draw on its grant, never queue. Defaults to "
             f"${LEASE_ENV}, so a capacity run inside another nests automatically."
+        ),
+    )
+    run.add_argument(
+        "--priority",
+        metavar="REASON",
+        help=(
+            "Join the line ahead of every normal waiter (behind earlier priority ones), "
+            "for this reason. Never preempts a holder. The reason is shown on the board."
         ),
     )
     run.add_argument("--ttl", type=int, help="Lease TTL in seconds; renewed every third of it.")

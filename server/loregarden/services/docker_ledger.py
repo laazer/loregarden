@@ -38,6 +38,19 @@ logger = logging.getLogger(__name__)
 #: that busy, and freeing it would over-book a box that is genuinely loaded.
 OCCUPYING = (DockerLeaseStatus.HELD, DockerLeaseStatus.ORPHANED)
 
+#: How far below the normal line the priority tier sits. Normal positions are
+#: tickets from a counter starting near zero; a prioritized waiter takes a fresh
+#: ticket from the same counter and is placed this far below it. Every priority
+#: position is therefore below every normal one, and priority waiters keep the
+#: order they were prioritized in. 2**40 tickets is centuries of claims.
+PRIORITY_BAND = 1 << 40
+
+
+def priority_position(ticket: int) -> int:
+    """Where a waiter holding counter `ticket` stands once it is prioritized."""
+    return ticket - PRIORITY_BAND
+
+
 #: The pools a claim is booked against. Docker containers run on the host, so a
 #: docker claim spends both; a host claim (a test suite) spends the host alone.
 CHARGED_POOLS: dict[CapacityPool, tuple[CapacityPool, ...]] = {

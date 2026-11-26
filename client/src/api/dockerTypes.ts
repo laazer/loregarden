@@ -94,6 +94,14 @@ export interface DockerLeaseRow {
   container_names: string[];
   /** Place in line, from 1, for a waiter; null for a holder. */
   position: number | null;
+  /**
+   * Why this lease was put ahead of the line (loregarden_prioritize_capacity_lease
+   * or `capacity-run.sh --priority`); null when it never was. Kept on a holder
+   * too, so the board still says why it started before its turn.
+   */
+  priority_reason: string | null;
+  /** ISO-8601: when it was put ahead of the line; null when it never was. */
+  prioritized_at: string | null;
   expires_at: string | null;
   expires_in_seconds: number | null;
   /** Null when nothing on record can predict it — unknown, not soon. */

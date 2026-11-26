@@ -31,6 +31,9 @@ from sqlmodel import Session
 
 #: A docker lease the smoke test seeds already released.
 SETTLED_LEASE_ID = "smoke-settled-lease"
+#: A docker lease the smoke test seeds still in line, for the one tool that
+#: refuses anything else (prioritizing changes only the line).
+WAITING_LEASE_ID = "smoke-waiting-lease"
 
 MCP_DIR = Path(__file__).resolve().parents[1] / "loregarden" / "mcp"
 #: Every module that owns dispatch for some slice of the tool surface. tools.py
@@ -354,6 +357,10 @@ def _args_for(
             "lease_id": SETTLED_LEASE_ID,
             "reason": "smoke",
         },
+        "loregarden_prioritize_capacity_lease": {
+            "lease_id": WAITING_LEASE_ID,
+            "reason": "smoke",
+        },
         # hooks_status only reads: the smoke test must not rewrite a real repo's
         # lefthook.yml, and `check` would shell out to both checkers over the
         # whole workspace.
@@ -502,6 +509,12 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
                 DockerLease(
                     id=SETTLED_LEASE_ID, holder_label="smoke", status=DockerLeaseStatus.RELEASED
                 ),
+                DockerLease(
+                    id=WAITING_LEASE_ID,
+                    holder_label="smoke waiting",
+                    status=DockerLeaseStatus.WAITING,
+                    position=1,
+                ),
             ]
         )
         session.commit()
@@ -596,6 +609,7 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
         "loregarden_release_docker_capacity",
         "loregarden_docker_capacity_status",
         "loregarden_force_release_docker_lease",
+        "loregarden_prioritize_capacity_lease",
         "loregarden_list_instances",
         "loregarden_launch_instance",
         "loregarden_instance_status",

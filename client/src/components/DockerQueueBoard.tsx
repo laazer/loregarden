@@ -402,6 +402,7 @@ function HolderSlot({
           titleClass="queue-slot-title"
           detail={`${describeCost(row)}${row.compose_project ? ` · ${row.compose_project}` : ""}`}
         />
+        <PriorityNote row={row} />
         {row.last_probe_error ? (
           <div className="docker-slot-error" title={row.last_probe_error}>
             {row.last_probe_error}
@@ -482,6 +483,19 @@ function WaitingAge({ row }: { row: DockerLeaseRow }) {
         </span>
       ) : null}
     </span>
+  );
+}
+
+/**
+ * Why a lease was put ahead of the line. A jump nobody can explain reads as
+ * the ledger misbehaving, so the reason is shown wherever the lease is.
+ */
+function PriorityNote({ row }: { row: DockerLeaseRow }) {
+  if (!row.priority_reason) return null;
+  return (
+    <div className="docker-priority-note" data-testid={`docker-priority-${row.lease_id}`}>
+      Prioritized: {row.priority_reason}
+    </div>
   );
 }
 
@@ -670,8 +684,8 @@ export function DockerQueueBoard({
         {/* One line, not one per slot: capacity is a single pool, so the next
             claim starts wherever room appears. */}
         <div className="queue-section-hint">
-          One shared line, in order. An agent&apos;s small claim may go first when the head
-          would not wait for it
+          One shared line, in order. Prioritized claims go first, with their reason; an
+          agent&apos;s small claim may go first when the head would not wait for it
         </div>
       </div>
 
@@ -696,6 +710,7 @@ export function DockerQueueBoard({
                   titleClass="queue-lane-item-title"
                   detail={`${describePool(row)} · ${describeCost(row)}`}
                 />
+                <PriorityNote row={row} />
                 {index === 0 && headBlockedBy ? (
                   <div className="docker-queue-head-reason" data-testid="docker-head-reason">
                     Waiting: {headBlockedBy}

@@ -145,6 +145,7 @@ def test_the_cli_runs_the_command_in_the_callers_directory(tmp_path) -> None:
         ttl=None,
         workspace=None,
         parent_lease="",
+        priority=None,
         started_file="started",
     )
 
@@ -158,6 +159,38 @@ def test_the_cli_runs_the_command_in_the_callers_directory(tmp_path) -> None:
 
     assert held.call_args.kwargs["cwd"] == caller
     assert held.call_args.kwargs["started_file"] == caller / "started"
+
+
+def _parse_capacity_run(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    capacity_cli.register(parser.add_subparsers())
+    return parser.parse_args(["run", *argv])
+
+
+def test_the_cli_passes_a_priority_reason_to_the_request(tmp_path) -> None:
+    args = _parse_capacity_run(
+        ["--label", "fix", "--footprint", "heavy", "--priority", "unblocks the queue", "--", "true"]
+    )
+
+    with (
+        mock.patch.dict(os.environ, {capacity_cli.CALLER_CWD_ENV: str(tmp_path)}),
+        mock.patch.object(capacity_cli.db_session, "init_db"),
+        mock.patch.object(capacity_cli, "run_holding", return_value=0) as held,
+        pytest.raises(SystemExit),
+    ):
+        capacity_cli._run(args)
+
+    assert held.call_args.args[1].priority_reason == "unblocks the queue"
+
+
+def test_the_cli_refuses_a_blank_priority_reason(tmp_path) -> None:
+    args = _parse_capacity_run(
+        ["--label", "fix", "--footprint", "heavy", "--priority", "  ", "--", "true"]
+    )
+
+    with mock.patch.object(capacity_cli, "run_holding") as held, pytest.raises(UsageError):
+        capacity_cli._run(args)
+    held.assert_not_called()
 
 
 def test_the_cli_refuses_a_caller_directory_that_is_gone(tmp_path) -> None:
@@ -428,6 +461,7 @@ def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
         ttl=None,
         workspace=None,
         parent_lease="",
+        priority=None,
         started_file=None,
     )
     stalled = CapacityQueueStalled("still queued — 3 ahead")

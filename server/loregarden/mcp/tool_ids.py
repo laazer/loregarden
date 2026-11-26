@@ -81,6 +81,7 @@ class McpTool(StrEnum):
     RELEASE_DOCKER_CAPACITY = "loregarden_release_docker_capacity"
     DOCKER_CAPACITY_STATUS = "loregarden_docker_capacity_status"
     FORCE_RELEASE_DOCKER_LEASE = "loregarden_force_release_docker_lease"
+    PRIORITIZE_CAPACITY_LEASE = "loregarden_prioritize_capacity_lease"
     LIST_INSTANCES = "loregarden_list_instances"
     LIST_UI_ACTIONS = "loregarden_list_ui_actions"
     INVOKE_UI_ACTION = "loregarden_invoke_ui_action"
@@ -370,7 +371,9 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
 #:
 #: `FORCE_RELEASE_DOCKER_LEASE` is deliberately NOT in this set: it takes
 #: capacity away from something that may still be running, which is the one
-#: action here that can hurt a peer.
+#: action here that can hurt a peer. Nor is `PRIORITIZE_CAPACITY_LEASE`: it
+#: puts one claim ahead of every other waiter, so an agent asking for it goes
+#: to the approval inbox rather than jumping the line on its own say-so.
 CAPACITY_LEASE_MCP_TOOLS: frozenset[McpTool] = frozenset(
     {
         McpTool.RESERVE_DOCKER_CAPACITY,

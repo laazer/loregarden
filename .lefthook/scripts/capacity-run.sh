@@ -3,6 +3,10 @@
 #
 #   capacity-run.sh <label> [capacity flags…] -- <command…>
 #   capacity-run.sh "pre-push server-tests" --footprint heavy --workspace loregarden -- bash x.sh
+#   capacity-run.sh "fix push" --footprint heavy --priority "unblocks the queue" -- git push
+#
+# --priority "<reason>" joins ahead of every normal waiter, behind earlier
+# priority ones; it never preempts a holder, and the reason is on the board.
 #
 # Every repo loregarden tracks pushes from the same machine. Without this, three
 # pre-push suites start together, each sized to half the cores, and fail on time
@@ -66,6 +70,21 @@ if [ $# -eq 0 ]; then
   exit 2
 fi
 
+# --priority "<reason>" joins the line ahead of every normal waiter. Checked
+# here, not only by the CLI: any CLI exit before the command starts reads as
+# "the ledger is unusable" below and is retried for up to an hour.
+priority_at=""
+for ((i = 0; i < ${#cli_args[@]}; i++)); do
+  if [ "${cli_args[$i]}" = "--priority" ]; then
+    priority_at="$i"
+    reason="${cli_args[$((i + 1))]:-}"
+    if [ -z "${reason//[[:space:]]/}" ] || [ "${reason#--}" != "$reason" ]; then
+      warn "--priority needs a reason: it is kept on the lease and shown on the board"
+      exit 2
+    fi
+  fi
+done
+
 if [ "${LOREGARDEN_CAPACITY:-}" = "off" ]; then
   warn "LOREGARDEN_CAPACITY=off — running '$label' WITHOUT reserving capacity."
   exec "$@"
@@ -91,6 +110,14 @@ if [ -z "$cli" ]; then
     warn "WARNING: $primary predates queue-stall timeouts; waiting in line counts against"
     warn "its --max-wait. Update that checkout to main."
     stall_flag="--max-wait"
+  fi
+  if [ -n "$priority_at" ] && ! grep -q -- '--priority' "$primary/server/loregarden/cli/capacity.py"; then
+    # An old CLI would refuse the flag, and that refusal would be retried as a
+    # broken ledger. Queue normally instead, and say the priority was dropped.
+    warn "WARNING: $primary predates --priority; queueing '$label' in the normal line."
+    warn "Update that checkout to main, or prioritize the waiting lease with"
+    warn "loregarden_prioritize_capacity_lease once it is in line."
+    cli_args=("${cli_args[@]:0:$priority_at}" "${cli_args[@]:$((priority_at + 2))}")
   fi
 fi
 stall_flag="${stall_flag:---stall-timeout}"

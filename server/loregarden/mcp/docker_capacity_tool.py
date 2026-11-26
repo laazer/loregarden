@@ -182,12 +182,25 @@ _FORCE_RELEASE_DEFINITION: dict[str, Any] = {
     ),
 }
 
+_PRIORITIZE_DEFINITION: dict[str, Any] = {
+    "name": McpTool.PRIORITIZE_CAPACITY_LEASE,
+    "description": (
+        "Put a WAITING capacity lease ahead of every normal waiter (behind any "
+        "already prioritized), for an urgent push stuck behind routine suites. "
+        "Its waiter keeps polling and is granted earlier with no restart. Never "
+        "preempts a holder: a lease that holds capacity or has ended is refused. "
+        "Requires a reason, which is kept on the lease and shown on the board. "
+        "Find the lease_id under `waiting` in loregarden_docker_capacity_status."
+    ),
+}
+
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
     _RESERVE_DEFINITION,
     _RENEW_DEFINITION,
     _RELEASE_DEFINITION,
     _STATUS_DEFINITION,
     _FORCE_RELEASE_DEFINITION,
+    _PRIORITIZE_DEFINITION,
 ]
 
 

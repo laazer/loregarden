@@ -126,6 +126,7 @@ def _lease_payload(
     expires_at = as_utc(lease.expires_at)
     requested_at = as_utc(lease.requested_at)
     granted_at = as_utc(lease.granted_at) if lease.status is not DockerLeaseStatus.WAITING else None
+    prioritized_at = as_utc(lease.prioritized_at)
     return {
         "lease_id": lease.id,
         "status": lease.status.value,
@@ -150,6 +151,10 @@ def _lease_payload(
         # `lease.position`, which is a ticket from a counter that never resets
         # — the board once numbered a line of seven 72 to 78.
         "position": place,
+        # Set when the lease was put ahead of the line, with why. Kept on a
+        # holder too, so the board still says why it started before its turn.
+        "priority_reason": lease.priority_reason or None,
+        "prioritized_at": prioritized_at.isoformat() if prioritized_at else None,
         **(estimate or UNKNOWN_WAIT).as_dict(),
         "poll_count": lease.poll_count,
         "requested_at": requested_at.isoformat() if requested_at else None,

@@ -21,6 +21,8 @@ export function lease(overrides: Partial<DockerLeaseRow> = {}): DockerLeaseRow {
     compose_project: "",
     container_names: [],
     position: null,
+    priority_reason: null,
+    prioritized_at: null,
     expires_at: null,
     expires_in_seconds: 600,
     estimated_wait_seconds: null,

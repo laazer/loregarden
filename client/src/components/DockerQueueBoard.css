@@ -80,6 +80,13 @@
 }
 
 /* Why the head is not running — the question the line is really asking. */
+/* Why a claim was put ahead of the line: shown so a jump is never unexplained. */
+.docker-priority-note {
+  margin-top: 3px;
+  font-size: var(--fs-micro);
+  color: var(--ac);
+}
+
 .docker-queue-head-reason {
   margin-top: 3px;
   font-size: var(--fs-micro);
