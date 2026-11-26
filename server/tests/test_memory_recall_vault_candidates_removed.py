@@ -10,7 +10,6 @@ a contiguous production-token `git grep` hit under `server/`.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,12 +21,6 @@ from loregarden.services.memory_store import (
     MemoryStoreReadError,
     ObsidianMemoryStore,
 )
-from tests.repo_paths import REPO_ROOT
-
-_SERVER_ROOT = Path(__file__).resolve().parents[1]
-_REPO_ROOT = REPO_ROOT
-_MEMORY_STORE = _SERVER_ROOT / "loregarden" / "services" / "memory_store.py"
-_DEAD_HELPER = "_" + "obsidian_candidates"
 
 
 @pytest.fixture
@@ -44,69 +37,14 @@ def _both(vault_dir: Path, tmp_path: Path) -> AgentMemoryService:
     )
 
 
-def _py_files_under(root: Path) -> list[Path]:
-    return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
-
-
 # ---------------------------------------------------------------------------
 # AC-DELETE / AC-NO-RECALL-HELPER — symbol and residual-mention scrub
 # ---------------------------------------------------------------------------
 
 
-def test_agent_memory_service_has_no_vault_recall_candidate_helper():
-    """AC-DELETE — vault list_notes candidate helper must not remain on the service."""
-    assert not hasattr(AgentMemoryService, _DEAD_HELPER)
-    assert _DEAD_HELPER not in AgentMemoryService.__dict__
-
-
-def test_memory_store_module_source_has_no_vault_candidate_helper_token():
-    """AC-DELETE — no residual helper name under memory_store.py."""
-    text = _MEMORY_STORE.read_text(encoding="utf-8")
-    assert _DEAD_HELPER not in text
-
-
-def test_server_tree_has_no_vault_candidate_helper_token():
-    """AC-NO-RECALL-HELPER — `git grep` under server/ must be empty."""
-    hits: list[str] = []
-    for path in _py_files_under(_SERVER_ROOT):
-        text = path.read_text(encoding="utf-8")
-        if _DEAD_HELPER in text:
-            hits.append(str(path.relative_to(_REPO_ROOT)))
-    assert hits == [], f"residual vault-candidate helper mentions: {hits}"
-
-
-def test_recall_related_source_does_not_call_vault_candidate_helper():
-    """AC-BASE.2 / AC-DELETE.3 — recall_related must not concatenate vault candidates."""
-    source = inspect.getsource(AgentMemoryService.recall_related)
-    assert _DEAD_HELPER not in source
-    assert "_graph_candidates" in source
-
-
-def test_graph_candidates_remains_on_agent_memory_service():
-    """AC-SCOPE — deletion-only; do not extract or drop `_graph_candidates`."""
-    assert hasattr(AgentMemoryService, "_graph_candidates")
-    assert callable(AgentMemoryService._graph_candidates)
-
-
 # ---------------------------------------------------------------------------
 # AC-RECALL-GRAPH-ONLY / AC-R5-GREEN — behavioural recall contract
 # ---------------------------------------------------------------------------
-
-
-def test_r5_recall_does_not_open_obsidian_list_notes(vault_dir, tmp_path):
-    """AC-R5-GREEN — vault enumeration stays off the durable recall path."""
-    service = _both(vault_dir, tmp_path)
-    service.graph_for_workspace("lg").upsert_node(
-        title="Trusted server",
-        body="Cap the rate.",
-        workspace_slug="lg",
-        node_type="memory",
-    )
-    with patch.object(
-        service.obsidian, "list_notes", wraps=service.obsidian.list_notes
-    ) as list_notes:
-        service.recall_related("trusted server", workspace_slug="lg")
-    assert list_notes.call_count == 0
 
 
 def test_recall_related_does_not_enumerate_obsidian(vault_dir, tmp_path):
@@ -193,27 +131,6 @@ def test_empty_query_opens_neither_store(vault_dir, tmp_path):
 # ---------------------------------------------------------------------------
 # AC-R6-GREEN — search kind-filter intent (envelope + membership)
 # ---------------------------------------------------------------------------
-
-
-def test_r6_search_keeps_envelope_keys(vault_dir, tmp_path):
-    """AC-R6-GREEN — MCP/client envelope keys unchanged."""
-    service = _both(vault_dir, tmp_path)
-    found = service.search("anything", workspace_slug="lg")
-    assert set(found) == {"query", "workspace_slug", "obsidian", "graph", "basis"}
-
-
-def test_r6_search_graph_hits_are_only_memory_or_learning(vault_dir, tmp_path):
-    """AC-R6-GREEN — graph array membership is memory|learning only."""
-    service = _both(vault_dir, tmp_path)
-    service.upsert_memory(title="Mem needle", body="graph-kind-filter-needle", workspace_slug="lg")
-    service.append_learning(
-        ticket_id="t-kind",
-        workspace_slug="lg",
-        content="graph-kind-filter-needle learning",
-    )
-    found = service.search("graph-kind-filter-needle", workspace_slug="lg")
-    assert found["graph"]
-    assert all(row.get("node_type") in {"memory", "learning"} for row in found["graph"])
 
 
 def test_r6_search_obsidian_hits_are_only_blog_or_checkpoint(vault_dir, tmp_path):

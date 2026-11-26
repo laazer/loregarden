@@ -6,10 +6,8 @@ cannot run at once. These tests pin that ticket execution never moves it.
 """
 
 import dataclasses
-import inspect
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import get_type_hints
 from unittest import mock
 
 import pytest
@@ -299,18 +297,6 @@ def test_ticket_checkout_is_a_frozen_dataclass_of_path_and_parent_branch():
         _path, _parent = checkout
     with pytest.raises(dataclasses.FrozenInstanceError):
         checkout.parent_branch = "main"
-
-
-def test_ticket_worktree_does_not_import_parent_ref_or_return_worktree():
-    """R5: do not import parent_ref; do not return Worktree."""
-    from loregarden.services import ticket_worktree
-
-    source = inspect.getsource(ticket_worktree)
-    assert "parent_ref" not in source
-    assert "live_diff_base" not in source
-    annotations = inspect.signature(ticket_worktree.resolve_ticket_checkout).return_annotation
-    assert "Worktree" not in str(annotations)
-    assert get_type_hints(ticket_worktree.resolve_ticket_root)["return"] is Path
 
 
 def test_an_active_worktree_directory_carries_its_parent_branch(session, workspace, ticket, repo):

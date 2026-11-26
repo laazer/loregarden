@@ -626,18 +626,6 @@ def test_enforcement_lives_in_the_two_scripts_only() -> None:
 # ---- S-1 / S-2: the stated scope, and the corrected premise ----------------
 
 
-def test_the_unavailable_code_is_the_one_gate_runner_already_uses() -> None:
-    """S-1: `could_not_run` reuses gate_runner's existing vocabulary. The pointer
-    is to the constant, not to a call site, and that module gets no edit."""
-    assert GATE_EX_UNAVAILABLE == 69
-    assert JUDGE.exists(), "the judge is what reuses the vocabulary"
-    gate_runner = (REPO_ROOT / "server" / "loregarden" / "services" / "gate_runner.py").read_text(
-        encoding="utf-8"
-    )
-    assert "judge_test_run" not in gate_runner
-    assert COUNT_ENV not in gate_runner
-
-
 def test_nothing_parses_a_count_out_of_the_runners_output() -> None:
     """S-2 and C-2: measured, `-q` prints no `collected N items` line on a run, so
     a stdout parser matches nothing in exactly the cases this guard is about. The

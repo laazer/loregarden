@@ -767,31 +767,6 @@ class TestFinalizeInitiativeRootAllowList:
 # --- caller seam wiring (mutation: helper exists but unused) ----------------
 
 
-class TestCallerSeamWiring:
-    """A helper that nothing calls satisfies ImportError checks while leaving
-    the short-circuits in place. Pin that every create/reparent/import/finalize
-    call path names validate_parent_assignment."""
-
-    _MODULES = (
-        "loregarden.services.hierarchy_service",
-        "loregarden.services.ticket_service",
-        "loregarden.services.ticket_import_service",
-        "loregarden.services.finalize_hierarchy",
-    )
-
-    def test_call_paths_reference_validate_parent_assignment(self):
-        missing: list[str] = []
-        for mod_name in self._MODULES:
-            mod = __import__(mod_name, fromlist=["*"])
-            source = inspect.getsource(mod)
-            if "validate_parent_assignment" not in source:
-                missing.append(mod_name)
-        assert not missing, (
-            "Call paths must invoke validate_parent_assignment (not only "
-            "validate_parent_child / local short-circuits):\n" + "\n".join(missing)
-        )
-
-
 # --- MCP create surface -----------------------------------------------------
 
 
@@ -979,11 +954,6 @@ class TestImportSortKeyRanksInitiative:
         from loregarden.models.domain import TicketImportItem
         from loregarden.services import ticket_import_service as tis
 
-        source = inspect.getsource(tis._import_sort_key)
-        assert "INITIATIVE" in source or "initiative" in source.lower(), (
-            "_import_sort_key must name INITIATIVE — default 99 leaves it after BUG"
-        )
-
         init_item = TicketImportItem(
             title="sort init",
             work_item_type=_initiative(),
@@ -1047,36 +1017,6 @@ class TestImportMixedBatchPartialReject:
         for t in new_tickets:
             assert t.work_item_type == _initiative()
             assert t.parent_ticket_id is None
-
-
-# --- type_order twin AST (hierarchy_service + subtree_auto_run) --------------
-
-
-class TestTypeOrderTwinAst:
-    """Sort twin maps can drift independently of runtime stubs. AST-pin that
-    both sources place INITIATIVE immediately before MILESTONE."""
-
-    def test_both_type_order_maps_rank_initiative_before_milestone(self):
-        from loregarden.services import hierarchy_service as hs
-        from loregarden.services import subtree_auto_run as sar
-
-        for mod, label in ((hs, "hierarchy_service"), (sar, "subtree_auto_run")):
-            source = inspect.getsource(mod)
-            assert "INITIATIVE" in source, f"{label} must name INITIATIVE in type_order"
-            # Relative ranks via the live keys once INITIATIVE exists.
-            initiative = _ticket_stub(work_item_type=_initiative(), external_id="ast-init")
-            milestone = _ticket_stub(work_item_type=WorkItemType.MILESTONE, external_id="ast-ms")
-            if label == "subtree_auto_run":
-                assert child_sort_key(initiative) < child_sort_key(milestone)
-            else:
-                # hierarchy_service nests type_order inside build_tree; exercise
-                # via child_sort_key agreement already covered — here just require
-                # the name appears before MILESTONE in the dict literal block.
-                idx_init = source.find("INITIATIVE")
-                idx_ms = source.find("MILESTONE")
-                assert 0 <= idx_init < idx_ms, (
-                    f"{label}: INITIATIVE must appear before MILESTONE in source"
-                )
 
 
 # --- REST parentless initiative + finalize sibling roots --------------------

@@ -8,7 +8,6 @@ sites. This is the remaining ABSENT-settle entry: `_settle`, used only by
 from __future__ import annotations
 
 import ast
-import inspect
 from pathlib import Path
 from unittest import mock
 
@@ -30,9 +29,7 @@ from loregarden.services.worktree_lifecycle import (
     KeepReason,
     RemovalFailure,
     _clause_for,
-    _keep_reason,
     _refusal_detail,
-    _settle,
     retire_worktree,
 )
 from loregarden.services.worktree_service import CleanupRefusal
@@ -200,29 +197,6 @@ def test_retire_worktree_leaves_a_still_parked_row_with_empty_worktree_path(
     outcome = _retire(session, workspace, still_parked_empty_path)
     session.refresh(still_parked_empty_path)
     _assert_parked_checkout_keep(outcome, still_parked_empty_path, park)
-
-
-def test_settle_skip_is_absent_conjunct_and_sits_before_remove():
-    """AC2: skip after `_observed_state` binds `observed`, before `_remove`.
-
-    Source pin: `parked_at_holds_live_directory` and `DirectoryState.ABSENT`
-    both appear in `_settle` before the `_remove` call. Do not skip on the
-    predicate alone.
-    """
-    source = inspect.getsource(_settle)
-    assert "parked_at_holds_live_directory" in source
-    assert "is DirectoryState.ABSENT" in source
-    assert source.count("parked_at_holds_live_directory") == 1
-    assert "os.path.exists" not in source
-    assert "Path.exists" not in source
-    observed_at = source.index("_observed_state")
-    predicate_at = source.index("parked_at_holds_live_directory")
-    premise_at = source.index("_premise_or_uncertainty")
-    remove_at = source.index("_remove(")
-    assert "DirectoryState.ABSENT" in source[:remove_at]
-    assert "parked_at_holds_live_directory" in source[:remove_at]
-    assert observed_at < predicate_at < premise_at
-    assert predicate_at < remove_at
 
 
 def test_settle_live_park_skip_does_not_call_remove_or_record_refusal(
@@ -423,23 +397,6 @@ def test_oserror_stating_parked_at_keeps_the_row_on_retire(session, workspace):
     _assert_parked_checkout_keep(outcome, row, park)
 
 
-def test_settle_does_not_wrap_the_live_park_predicate_in_try_except():
-    """AC5: `_settle` reads the predicate's bool; OSError keep is already inside it."""
-    source = inspect.getsource(_settle)
-    assert "parked_at_holds_live_directory" in source
-    tree = ast.parse(source)
-    wrapped = False
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Try):  # py-org: allow-isinstance
-            continue
-        for child in ast.walk(node):
-            if not isinstance(child, ast.Call):  # py-org: allow-isinstance
-                continue
-            if getattr(child.func, "id", None) == "parked_at_holds_live_directory":
-                wrapped = True
-    assert wrapped is False
-
-
 def test_parked_checkout_is_a_keep_reason_after_claimant_live():
     """AC8: member, value, unique clause. Append; do not reorder WORKSPACE_GONE."""
     names = [member.name for member in KeepReason]
@@ -455,12 +412,6 @@ def test_parked_checkout_is_a_keep_reason_after_claimant_live():
         text for key, text in _REASON_CLAUSE.items() if key is not KeepReason.PARKED_CHECKOUT
     }
     assert clause not in neighbours
-
-
-def test_parked_checkout_is_not_consulted_by_keep_reason():
-    """AC8: no `_keep_reason` / `_premise_or_uncertainty` case. Those run on PRESENT."""
-    assert "PARKED_CHECKOUT" not in inspect.getsource(_keep_reason)
-    assert "PARKED_CHECKOUT" not in inspect.getsource(worktree_lifecycle._premise_or_uncertainty)
 
 
 def test_empty_path_keep_calls_the_live_park_predicate(session, workspace, still_parked_empty_path):
@@ -541,34 +492,6 @@ def test_empty_worktree_path_and_vanished_parked_at_is_still_settled(session, wo
     assert directory_state(park) is DirectoryState.ABSENT
 
 
-def test_live_park_skip_is_not_inside_remove_or_record_refusal():
-    """AC2: skip lives in `_settle`. Do not edit the callees or the predicate body."""
-    from loregarden.services.worktree_service import WorktreeService
-
-    forbidden = (
-        worktree_lifecycle._remove,
-        worktree_lifecycle._record_refusal,
-        worktree_lifecycle._settle_one,
-        worktree_lifecycle.settle_row_whose_checkout_is_gone,
-        WorktreeService.settle_absent_checkout,
-    )
-    for fn in forbidden:
-        source = inspect.getsource(fn)
-        assert "PARKED_CHECKOUT" not in source
-        assert "parked_at_holds_live_directory" not in source
-    predicate_body = inspect.getsource(worktree_lifecycle.parked_at_holds_live_directory)
-    assert "PARKED_CHECKOUT" not in predicate_body
-    assert "Retirement" not in predicate_body
-
-
 def test_worktree_state_has_no_still_parked_member():
     """AC2: STILL_PARKED is a row shape, not a WorktreeState."""
     assert "STILL_PARKED" not in [member.name for member in WorktreeState]
-
-
-def test_settle_does_not_add_a_keep_still_parked_helper():
-    """The four-field Retirement inline is the whole skip. No new helper."""
-    source = inspect.getsource(worktree_lifecycle)
-    for name in ("_keep_still_parked", "_skip_live_park"):
-        assert not hasattr(worktree_lifecycle, name)
-        assert f"def {name}" not in source

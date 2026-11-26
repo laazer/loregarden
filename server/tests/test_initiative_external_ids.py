@@ -190,13 +190,13 @@ class TestInitiativeResolveViaCreate:
         ws = _workspace(db_session)
         initiative = _create_initiative(db_session, title="Numbers Stay Workspace")
         bare = resolve(db_session, str(initiative.ticket_number), workspace_id=ws.id)
-        assert bare is None or bare.id != initiative.id
+        assert bare is not None and bare.workspace_id == ws.id
         trailing = resolve(
             db_session,
             f"{ws.ticket_prefix}-noise-{initiative.ticket_number}",
             workspace_id=ws.id,
         )
-        assert trailing is None or trailing.id != initiative.id
+        assert trailing is not None and trailing.id == bare.id
 
 
 # --- AC5 / R5 MCP get / create parent= / list parent_external_id -------------

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { api, type InitiativeMilestone, type InitiativeView } from "../../api/client";
@@ -326,19 +326,17 @@ describe("an initiative at volume", () => {
     expect(within(list).getAllByRole("group")).toHaveLength(36);
     expect(screen.getByRole("button", { name: "Show fewer milestones" })).toHaveAttribute("aria-expanded", "true");
 
-    await user.type(filter, "feature 15");
+    fireEvent.change(filter, { target: { value: "feature 15" } });
     // "Feature 15" and "Feature 150"–"Feature 156": the done one (159 would be) is hidden.
     expect(screen.getByRole("status")).toHaveTextContent("8 of 157 match");
     for (const n of [15, 150, 151, 152, 153, 154, 155, 156]) {
       expect(screen.getByRole("button", { name: new RegExp(`lg-feat-${n} Feature ${n}$`) })).toBeInTheDocument();
     }
 
-    await user.clear(filter);
-    await user.type(filter, "lg-home-35");
+    fireEvent.change(filter, { target: { value: "lg-home-35" } });
     expect(within(screen.getByRole("list", { name: "Auth migration by milestone" })).getAllByRole("group")).toHaveLength(1);
 
-    await user.clear(filter);
-    await user.type(filter, "nothing like this");
+    fireEvent.change(filter, { target: { value: "nothing like this" } });
     expect(screen.getByText(/Nothing here matches “nothing like this”/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Clear the filter" }));
     expect(filter).toHaveValue("");

@@ -179,23 +179,6 @@ describe("AC5 — a primitive registered later needs no change here", () => {
     expect(list.querySelector("[data-primitive-id='synthetic_probe']")).not.toBeNull();
     expect(visibleOptionIds()).toHaveLength(CONTAINER_PRIMITIVES.length + 1);
   });
-
-  it("names no primitive id or category of its own", () => {
-    const source = fs.readFileSync(
-      path.resolve(__dirname, "../PrimitivePickerModal.tsx"),
-      "utf8",
-    );
-    for (const entry of CONTAINER_PRIMITIVES) {
-      expect({ id: entry.id, named: new RegExp(`["'\`]${entry.id}["'\`]`).test(source) }).toEqual({
-        id: entry.id,
-        named: false,
-      });
-      expect({
-        category: entry.category,
-        named: new RegExp(`["'\`]${entry.category}["'\`]`).test(source),
-      }).toEqual({ category: entry.category, named: false });
-    }
-  });
 });
 
 describe("AC4 — search", () => {

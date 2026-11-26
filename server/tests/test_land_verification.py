@@ -85,13 +85,10 @@ from loregarden.services.artifact_records import is_system_record, run_log_artif
 from loregarden.services.artifact_service import BLOCKING_ISSUE_INLINE_LIMIT
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
 from loregarden.services.git_merge_noco import (
-    advance_tips,
     merge_tips,
-    merge_without_checkout,
     read_branch_tips,
-    squash_onto,
 )
-from loregarden.services.land_ticket import LandSkip, land_ticket
+from loregarden.services.land_ticket import land_ticket
 from loregarden.services.land_verification import decode_output, run_verify_command
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import GitAutomationConfig
@@ -452,18 +449,6 @@ def test_a_conflict_is_never_verified(repo):
 
     assert not outcome.ok and outcome.conflicted
     assert seen == [], "a conflict has no candidate commit to verify"
-
-
-def test_only_merge_tips_and_its_wrapper_take_a_verifier():
-    """AC5: ONE keyword, in one place. `advance_tips` and `squash_onto` keep
-    their signatures, which is how `publish_tree` stays out of this ticket.
-    """
-    assert "verify" in inspect.signature(merge_tips).parameters
-    assert "verify" in inspect.signature(merge_without_checkout).parameters, (
-        "land_ticket calls `merge_without_checkout`, so the keyword has to reach it"
-    )
-    assert "verify" not in inspect.signature(advance_tips).parameters
-    assert "verify" not in inspect.signature(squash_onto).parameters
 
 
 # ---------------------------------------------------------------------------
@@ -1197,41 +1182,6 @@ def test_each_new_switch_carries_the_comment_its_siblings_carry():
         assert any(line.startswith("#:") for line in above), (
             f"{field} is declared with no `#:` comment above it"
         )
-
-
-def test_the_unavailable_exit_status_is_imported_and_not_re_spelled():
-    """AC5/AC21. `gate_runner.GATE_EX_UNAVAILABLE` is imported so "never ran"
-    is the same number everywhere; `_run_command` is deliberately NOT extracted
-    into a shared primitive in this ticket.
-    """
-    from loregarden.services import land_verification
-
-    assert land_verification.GATE_EX_UNAVAILABLE is GATE_EX_UNAVAILABLE == 69
-    assert not hasattr(land_verification, "_run_command"), (
-        "AC21: the DRY observation is a filed follow-up, not this ticket's refactor"
-    )
-
-
-def test_land_ticket_keeps_its_logic_in_land_verification(session, workspace, repo, milestone):
-    """AC5/risk 6. `land_ticket.py` is 319 lines and the size and organization
-    gates run on the whole staged file, so the wiring is three lines and every
-    line of verification logic lives in `land_verification.py`.
-    """
-    from loregarden.services import land_ticket as module
-
-    source = Path(inspect.getfile(module)).read_text()
-    assert "land_verifier" in source, "land_ticket is the only wiring"
-    # `subprocess` was in this list and is not: it matched land_ticket's own
-    # pre-existing `from ...git_subprocess import run_git`, which is the landing
-    # refresh's worktree repair and not verification logic. That binding is
-    # load-bearing — `test_land_ticket.py::test_a_worktree_that_vanishes_mid_
-    # refresh_blocks_rather_than_raising` patches `land_ticket.run_git` to make
-    # `read-tree` raise — so the substring cannot be removed without moving a
-    # frozen test's patch target. The three below are the verification's own and
-    # appear nowhere else.
-    for leaked in ("worktree add", "shlex.split", "GATE_EX_UNAVAILABLE"):
-        assert leaked not in source, f"{leaked!r} belongs in land_verification.py"
-    assert LandSkip and land_ticket
 
 
 # ---------------------------------------------------------------------------

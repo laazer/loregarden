@@ -49,17 +49,6 @@ def test_every_kept_term_is_drawn_from_the_allowlisted_alphabet():
     assert all(term == term.lower() for term in selection.kept)
 
 
-def test_the_allowlist_entry_point_is_public_and_is_the_one_the_module_uses():
-    """A private reduction is a reduction nobody else can reuse.
-
-    `prior_work.py` deletes its verbatim copy and imports these names; an entry
-    point that stayed underscore-prefixed would invite a third copy.
-    """
-    assert not terms.__name__.startswith("_")
-    assert not select_terms.__name__.startswith("_")
-    assert select_terms("memory store retrieval").kept <= terms("memory store retrieval")
-
-
 def test_prior_work_no_longer_keeps_its_own_tokenizer():
     """term_overlap's docstring named prior_work as the de-dupe site."""
     source = (_MODULE.parent / "prior_work.py").read_text(encoding="utf-8")

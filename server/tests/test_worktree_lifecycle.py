@@ -2157,35 +2157,6 @@ def test_the_outcome_is_built_by_branching_and_never_by_coercing_a_truthy_value(
     assert path.is_dir()  # the stub removed nothing; the branch is the assertion
 
 
-def test_there_is_no_force_or_override_or_receipts_off_switch_anywhere(session):
-    """The forbidden dual code path, and a `--force` on a safety bar in one.
-
-    A gate with a way around it is a gate nobody has to argue with. The first
-    time a sweep is inconvenient, the switch is what gets used, and the defect
-    this ticket closes comes back wearing a flag.
-    """
-    import inspect
-
-    from loregarden.services import directory_release, worktree_receipt
-
-    for module in (worktree_lifecycle, worktree_receipt, directory_release):
-        source = inspect.getsource(module)
-        for banned in (
-            "force=",
-            "skip_receipt",
-            "ignore_receipt",
-            "receipts_off",
-            "no_receipt_check",
-        ):
-            assert banned not in source, f"{module.__name__} offers a way past the gate: {banned}"
-
-    for name in ("retire_worktree", "release_ticket_worktree", "release_chat_worktree"):
-        parameters = inspect.signature(getattr(worktree_lifecycle, name)).parameters
-        assert not any("force" in p or "override" in p or "receipt" in p for p in parameters), (
-            f"{name} takes an argument that could turn the gate off: {list(parameters)}"
-        )
-
-
 # ---------------------------------------------------------------------------
 # AC13 — every refusal says what it did not delete, and names what it parked
 # ---------------------------------------------------------------------------

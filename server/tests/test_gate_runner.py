@@ -88,6 +88,7 @@ def test_run_transition_gates_executes_script(session, tmp_path):
         to_stage="spec",
     )
     assert result.ok, result.message
+    assert result.outcome == "passed"
 
 
 def _write_transition_script(tmp_path, body: str):
@@ -179,6 +180,7 @@ def test_run_transition_gates_runs_profile_commands(session, tmp_path):
         to_stage="test-design",
     )
     assert result.ok, result.message
+    assert result.outcome == "passed"
 
 
 def test_run_transition_gates_blocks_on_failure(session, tmp_path):

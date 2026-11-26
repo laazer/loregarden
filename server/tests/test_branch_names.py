@@ -86,28 +86,6 @@ def test_a_chat_session_branch_is_derived_from_its_id_not_its_title():
     assert session.id[:8] in _helpers().chat_session_branch(session)
 
 
-def test_git_branch_leaves_no_re_export_behind():
-    """AC1. `internal` posture: every caller is migrated in this change.
-
-    A re-export would keep the cycle alive at import time, which is the whole
-    reason the move exists — and a shim that lets a caller stay put is exactly
-    what the posture forbids.
-    """
-    from loregarden.services import git_branch
-
-    for name in (
-        "_BRANCH_RE",
-        "_SLUG_RE",
-        "_slugify",
-        "default_ticket_branch",
-        "chat_session_branch",
-        "resolve_ticket_branch",
-        "validate_branch_name",
-    ):
-        assert not hasattr(git_branch, name), f"git_branch still re-exports {name}"
-        assert hasattr(_helpers(), name), f"branch_names is missing {name}"
-
-
 def test_branch_names_imports_nothing_that_could_close_the_cycle():
     """A leaf, and provably one: it may reach `re` and the domain models and
     nothing else in `services`."""

@@ -5,17 +5,18 @@ Maps 1:1 to AC1–AC8 / R1–R8. Implementation lands later — this is the red 
 
 from __future__ import annotations
 
-import inspect
 import re
 import tempfile
+from unittest import mock
 
 import pytest
 from loregarden.db import migrations as M
+from loregarden.db import migrations_ticket_workspace
 from loregarden.db.migration_ids import SHIPPED_MIGRATION_IDS
 from loregarden.db.migrations import apply_migrations
+from loregarden.db.migrations_ticket_workspace import m_tickets_workspace_binding
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
 from loregarden.models.domain import Ticket, WorkflowInstance, WorkItemType, Workspace
-from loregarden.models.domain import tables as tables_mod
 from loregarden.models.domain.schemas import UpdateTicketRequest
 from loregarden.services.hierarchy_service import build_tree, reparent_ticket
 from loregarden.services.ticket_service import TicketService
@@ -142,13 +143,6 @@ class TestValidateWorkspaceBinding:
     def test_task_without_workspace_rejected(self):
         with pytest.raises(ValueError, match="(?i)workspace"):
             _validate_workspace_binding(WorkItemType.TASK, None)
-
-    def test_seam_is_pure_no_session_param(self):
-        from loregarden.services.ticket_workspace_binding import validate_workspace_binding
-
-        params = inspect.signature(validate_workspace_binding).parameters
-        assert "session" not in params
-        assert "workspace_slug" not in params
 
 
 # --- AC1 / AC2 / AC3 TicketService.create ------------------------------------
@@ -340,93 +334,86 @@ class TestWorkspaceBindingMigration:
         assert mid in ids
         assert ids.index(mid) > ids.index(PREV_TIP)
 
-    def test_apply_makes_nullable_and_installs_check(self):
-        mid = _migration_id()
-        engine = _fresh_engine()
-        SQLModel.metadata.create_all(engine)
-        # Force a NOT NULL pre-state if create_all already emitted nullable after
-        # the model change — the migration must still install the CHECK.
-        apply_migrations(engine)
+    @pytest.fixture()
+    def old_engine(self):
+        """`tickets` as it was before the migration: the column nullable or not, and
+        no CHECK. `create_all` emits today's table, on which the migration returns
+        at once."""
+
+        def build(*, not_null: bool, rows: list[tuple[str, str, str | None]]):
+            engine = _fresh_engine()
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE TABLE tickets (id VARCHAR PRIMARY KEY, "
+                        "work_item_type VARCHAR NOT NULL, "
+                        f"workspace_id VARCHAR{' NOT NULL' if not_null else ''})"
+                    )
+                )
+                for ticket_id, kind, workspace_id in rows:
+                    conn.execute(
+                        text("INSERT INTO tickets VALUES (:id, :kind, :ws)"),
+                        {"id": ticket_id, "kind": kind, "ws": workspace_id},
+                    )
+            return engine
+
+        return build
+
+    @pytest.mark.parametrize(
+        ("not_null", "rows"),
+        [
+            (True, [("ms", "milestone", "ws-keep"), ("t", "task", "ws-keep")]),
+            (False, [("ms", "milestone", "ws-keep"), ("init", "initiative", None)]),
+        ],
+        ids=["not-null", "nullable-without-check"],
+    )
+    def test_an_old_table_becomes_nullable_and_checked_and_keeps_its_rows(
+        self, old_engine, not_null, rows
+    ):
+        engine = old_engine(not_null=not_null, rows=rows)
+        with engine.begin() as conn:
+            m_tickets_workspace_binding(conn)
+
         assert _workspace_id_nullable(engine)
-        sql = _tickets_sql(engine).replace(" ", "").lower()
-        assert "work_item_type='initiative'" in sql or 'work_item_type="initiative"' in sql
-        assert "workspace_idisnull" in sql.replace(" ", "")
         with engine.connect() as conn:
-            recorded = {row[0] for row in conn.execute(text("SELECT id FROM schema_migrations"))}
-        assert mid in recorded
-
-    def test_reapply_is_noop(self):
-        mid = _migration_id()
-        engine = _fresh_engine()
-        SQLModel.metadata.create_all(engine)
-        first = apply_migrations(engine)
-        with engine.connect() as conn:
-            recorded = {row[0] for row in conn.execute(text("SELECT id FROM schema_migrations"))}
-        assert mid in first or mid in recorded
-        second = apply_migrations(engine)
-        assert second == []
-
-    def test_existing_non_initiative_workspace_id_untouched(self):
-        engine = _fresh_engine()
-        SQLModel.metadata.create_all(engine)
-        apply_migrations(engine)
-        # Seed after migrate (legal), then re-run migration body if exposed.
-        ws_id = "ws-keep"
-        with Session(engine) as session:
-            session.add(Workspace(id=ws_id, slug="keep", name="Keep", repo_path="/tmp/keep"))
-            session.commit()
-        with Session(engine) as session:
-            session.add(
-                Ticket(
-                    id="keep-ms",
-                    external_id="keep-ms",
-                    workspace_id=ws_id,
-                    title="Keep me",
-                    work_item_type=WorkItemType.MILESTONE,
+            kept = conn.execute(text("SELECT id, work_item_type, workspace_id FROM tickets"))
+            assert sorted(tuple(row) for row in kept) == sorted(rows)
+        for kind, workspace_id in (("initiative", "ws-keep"), ("task", None)):
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    text("INSERT INTO tickets VALUES ('bad', :kind, :ws)"),
+                    {"kind": kind, "ws": workspace_id},
                 )
-            )
-            session.commit()
-        assert apply_migrations(engine) == []
+        with engine.begin() as conn:
+            conn.execute(text("INSERT INTO tickets VALUES ('new', 'initiative', NULL)"))
+
+    @pytest.mark.parametrize(("kind", "workspace_id"), [("initiative", "ws-bad"), ("task", None)])
+    def test_a_row_that_breaks_the_rule_stops_the_migration_and_is_not_rewritten(
+        self, old_engine, kind, workspace_id
+    ):
+        engine = old_engine(not_null=False, rows=[("bad", kind, workspace_id)])
+        before = _tickets_sql(engine)
+
+        with pytest.raises(ValueError, match=f"1 ticket row.*bad .*{kind}"):
+            with engine.begin() as conn:
+                m_tickets_workspace_binding(conn)
+
+        assert _tickets_sql(engine) == before
         with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT workspace_id FROM tickets WHERE id='keep-ms'")
-            ).fetchone()
-        assert row is not None
-        assert row[0] == ws_id
+            assert conn.execute(text("SELECT workspace_id FROM tickets")).scalar() == workspace_id
 
-    def test_illegal_preexisting_row_aborts_migration(self):
-        """AC6 — refuse apply when a row would violate the new CHECK."""
-        mid = _migration_id()
-        migrate_fn = None
-        for migration_id, fn in M.MIGRATIONS:
-            if migration_id == mid:
-                migrate_fn = fn
-                break
-        assert migrate_fn is not None
-
-        engine = _fresh_engine()
-        SQLModel.metadata.create_all(engine)
-        with Session(engine) as session:
-            session.add(Workspace(id="ws-bad", slug="bad", name="Bad", repo_path="/tmp/bad"))
-            session.commit()
-        # If create_all already has CHECK (model+table args), this insert fails —
-        # that still proves the invariant; skip the abort path in that case.
-        try:
-            with engine.begin() as conn:
-                raw_ticket_insert(
-                    conn,
-                    ticket_id="bad-init",
-                    external_id="",
-                    workspace_id="ws-bad",
-                    title="Pre-check init",
-                    work_item_type="initiative",
-                )
-        except IntegrityError:
-            pytest.skip("create_all already enforces CHECK — abort path needs old DDL")
-
-        with pytest.raises((ValueError, RuntimeError), match="(?i)initiative|workspace|violat"):
-            with engine.begin() as conn:
-                migrate_fn(conn)
+    def test_a_migrated_table_is_left_as_it_is(self, old_engine):
+        engine = old_engine(not_null=True, rows=[])
+        with engine.begin() as conn:
+            m_tickets_workspace_binding(conn)
+        with (
+            mock.patch.object(
+                migrations_ticket_workspace, "rebuild_drop_not_null_and_add_check"
+            ) as rebuild,
+            engine.begin() as conn,
+        ):
+            m_tickets_workspace_binding(conn)
+        rebuild.assert_not_called()
 
 
 # --- AC7 parent workspace rule -----------------------------------------------
@@ -516,11 +503,6 @@ class TestWritersAndSurfaces:
         fields = set(UpdateTicketRequest.model_fields)
         assert "work_item_type" not in fields
         assert "workspace_id" not in fields
-
-    def test_ticket_model_workspace_id_optional(self):
-        field = tables_mod.Ticket.model_fields["workspace_id"]
-        assert field.annotation == str | None or "None" in str(field.annotation)
-        assert field.default is None
 
     def test_build_tree_tolerates_null_workspace_initiative(self, db_session: Session):
         initiative = _create_initiative(db_session, title="Tree init")

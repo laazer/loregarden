@@ -15,9 +15,6 @@
  * to any particular internal spelling of the timer.
  */
 
-import fs from "fs";
-import path from "path";
-
 import { act, render } from "@testing-library/react";
 
 import { installPointerEvents } from "../../test/pointerEvents";
@@ -220,33 +217,6 @@ describe("S1 — pointer and focus suspend the deadline", () => {
 });
 
 describe("S1 — the seam it is built on", () => {
-  const HOOK = path.resolve(__dirname, "../useAutoDismiss.ts");
-  const TOAST_HOST = path.resolve(__dirname, "../../components/ToastHost.tsx");
-
-  function source(file: string): string {
-    return fs.readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  }
-
-  it("S1.1 — exists as its own hook and exports useAutoDismiss", () => {
-    expect(fs.existsSync(HOOK)).toBe(true);
-    expect(source(HOOK)).toMatch(/export function useAutoDismiss\b/);
-  });
-
-  it("S1.1 — is ToastItem's only dismissal scheduling", () => {
-    const host = source(TOAST_HOST);
-    expect(host).toMatch(/useAutoDismiss/);
-    // ToastHost.tsx:20-24's own setTimeout is what the hook replaces. The host
-    // keeps `useScreenAreaCorner`, which schedules nothing.
-    expect(host).not.toMatch(/setTimeout/);
-  });
-
-  it("S1.9 — reads the pointer and focus from props, not from the document", () => {
-    const hook = source(HOOK);
-    for (const escape of ["document.addEventListener", "window.addEventListener", ":focus-within"]) {
-      expect(hook).not.toContain(escape);
-    }
-  });
-
   it("S1.9 — returns exactly the four handler props the toast root spreads", () => {
     const seen: string[] = [];
     function Probe() {

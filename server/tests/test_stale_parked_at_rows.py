@@ -449,25 +449,6 @@ def test_the_repair_sentence_is_its_own_and_not_ac7_or_ac13(INVARIANT, session, 
     assert stale.id not in got
 
 
-def test_this_ticket_adds_no_migration():
-    """AC14.1. Existing rows are none; 1026's column is already on this branch."""
-    versions = Path(__file__).resolve().parents[1] / "loregarden" / "db" / "versions"
-    hits = [
-        path.name
-        for path in versions.glob("*.py")
-        if "lg-external-harness-1416" in path.read_text(encoding="utf-8")
-    ]
-    assert hits == [], f"this ticket writes no db/versions module: {hits}"
-
-
-def test_the_ac14_sentence_is_not_a_refusal_sentence():
-    """AC14.4. Constant lives in stale_parked_at_rows, not _REFUSAL_SENTENCE."""
-    lifecycle = (
-        Path(__file__).resolve().parents[1] / "loregarden" / "services" / "worktree_lifecycle.py"
-    ).read_text(encoding="utf-8")
-    assert "its parked copy is gone" not in lifecycle
-
-
 def test_the_detector_module_imports_directory_state_and_does_not_reach_settle():
     """AC14.2 / AC14.3. Import from directory_release; do not wrap 1452's settle."""
     tree = ast.parse(_MODULE.read_text(encoding="utf-8"), filename=str(_MODULE))

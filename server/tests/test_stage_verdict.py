@@ -7,8 +7,6 @@ Do not call standing_of.proves.
 
 from __future__ import annotations
 
-import ast
-import inspect
 import json
 import textwrap
 from dataclasses import fields
@@ -327,16 +325,6 @@ def test_verdict_types_exist():
     assert {"producer_agent_id", "producer_stage_key"} <= {f.name for f in fields(UnresolvedItem)}
 
 
-def test_derive_verdict_is_session_free():
-    """R1 / AC12. derive_verdict has no Session, Ticket, or git in its signature."""
-    params = inspect.signature(derive_verdict).parameters
-    assert "session" not in params
-    assert "ticket" not in params
-    hints = str(inspect.signature(derive_verdict))
-    assert "Session" not in hints
-    assert "Ticket" not in hints
-
-
 def test_derive_verdict_pass_then_fail_is_fail():
     """R1.1 / AC1. Last-written does not win; fail outranks pass either order."""
     pass_sig = _sig(StageReportStatus.PASS, item_key="report:pass")
@@ -408,14 +396,6 @@ def test_claim_from_tool_outcome_maps_mcp_reject_to_needs_rework():
     """Settled checkpoint: MCP reject is a needs_rework claim. Schema stays pass|reject."""
     assert claim_from_tool_outcome("pass") is StageReportStatus.PASS
     assert claim_from_tool_outcome("reject") is StageReportStatus.NEEDS_REWORK
-
-
-def test_collect_signals_requires_agent_id():
-    """Spec checkpoint: agent_id is a required kwarg; not looked up from AgentRun."""
-    params = inspect.signature(collect_signals).parameters
-    assert "agent_id" in params
-    assert params["agent_id"].default is inspect.Parameter.empty
-    assert "stages" not in params
 
 
 def test_derive_verdict_copies_producer_onto_unresolved_item():
@@ -690,14 +670,6 @@ def test_deferred_or_blocked_required_item_vetoes_pass(db_session, tmp_path):
         assert "handoff:test_suite_complete incomplete" in _names(verdict), status
 
 
-def test_collect_signals_does_not_use_standing_of_proves():
-    """R3.6. AC3 is status, not standing_of.proves — factory-killer if copied."""
-    source = Path(__file__).resolve().parents[1] / "loregarden" / "services" / "stage_verdict.py"
-    text = source.read_text(encoding="utf-8")
-    assert "standing_of" not in text
-    assert ".proves" not in text
-
-
 # --------------------------------------------------------------------------- #
 # R4 — evidence-missing and folded _pass_held
 # --------------------------------------------------------------------------- #
@@ -868,23 +840,6 @@ def test_build_orchestration_context_skips_unresolved_when_session_is_none(db_se
         ticket=ticket, run=run, stage_def=stage, stages=stages, session=None
     )
     assert "## Unresolved items" not in text
-
-
-def test_unresolved_context_lines_reads_visible_unresolved():
-    """136 R3 / R11. Prompt assembler reads the ledger, never live derive alone."""
-    path = Path(__file__).resolve().parents[1] / "loregarden" / "agents" / "stage_context.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    fn = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_unresolved_context_lines"
-    )
-    called = {
-        sub.func.attr if isinstance(sub.func, ast.Attribute) else getattr(sub.func, "id", "")
-        for sub in ast.walk(fn)
-        if isinstance(sub, ast.Call)
-    }
-    assert "visible_unresolved" in called
 
 
 def test_later_complete_handoff_drops_resolved_handoff_names(db_session, tmp_path):

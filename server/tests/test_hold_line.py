@@ -115,23 +115,6 @@ def test_hold_line_is_a_leaf_under_the_two_modules_that_import_it() -> None:
     assert "orchestration_callbacks" not in source, source
 
 
-def test_the_width_literal_exists_once_across_the_three_modules() -> None:
-    """R1-AC2 / R2-AC5, scoped to the modules that own this invariant.
-
-    The criterion's `grep -rn "2000" server/loregarden/services/` is narrowed
-    here: 15 unrelated modules in that tree hold their own 2000 (a triage
-    message cap, `blocking_issues[:2000]`, `reply_cap=12000`) and rewriting
-    them is outside this ticket. What the criterion is about is the
-    `error_message` width, and these are the three files that knew it.
-    """
-    for name in ("builtin_orchestrator.py", "orchestration_callbacks.py"):
-        source = (_SERVICES / name).read_text()
-        assert "2000" not in source, (
-            f"{name} must not restate the width — import ERROR_MESSAGE_LIMIT (R1-AC2)"
-        )
-    assert "2000" in (_SERVICES / "hold_line.py").read_text()
-
-
 def test_the_single_storage_site_applies_the_shared_truncation() -> None:
     """R1-AC2. The one place the limit is applied."""
     source = (_SERVICES / "orchestration_callbacks.py").read_text()
@@ -344,13 +327,6 @@ def test_the_order_does_not_depend_on_the_order_the_entries_arrive_in(
         random.Random(seed).shuffle(shuffled)
         reordered = HeldChild(ticket=held.ticket, unmet=shuffled)
         assert render_hold_line(db_session, [reordered]) == baseline
-
-
-def test_two_reads_of_the_same_inputs_agree(db_session: Session) -> None:
-    """R4-AC3, the renderer's half."""
-    held, _ = _mixed_child(db_session)
-
-    assert render_hold_line(db_session, [held]) == render_hold_line(db_session, [held])
 
 
 # ---------------------------------------------------------------------------

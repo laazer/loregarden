@@ -54,7 +54,6 @@ def test_workspace_runtime_settings(client: TestClient):
 def test_workspace_template_switch_changes_stages(client: TestClient):
     loregarden = client.get("/api/workspaces/loregarden/workflow").json()
     assert loregarden["template_slug"] == "loregarden-tdd"
-    lore_stages = len(loregarden["stages"])
 
     patch = client.patch(
         "/api/workspaces/loregarden/workflow",
@@ -64,10 +63,8 @@ def test_workspace_template_switch_changes_stages(client: TestClient):
 
     extended = client.get("/api/workspaces/loregarden/workflow").json()
     assert extended["template_slug"] == "extended-tdd"
-    assert (
-        len(extended["stages"]) != lore_stages
-        or extended["stages"][1]["key"] == "domain_consultation"
-    )
+    assert "domain_consultation" in [stage["key"] for stage in extended["stages"]]
+    assert "domain_consultation" not in [stage["key"] for stage in loregarden["stages"]]
 
     ticket_id = None
     for t in client.get("/api/tickets").json():

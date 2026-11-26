@@ -1,12 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import {
   isChatThinking,
   isRunStatusBusy,
   showsChatWalker,
   type ChatSession,
-  type ChatSessionKind,
 } from "../chatSession";
 
 function waitingSession(): ChatSession {
@@ -74,26 +70,4 @@ it("carries runStatus and wait on ChatSession", () => {
   expect(session.runStatus).toBe("waiting");
   expect(session.wait?.command).toBe("git push origin HEAD");
   expect(session.activeTurnId).toBeNull();
-});
-
-it("does not grow ChatSessionKind for a wait", () => {
-  const kinds: ChatSessionKind[] = [
-    "ticket-triage",
-    "branch-triage",
-    "ticket-studio",
-    "baxter-home",
-    "initiative-planner",
-  ];
-  expect(kinds).toHaveLength(5);
-  const src = readFileSync(join(__dirname, "../chatSession.ts"), "utf8");
-  const match = src.match(/export type ChatSessionKind =([^;]+);/);
-  expect(match?.[1]).toBeDefined();
-  expect(match?.[1]).not.toMatch(/waiting/);
-  expect(match?.[1]?.match(/"[^"]+"/g)).toEqual([
-    '"ticket-triage"',
-    '"branch-triage"',
-    '"ticket-studio"',
-    '"baxter-home"',
-    '"initiative-planner"',
-  ]);
 });

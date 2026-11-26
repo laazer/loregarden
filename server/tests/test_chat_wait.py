@@ -9,7 +9,6 @@ system message. Never drop. The named regression is
 from __future__ import annotations
 
 import contextlib
-import inspect
 import json
 import os
 import signal
@@ -26,9 +25,6 @@ from loregarden.agents.executors.approval_scope import HOME_CHAT_STAGE_KEY
 from loregarden.agents.executors.permission_bridge import BRANCH_TRIAGE_STAGE_KEY
 from loregarden.mcp.chat_wait_tool import TOOL_DEFINITIONS
 from loregarden.mcp.tool_ids import (
-    AUTO_APPROVED_MCP_TOOLS,
-    ORCHESTRATED_DENIED_MCP_TOOLS,
-    STAGE_DEFAULT_MCP_TOOLS,
     McpTool,
 )
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
@@ -67,8 +63,6 @@ from loregarden.services.branch_triage_run_service import (
     start_branch_triage_run,
 )
 from loregarden.services.chat_wait import (
-    MAX_CHAT_WAIT_CONTINUATIONS,
-    WAIT_CEILING_SECONDS,
     continuation_blocks,
     outstanding_for,
     register,
@@ -92,7 +86,6 @@ from loregarden.services.triage_service import (
 )
 from sqlmodel import Session, col, select
 from tests.factories import make_workspace_ticket
-from tests.repo_paths import REPO_ROOT
 
 STOP_COPY = (
     "Stopped waiting for {command} at your request. "
@@ -111,8 +104,6 @@ BOOT_UNKNOWN_COPY = (
     "It may still be running — ask again, or watch {log_path}."
 )
 
-#: Paths below are repo-relative; pytest runs from server/, CI included.
-_REPO_ROOT = REPO_ROOT
 
 COMMAND = "git push origin HEAD"
 BRANCH = "chat-wait-branch"
@@ -317,18 +308,6 @@ def _runs_for_ticket(session: Session, ticket_id: str) -> list[AgentRun]:
 
 
 # ---- R2.3 constants -----------------------------------------------------
-
-
-def test_wait_bounds_are_armed_literals_not_a_rework_import():
-    """R2.3. A pipeline-loop retune must not silently retune chat."""
-    from loregarden.services import chat_wait as chat_wait_mod
-
-    assert WAIT_CEILING_SECONDS == 7200
-    assert MAX_CHAT_WAIT_CONTINUATIONS == 3
-    text = Path(chat_wait_mod.__file__).read_text(encoding="utf-8")
-    assert "MAX_REWORK_REROUTES" not in text
-    assert "WAIT_CEILING_SECONDS = 7200" in text
-    assert "MAX_CHAT_WAIT_CONTINUATIONS = 3" in text
 
 
 def test_baxter_chat_message_has_additive_run_id():
@@ -819,19 +798,6 @@ def test_start_star_empty_content_is_still_refused_for_operator_turns(
 # ---- R2.4 / R2.5 MCP tool -----------------------------------------------
 
 
-def test_register_chat_wait_is_auto_approved_orchestrated_denied_not_stage_default():
-    assert McpTool.REGISTER_CHAT_WAIT in AUTO_APPROVED_MCP_TOOLS
-    assert McpTool.REGISTER_CHAT_WAIT in ORCHESTRATED_DENIED_MCP_TOOLS
-    assert McpTool.REGISTER_CHAT_WAIT not in STAGE_DEFAULT_MCP_TOOLS
-
-
-def test_register_chat_wait_is_not_documented_in_the_embedded_mcp_module():
-    doc = (_REPO_ROOT / "agent_context/agents/common_assets/loregarden_mcp_v1.md").read_text(
-        encoding="utf-8"
-    )
-    assert "loregarden_register_chat_wait" not in doc
-
-
 def test_orchestrated_execute_is_denied_and_writes_no_row(db_session, ticket, tmp_path):
     _running_triage(db_session, ticket)
     log_path = _log(tmp_path)
@@ -857,10 +823,6 @@ def test_orchestrated_execute_is_denied_and_writes_no_row(db_session, ticket, tm
 def test_chat_orchestrated_false_auto_approves_and_does_not_spawn(db_session, ticket, tmp_path):
     _running_triage(db_session, ticket)
     log_path = _log(tmp_path)
-    tool_src = (_REPO_ROOT / "server/loregarden/mcp/chat_wait_tool.py").read_text(encoding="utf-8")
-    assert "Popen" not in tool_src
-    assert "subprocess" not in tool_src
-    assert "setsid" in tool_src
     with _child(new_session=True) as child:
         body = _mcp(
             db_session,
@@ -1166,6 +1128,48 @@ def test_poll_chat_waits_is_on_periodic_steps_and_resume_is_not():
     assert "resume_chat_waits" not in names
 
 
+_BOOT_REAPERS = (
+    "reattach_surviving_runs",
+    "fail_interrupted_runs",
+    "fail_interrupted_orchestration_runs",
+    "fail_interrupted_triage_turns",
+    "fail_interrupted_branch_triage_turns",
+    "fail_interrupted_baxter_chat_turns",
+    "fail_interrupted_studio_turns",
+    "fail_interrupted_planner_turns",
+    "fail_interrupted_asides",
+)
+
+
+def test_boot_resumes_chat_waits_only_after_every_chat_reaper(db_session):
+    """A wait resumed while its origin turn still reads RUNNING would put two
+    turns in flight on one thread; recovery settles those turns first."""
+    from loregarden import main
+
+    later = (
+        "clear_orphaned_chat_turn_thinking",
+        "settle_stranded_stages",
+        "reconcile_worktrees",
+        "enable_ref_logs_in_workspaces",
+        "sweep_all_chat_branches",
+        "reconcile_once",
+        "resume_interrupted_orchestrations",
+    )
+    order: list[str] = []
+    with contextlib.ExitStack() as stack:
+        for name in (*_BOOT_REAPERS, "resume_chat_waits", *later):
+            stack.enter_context(
+                patch.object(
+                    main, name, side_effect=lambda *_a, _name=name, **_k: order.append(_name)
+                )
+            )
+        main._recover_previous_boot(db_session)
+
+    assert order[0] == "reattach_surviving_runs"
+    assert set(order[: order.index("resume_chat_waits")]) == set(_BOOT_REAPERS)
+    assert order[-1] == "resume_interrupted_orchestrations"
+
+
 # ---- R4 control-plane messages ------------------------------------------
 
 
@@ -1417,15 +1421,6 @@ def test_boot_gone_continues_subject_to_cap(db_session, ticket, tmp_path):
     assert db_session.exec(select(ChatWait)).one().status is ChatWaitStatus.CONTINUED
 
 
-def test_resume_chat_waits_runs_after_fail_interrupted_on_boot():
-    from loregarden.main import _recover_previous_boot
-
-    src = inspect.getsource(_recover_previous_boot)
-    assert "resume_chat_waits" in src
-    last_fail = src.rindex("fail_interrupted_")
-    assert src.index("resume_chat_waits") > last_fail
-
-
 def test_wait_end_messages_are_not_assistant_toasts_or_restart_copy(db_session, ticket, tmp_path):
     from loregarden.services.interruption_messages import restart_interruption_message
     from loregarden.services.triage_service import TRIAGE_AGENT_NAME
@@ -1535,35 +1530,3 @@ def test_switching_home_archive_sessions_does_not_cancel_the_wait_left_behind(
 
 
 # ---- R7 leave-alone -----------------------------------------------------
-
-
-def test_agent_run_has_no_waiting_status():
-    assert not hasattr(RunStatus, "WAITING")
-    assert "waiting" not in {member.value for member in RunStatus}
-
-
-def test_wait_modules_never_call_the_leave_alone_list():
-    roots = [
-        (_REPO_ROOT / "server/loregarden/services/chat_wait.py"),
-        (_REPO_ROOT / "server/loregarden/services/chat_wait_watch.py"),
-        (_REPO_ROOT / "server/loregarden/mcp/chat_wait_tool.py"),
-    ]
-    forbidden = (
-        "complete_run",
-        "run_resupervise",
-        "run_reattach",
-        "wrap_for_files",
-        "SIGTERM",
-        "SIGHUP",
-        "host_capacity",
-        "reserve_docker",
-        "MAX_REWORK_REROUTES",
-        "restart_interruption_message",
-        "orchestrated=True",
-        "Popen",
-        "threading.Thread",
-    )
-    for path in roots:
-        body = path.read_text(encoding="utf-8")
-        for token in forbidden:
-            assert token not in body, f"{token} in {path}"

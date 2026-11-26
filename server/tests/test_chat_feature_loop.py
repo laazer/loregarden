@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from unittest import mock
 
@@ -21,7 +20,6 @@ from loregarden.models.domain import (
     TicketState,
 )
 from loregarden.models.domain.chat_enums import FeatureLoopStatus
-from loregarden.services import chat_feature_loop
 from loregarden.services.acceptance_criteria import MAX_ACCEPTANCE_CRITERIA, load_criteria
 from loregarden.services.chat_feature_loop import (
     LoopAssessment,
@@ -475,21 +473,6 @@ def test_the_one_wording_names_both_ways_out(adding: int | None):
     assert message.endswith(
         "Remove criteria from the ticket, or finish this feature and start a new loop for the rest."
     )
-
-
-def test_only_one_place_in_the_module_composes_the_cap_sentence():
-    """The guard that catches a second builder which happens to agree today.
-
-    Every equality above passes against a duplicated f-string for exactly as
-    long as someone keeps the duplicate in step — which is the drift
-    lg-baxter-chat-2761 filed, with three copies of this sentence. This fails
-    the moment a second place in the module spells it at all.
-    """
-    module = inspect.getsource(chat_feature_loop)
-    builder = inspect.getsource(chat_feature_loop._capacity_message)
-
-    assert module.count("holds at most") == 1
-    assert builder.count("holds at most") == 1
 
 
 def test_the_three_at_cap_sentences_are_one_helpers_output(

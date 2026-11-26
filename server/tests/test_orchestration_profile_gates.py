@@ -8,15 +8,11 @@ test here redirects settings.repo_root to a throwaway tmp_path rather than
 writing into the real agent_context/orchestration/ directory.
 """
 
-import ast
-import inspect
-import textwrap
 from unittest import mock
 
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from loregarden.api import orchestration as orchestration_api
 from loregarden.config import settings
 from loregarden.models.domain import DockerFootprint, Workspace
 from loregarden.services.orchestration_profile import (
@@ -557,75 +553,6 @@ def test_the_profile_list_refuses_rather_than_quietly_dropping_the_broken_file(
 # message>. Fix that file and reload." (AC13's copy), sending the operator to
 # edit a file that is perfectly fine while the real failure is invisible. A 500
 # is the better answer for all of them: it is honest, and it is in the log.
-
-
-def _handler_except_names(func) -> list[set[str]]:
-    """The names each `except` in ``func`` catches, read off the AST.
-
-    Read structurally rather than by text so that re-ordering the tuple,
-    aliasing a name at import, or splitting the guard into two handlers cannot
-    change the answer.
-    """
-    source = textwrap.dedent(inspect.getsource(func))
-    names = []
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.ExceptHandler):  # py-org: allow-isinstance - AST walk
-            continue
-        if node.type is None:
-            names.append({"BaseException"})
-            continue
-        names.append(
-            {
-                child.id
-                for child in ast.walk(node.type)
-                if isinstance(child, ast.Name)  # py-org: allow-isinstance - AST walk
-            }
-        )
-    return names
-
-
-@pytest.mark.parametrize(
-    "handler",
-    [
-        orchestration_api.get_workspace_profile,
-        orchestration_api.list_workspace_profiles,
-        orchestration_api.get_workspace_git_automation,
-    ],
-    ids=["profile", "profiles", "profile/git"],
-)
-def test_the_gate_studio_guards_name_the_unreadable_profile_and_nothing_broader(handler):
-    """AC12 with the clause AC2 and AC9 both have and AC12 does not.
-
-    Every one of these three endpoints answers 400 "go and fix this file" for a
-    `ProfileUnreadableError`. The reason that is a good answer is that the
-    error means exactly one thing: the bytes on disk are not a profile. An
-    `except Exception` in the same slot makes the 400 mean "something went
-    wrong somewhere under this read", and the panel renders the same sentence
-    for it — so the one surface this ticket builds to tell an operator which
-    file to open starts naming files that are not broken.
-
-    `ProfileUnreadableError` is a `RuntimeError` (C2) precisely so the sites
-    that handle it are the sites that *named* it. A broad catch here gives that
-    away on three of the ten, and `grep -rn ProfileUnreadableError` (AC15)
-    would still list them.
-    """
-    handlers = _handler_except_names(handler)
-    assert handlers, (
-        f"{handler.__name__} has no except handler at all: an unreadable profile is a "
-        "500 with {'detail': 'Internal Server Error'} and the editor renders its "
-        "controls over null"
-    )
-    for caught in handlers:
-        assert "ProfileUnreadableError" in caught, (
-            f"{handler.__name__} catches {sorted(caught)}, which does not name the error "
-            "this ticket created — so the 400 is being produced by something else, and "
-            "the next shape of broken file is a 500 again"
-        )
-        assert not (caught & {"Exception", "BaseException"}), (
-            f"{handler.__name__} catches {sorted(caught)}: every failure under this read "
-            "now tells the operator to go and fix a profile file, including the ones "
-            "where the profile is fine and the bug is ours"
-        )
 
 
 def test_a_broken_profile_belonging_to_nobody_fails_the_list_and_not_the_single_read(

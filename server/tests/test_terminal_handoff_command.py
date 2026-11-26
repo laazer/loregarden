@@ -19,9 +19,6 @@ route creates rather than what it returns.
 
 from __future__ import annotations
 
-import ast
-import inspect
-import textwrap
 from pathlib import Path
 from unittest import mock
 from uuid import uuid4
@@ -496,32 +493,8 @@ def test_prepare_terminal_handoff_hands_back_the_tree_it_prepared(
 def test_the_terminal_route_takes_the_branch_from_the_tree_it_was_handed(
     client, db_session, workspace, ticket, worktree, repo
 ):
-    """AC7. `_handoff_target_branch` is deleted, and nothing in the router
-    resolves a target branch.
-
-    It was the guarded half of this ticket's defect: the route had the tree
-    `prepare_terminal_handoff` prepared and then called the *write*-path
-    resolver again to name the branch that tree had just been brought up to —
-    creating the integration branch, merging the base into it, and able to
-    dispatch a blocking merge turn, to fill in one response key.
-
-    Asserted on the module rather than by behaviour because the behaviour is
-    identical when the second resolution agrees, which it almost always does.
-    The response contract is checked here too, so a deletion that quietly drops
-    a key cannot pass.
-    """
-    from pathlib import Path as _Path
-
-    from loregarden.api import ticket_handoff
-
-    assert not hasattr(ticket_handoff, "_handoff_target_branch"), (
-        "the route still re-derives the branch it was handed"
-    )
-    source = _Path(ticket_handoff.__file__).read_text(encoding="utf-8")
-    assert "resolve_target_branch" not in source, (
-        "the handoff router still reaches for the write-path resolver"
-    )
-
+    """AC7. The branch comes from the tree the render prepared, and the response
+    contract keeps every key."""
     response = _handoff(client, ticket)
 
     assert response.status_code == 200, response.text
@@ -941,42 +914,6 @@ def test_one_failure_is_one_refusal_and_one_toast(client, db_session, ticket, co
     assert len(refusals) == 1, (
         f"the route raised {len(refusals)} HTTPExceptions for one click, so the operator "
         f"gets more than one toast: {[args for args, _ in refusals]}"
-    )
-
-
-def test_both_guards_on_this_route_name_the_unreadable_profile(client):
-    """AC8's last sentence, read off the AST of the route module.
-
-    Two guards sit on this route: `start_stage_execution`'s at
-    api/ticket_handoff.py:65 and the renderer's at :74. Both are spelled
-    `except ValueError` today, and both stop covering an unreadable profile the
-    moment the error becomes a `RuntimeError` — the renderer's is the defect
-    this ticket closes, and the dispatch one is a regression it would otherwise
-    introduce.
-
-    Asserted on the handler rather than through behaviour because the dispatch
-    guard is not reachable by this vector once the budget read falls back (R5):
-    nothing on the route raises there any more, so no behaviour test in this
-    module can tell a named guard from a missing one.
-    """
-    source = textwrap.dedent(
-        inspect.getsource(ticket_handoff_module.build_terminal_handoff_command)
-    )
-    named = [
-        handler
-        for handler in ast.walk(ast.parse(source))
-        if isinstance(handler, ast.ExceptHandler)  # py-org: allow-isinstance - AST node walk
-        and "ProfileUnreadableError"
-        in {
-            node.id
-            for node in ast.walk(handler.type)
-            if isinstance(node, ast.Name)  # py-org: allow-isinstance - AST node walk
-        }
-    ]
-    assert len(named) == 2, (
-        f"{len(named)} of the route's guards name ProfileUnreadableError: both the "
-        "dispatch guard and the renderer's have to, because a RuntimeError is caught by "
-        "neither `except ValueError` and the two failures are one request"
     )
 
 

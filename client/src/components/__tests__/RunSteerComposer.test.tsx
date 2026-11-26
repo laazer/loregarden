@@ -290,17 +290,19 @@ it("does not revert to Stop this run when the cancel POST returns", async () => 
 it("disables the steer input and Send for the same window", async () => {
   // A message queued behind a stop is either dropped unread or is the last
   // thing an agent is told before being killed. Neither is what was asked for.
-  mockApi.runMessages.mockResolvedValue(
-    messagesPayload({ cancel_requested_at: "2026-10-08T12:00:00+00:00" }),
-  );
+  mockApi.runMessages.mockResolvedValue(messagesPayload());
+  mockApi.cancelRun.mockReturnValue(new Promise(() => {}));
 
   renderComposer();
-  await screen.findByRole("button", { name: /stopping…/i });
+  const input = await screen.findByLabelText(/message to this run/i);
+  // A draft that could be sent: with none, Send is disabled anyway.
+  fireEvent.change(input, { target: { value: "use the existing helper" } });
+  expect(screen.getByRole("button", { name: /^send$/i })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: /^stop this run$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /confirm stop/i }));
 
-  const input = screen.queryByLabelText(/message to this run/i);
-  if (input) expect(input).toBeDisabled();
-  const send = screen.queryByRole("button", { name: /^send$/i });
-  if (send) expect(send).toBeDisabled();
+  expect(input).toBeDisabled();
+  expect(screen.getByRole("button", { name: /^send$/i })).toBeDisabled();
 });
 
 it("takes the control away entirely once the run is no longer active", async () => {

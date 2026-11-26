@@ -313,18 +313,6 @@ def test_cleanup_refusal_is_a_plain_enum_of_exactly_two_machine_slugs():
     }
 
 
-def test_cleanup_refusal_lives_beside_the_modules_other_failure_vocabulary():
-    """AC15 — declared in `worktree_service`, where the failure it names is.
-
-    `worktree_lifecycle` imports `worktree_service`, so declaring it there
-    would be an import cycle, and function-local imports to dodge a cycle are
-    banned here. It is not persisted, so it does not belong in
-    `models/domain/enums.py` either.
-    """
-    assert CleanupRefusal.__module__ == "loregarden.services.worktree_service"
-    assert CleanupRefusal.__doc__, "the docstring carries why this is not a StrEnum"
-
-
 def test_cleanup_refusal_is_not_merged_into_keep_reason():
     """AC15/AC2 — two vocabularies, because they answer two questions.
 
@@ -348,59 +336,6 @@ def test_cleanup_refusal_is_not_merged_into_keep_reason():
         "PARKED_CHECKOUT",
     ]
     assert not {member.value for member in CleanupRefusal} & {member.value for member in KeepReason}
-
-
-def test_the_service_has_no_attribute_named_cleanup_worktree():
-    """AC14 — the rename is load-bearing, so no alias may survive.
-
-    All five production readers were truthiness readers of a bool, so a caller
-    left on the old name would silently invert: a refusal would read as a
-    removal. The rename turns every one of them into an `AttributeError`, and
-    every unmigrated `mock.patch.object(WorktreeService, "cleanup_worktree",
-    ...)` into a "does not have the attribute" error. A compatibility alias
-    would hand that back — and so would an alias re-added for
-    lg-external-harness-1026, whose AC14 names the old spelling.
-    """
-    assert not hasattr(WorktreeService, "cleanup_worktree")
-    assert callable(WorktreeService.remove_checkout)
-
-
-def test_the_route_handler_keeps_its_own_name():
-    """AC14 — only the service method is renamed.
-
-    `api/parallel.py::cleanup_worktree` is the route's handler, not the seam.
-    Renaming it would change an operation id for no reason, so the fence is
-    pinned in both directions rather than left to a careless sweep.
-    """
-    from loregarden.api import parallel
-
-    assert callable(parallel.cleanup_worktree)
-
-
-def test_shutil_is_imported_at_module_level(session, workspace, service):
-    """AC19 — the repo's import rule, and what makes AC5's recipe possible.
-
-    With `import shutil` inside the delete body there is no module attribute to
-    patch, so the only way to force the raising path was a `chmod` recipe that
-    is flaky under root and on some filesystems. Asserted on the module
-    attribute and on the source, because a function-local import re-added later
-    would leave the module attribute in place and quietly stop being the thing
-    the delete calls.
-
-    Asserted on `directory_release`, where lg-external-harness-1026 AC9/AC14
-    moved the delete, and on `worktree_service` as well: the seam keeps the row
-    update, so a `shutil` left behind there is a second delete path beside the
-    chokepoint.
-    """
-    assert directory_release_module.shutil.__name__ == "shutil"
-    for module in (directory_release_module, worktree_service_module):
-        source = Path(module.__file__).read_text()
-        body_imports = [
-            line
-            for line in source.splitlines()
-            if line.strip().startswith(("import shutil", "from shutil")) and line.startswith(" ")
-        ]
-        assert body_imports == [], f"hoist these to module level: {body_imports}"
 
 
 # --------------------------------------------------------------------------

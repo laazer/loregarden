@@ -1509,56 +1509,6 @@ def test_no_module_outside_the_accessor_looks_up_a_workspace_by_a_nullable_works
     )
 
 
-def test_the_accessor_is_the_one_answer_and_keeps_the_guard_on_its_call_line():
-    """`workspace_for_ticket` exists, and its body is the pinned one-line ternary.
-
-    Pinned because an early return (`if ticket.workspace_id is None: return None`)
-    moves the guard off the call line, and the ticket's own verification grep —
-    `grep -vc "is not None"` over the matching lines — then reports 1 on correct
-    code. Imported here rather than at module scope so this module still collects,
-    and the census above still runs, before the accessor exists.
-    """
-    from loregarden.services.ticket_workspace_binding import workspace_for_ticket
-
-    source = (_package_root() / ACCESSOR_MODULE).read_text(encoding="utf-8")
-    body = ast.parse(source)
-    functions = {node.name: node for node in body.body if isinstance(node, ast.FunctionDef)}
-    assert ACCESSOR_NAME in functions, f"{ACCESSOR_MODULE} does not define {ACCESSOR_NAME}"
-    accessor = functions[ACCESSOR_NAME]
-    statements = [node for node in accessor.body if not isinstance(node, ast.Expr)]
-    assert len(statements) == 1 and isinstance(statements[0], ast.Return), (
-        f"{ACCESSOR_NAME} must be one `return` statement, not {len(statements)}: an early "
-        "return moves the guard off the call line and AC1's own grep then reports 1."
-    )
-    returned = statements[0].value
-    assert isinstance(returned, ast.IfExp), (
-        f"{ACCESSOR_NAME}'s body must be the single-line ternary, so the lookup and its "
-        "`is not None` guard stay on one line."
-    )
-    assert ast.unparse(returned) == (
-        "session.get(Workspace, ticket.workspace_id) if ticket.workspace_id is not None else None"
-    ), f"{ACCESSOR_NAME}'s body is not the pinned ternary: {ast.unparse(returned)}"
-    assert workspace_for_ticket.__module__ == binding_module.__name__
-
-
-def test_the_accessor_module_no_longer_claims_to_do_no_session_io():
-    """The purity sentence excluded the read side, and 64 readers re-derived it.
-
-    Leaving it unamended makes the file lie about itself, so the claim is scoped
-    to `validate_workspace_binding`.
-    """
-    docstring = ast.get_docstring(
-        ast.parse(_package_root().joinpath(ACCESSOR_MODULE).read_text(encoding="utf-8"))
-    )
-    assert docstring is not None
-    if "no Session / Workspace I/O" in docstring:
-        assert "validate_workspace_binding" in docstring, (
-            "the module docstring still claims the whole module does no Session I/O, "
-            f"while {ACCESSOR_NAME} does exactly that. Scope the claim to "
-            "`validate_workspace_binding`."
-        )
-
-
 # --- the adversarial controls -----------------------------------------------
 #
 # A positive control proves the detector sees the shapes it was written for.

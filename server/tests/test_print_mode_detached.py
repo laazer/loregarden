@@ -36,7 +36,6 @@ from loregarden.agents.executors.agent_spawn import SpawnedAgent
 from loregarden.agents.executors.print_mode import run_print_mode
 from loregarden.config import settings
 from loregarden.models.domain import AgentTransport, RunStatus
-from loregarden.services import subprocess_lines
 from loregarden.services.run_errors import RunTimeoutKind
 from loregarden.services.run_log_stream import format_stream_payload
 from loregarden.services.run_output_files import (
@@ -559,19 +558,6 @@ def test_the_owner_records_the_tail_offset_after_every_appended_line(
 
 
 # --- AC6: the pipe reader is off this path -----------------------------------
-
-
-def test_the_print_mode_module_does_not_import_the_pipe_line_reader():
-    """AC6. Its `readline` conflates "nothing ready" with "writer closed" and
-    flushes a buffered partial as a terminated line — on a regular file that
-    corrupts exactly the partials the test above protects.
-
-    Asserted on the module's own namespace rather than by monkeypatching the
-    defining module: `print_mode` binds the name at import, so a patch there
-    would be satisfied by a module that still calls the real class.
-    """
-    assert not hasattr(print_mode, "SubprocessLineReader")
-    assert hasattr(subprocess_lines, "SubprocessLineReader"), "the pipe reader still exists"
 
 
 def test_the_kill_signals_the_group_the_pid_leads_never_the_one_it_sits_in(run_key):

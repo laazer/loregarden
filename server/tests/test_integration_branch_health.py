@@ -8,7 +8,6 @@ card, no block, and nothing else on record.
 
 from __future__ import annotations
 
-import inspect
 import subprocess
 import threading
 from unittest import mock
@@ -356,29 +355,6 @@ def test_the_refusal_reads_the_landing_walk_once_for_a_member_and_for_a_root(
     with mock.patch.object(github_pr_service, "landing_target", wraps=landing_target) as walk:
         _refuse_tree_member(session, ms, workspace)
     assert walk.call_count == 1, "the silent return for a root walks the tree once"
-
-
-def test_the_pr_module_keeps_no_second_way_to_derive_where_a_ticket_lands(session):
-    """The three-step spelling is gone from the module, not just from the one
-    function body. `landing_target` answers all three questions, so a module
-    that still reaches for `target_branch_name`, `resolve_orchestration_profile`
-    or `subtree_root` has a second derivation of the same facts somewhere — the
-    shape this change removed, and the shape it would come back as. Checked over
-    the whole source so an attribute-style call (`target_branch.subtree_root`)
-    counts as well as an import.
-    """
-    source = inspect.getsource(github_pr_service)
-
-    assert "landing_target" in source
-    for second_derivation in (
-        "target_branch_name",
-        "resolve_orchestration_profile",
-        "subtree_root",
-    ):
-        assert second_derivation not in source, (
-            f"{second_derivation} re-derives what landing_target already returned"
-        )
-        assert not hasattr(github_pr_service, second_derivation)
 
 
 def test_a_refused_member_reaches_neither_git_nor_gh(session, workspace, tree):

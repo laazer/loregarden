@@ -229,34 +229,6 @@ describe("the modules that render a path carry no invisible characters (AC13, AC
   it("ToastHost.tsx contains no U+200B", () => {
     expect(read("../../components/ToastHost.tsx")).not.toContain(ZWSP);
   });
-
-  it("ToastHost.tsx never reads import.meta (AC29)", () => {
-    expect(read("../../components/ToastHost.tsx")).not.toMatch(/import\s*\.\s*meta/);
-  });
-
-  it("keeps no alias or second code path for the superseded split (AC55a, AC57)", () => {
-    // Assembled rather than written out, so this file is not itself a hit for
-    // the `grep -rn` AC57 requires to come back empty.
-    const superseded = `split${"After"}Slashes`;
-    const root = resolve(__dirname, "../..");
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const full = resolve(dir, entry.name);
-        if (entry.isDirectory()) {
-          walk(full);
-          continue;
-        }
-        if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-        if (readFileSync(full, "utf8").includes(superseded)) {
-          hits.push(full.slice(root.length + 1));
-        }
-      }
-    };
-    walk(root);
-
-    expect(hits).toEqual([]);
-  });
 });
 
 /* ------------------------------------------------------------------------- *

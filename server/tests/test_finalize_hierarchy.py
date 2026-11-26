@@ -1200,7 +1200,7 @@ class TestFinalizeHierarchyAtomicityAdvanced:
             count = len(
                 db_session.exec(select(Ticket).where(Ticket.legacy_external_id == ext_id)).all()
             )
-            assert count == 0 or count == 1  # At most the pre-existing one
+            assert count == 0, ext_id
 
 
 class TestFinalizeHierarchyAcceptanceCriteria:

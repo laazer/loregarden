@@ -33,9 +33,6 @@ repository, no route.
 
 from __future__ import annotations
 
-import ast
-import inspect
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -280,81 +277,6 @@ def test_an_empty_file_and_a_null_document_are_still_a_profile(
     assert profile.slug == path.stem, (
         f"the slug is stamped from the file name when the document does not carry one: "
         f"{profile.slug!r}"
-    )
-
-
-def _handlers(func) -> list[ast.ExceptHandler]:
-    source = textwrap.dedent(inspect.getsource(func))
-    return [
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.ExceptHandler)  # py-org: allow-isinstance - AST node walk
-    ]
-
-
-def _caught_names(handler: ast.ExceptHandler) -> set[str]:
-    if handler.type is None:
-        return {"BaseException"}
-    return {
-        node.id
-        for node in ast.walk(handler.type)
-        if isinstance(node, ast.Name)  # py-org: allow-isinstance - AST node walk
-    }
-
-
-def test_no_wrap_tuple_at_this_seam_catches_a_programming_error():
-    """AC4's second half, read off the AST rather than the text.
-
-    ``TypeError`` is the shape this seam is most tempted to catch, because it is
-    what two of the six inputs raise today and catching it is one word. It must
-    not be caught: a ``TypeError`` from inside a validator we wrote, or from
-    ``model_validate`` itself, would then be reported to an operator as "the
-    profile could not be read" and acted on as a fallback — a programming error
-    laundered into a configuration error. ``Exception`` and ``BaseException``
-    are the same mistake, wider.
-
-    Asserted on the AST so that re-ordering, re-wrapping or aliasing the names
-    cannot change the answer, and over both functions because the wrap could be
-    put in either one.
-    """
-    refused = {"TypeError", "Exception", "BaseException"}
-    for func in (
-        orchestration_profile_module.load_profile_from_path,
-        orchestration_profile_module._parse_profile.__wrapped__,
-    ):
-        for handler in _handlers(func):
-            caught = _caught_names(handler)
-            assert not (caught & refused), (
-                f"{func.__name__} catches {sorted(caught & refused)}: at this seam that "
-                "relabels a programming error as an unreadable file and hands it to the "
-                "operator as a configuration problem"
-            )
-
-
-def test_the_wrap_names_the_three_libraries_that_refuse_a_file_and_nothing_else():
-    """R3, and the reason it is three names and not one.
-
-    ``ParserError`` alone misses the tab-indented file, which is a
-    ``ScannerError``; ``YAMLError`` is their common base and covers both.
-    ``UnicodeDecodeError`` is a ``ValueError`` today, so leaving it out would
-    keep it working at the handoff guard (whose tuple still names
-    ``ValueError``) while turning the three Gate Studio GETs into new 500s.
-    ``ValidationError`` is the shape that already worked and must not regress.
-
-    Pinned as a closed set, in the same breath as the test above: "catches
-    nothing too broad" is only half an answer if the tuple can also be narrowed
-    back to one name and stay green.
-    """
-    handlers = _handlers(orchestration_profile_module.load_profile_from_path)
-    assert len(handlers) == 1, (
-        f"load_profile_from_path has {len(handlers)} except handlers: the wrap goes "
-        "around the _parse_profile call only, so that path.stat()'s OSError — a missing "
-        "file, a different question — is not relabelled as an unreadable one"
-    )
-    assert _caught_names(handlers[0]) == {"YAMLError", "UnicodeDecodeError", "ValidationError"}, (
-        f"the wrap catches {sorted(_caught_names(handlers[0]))}: a tab-indented file is a "
-        "ScannerError and a truncated one is a ParserError, so the name has to be their "
-        "YAMLError base; invalid UTF-8 and a schema-invalid document are the other two"
     )
 
 

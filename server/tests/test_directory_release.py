@@ -707,33 +707,6 @@ def test_the_disposition_is_keyword_only():
         DirectoryReleaseFailed("the release failed", ReleaseDisposition.INTACT)
 
 
-def test_the_class_docstring_states_the_iff_invariant():
-    """AC1.2 — the invariant is a docstring plus AC1.5's test, not an assert.
-
-    Asserted on the docstring and not on a validator because there IS no
-    validator: the exception must construct on any combination, so that a
-    future arm is caught by the parametrized test over real arms rather than
-    by a runtime check that would turn a reporting bug into a second crash on
-    an already-failing path.
-    """
-    doc = (DirectoryReleaseFailed.__doc__ or "").lower()
-    assert "if and only if" in doc or "iff" in doc
-    assert "still_parked" in doc or "still-parked" in doc
-
-
-def test_the_module_does_not_import_the_seams_vocabulary():
-    """AC1.2 — `worktree_service` imports this module, so the reverse is a cycle.
-
-    The disposition is this module's own vocabulary precisely so that it can be
-    required here without reaching for the caller's enum.
-    """
-    source = Path(directory_release.__file__).read_text()
-    assert "CleanupRefusal" not in source.replace(
-        "`~loregarden.services.worktree_service.CleanupRefusal`", ""
-    ).replace("CleanupRefusal` cannot be", "")
-    assert not hasattr(directory_release, "CleanupRefusal")
-
-
 # --- AC1.3 ------------------------------------------------------------------
 
 

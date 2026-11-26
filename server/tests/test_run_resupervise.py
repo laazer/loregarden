@@ -224,17 +224,6 @@ def test_reattach_starts_resupervise_for_every_adopted_run(db_session: Session, 
     )
 
 
-def test_the_watcher_no_longer_lives_in_run_reattach():
-    """AC11. `_watch` MOVES; `run_reattach` keeps only its predicates.
-
-    Leaving it behind would put `OrchestrationService` imports behind the boot
-    reaper's predicates, dragging orchestration onto the boot path.
-    """
-    assert not hasattr(run_reattach, "_watch")
-    assert hasattr(run_reattach, "surviving_runs")
-    assert hasattr(run_reattach, "runs_to_spare")
-
-
 # --- AC12: the reattached run settles ----------------------------------------
 
 
@@ -512,17 +501,6 @@ def test_resupervise_never_calls_finish_external_stage(db_session: Session, adop
     assert db_session.get(AgentRun, adopted.id).external_harness is None
 
 
-def test_the_member_results_helper_has_one_home(db_session: Session):
-    """AC13. Lifted into `services.parallel_stage`, which already owns
-    `reconcile_parallel_stage`; `finish_external_stage` imports it from there."""
-    from loregarden.services import parallel_stage
-
-    assert hasattr(parallel_stage, "member_runs_and_results")
-    assert not hasattr(external_harness, "_member_runs_and_results"), (
-        "a second copy of the parallel-member helper"
-    )
-
-
 # --- AC14: settle once --------------------------------------------------------
 
 
@@ -579,12 +557,19 @@ def test_a_reattached_run_records_its_git_evidence(db_session: Session, adopted)
     """AC15. Read off the row, so a process that never saw the live tree can
     still say what the run inherited."""
     _write_output(adopted, out="edited things\n" + _report("pass"), rc="0")
+    root = Path(db_session.get(Workspace, adopted.workspace_id).repo_path)
+    (root / "inherited.txt").write_text("dirty before the run started\n")
+    (root / "agent.txt").write_text("written by the agent\n")
+    adopted.start_dirty_paths_json = json.dumps(["inherited.txt"])
+    db_session.add(adopted)
+    db_session.commit()
 
     with mock.patch.object(run_resupervise, "liveness", _gone):
         resupervise(adopted.id, interval_seconds=0)
 
     db_session.expire_all()
     settled = db_session.get(AgentRun, adopted.id)
+    assert json.loads(settled.changed_paths_json) == ["agent.txt"]
     assert settled.changed_paths_recorded_at is not None, (
         "no record of what this run touched — the column's empty value means "
         "'cannot say', which is what AC15 exists to prevent"

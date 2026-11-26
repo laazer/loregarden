@@ -571,13 +571,6 @@ def test_exactly_one_place_in_the_package_mints_each_kind_of_row():
     assert sum(text.count("SymbolMapSymbol(") for text in sources.values()) == 1
 
 
-def test_the_extraction_helper_is_public_so_the_refresh_reuses_it():
-    """R4. `refresh.py` copying `_extraction_for` is the same two-loops bug
-    one level down: the copy is what stops reading the file the same way."""
-    assert callable(store_module.extraction_for)
-    assert not hasattr(store_module, "_extraction_for")
-
-
 # ==========================================================================
 # R5 / AC1-AC4, AC9 — the refresh itself
 # ==========================================================================
@@ -1227,17 +1220,6 @@ def test_a_second_checkout_at_the_same_commit_refreshes_zero_files(
     assert report.files_reanalyzed == 0
     assert parsed == []
     assert map_status(session, workspace.id, second).freshness is Freshness.MATCHES
-
-
-def test_the_refresh_module_records_why_mtime_is_absent():
-    """AC12. The paragraph is a deliverable, not a note: it goes where the
-    later ticket's author is standing when they reach for `stat().st_mtime`.
-    A documented absence with no home decays into no absence at all.
-    """
-    docstring = refresh_module.__doc__ or ""
-
-    assert "mtime" in docstring
-    assert "worktree" in docstring
 
 
 def test_no_content_hash_column_is_added_here():

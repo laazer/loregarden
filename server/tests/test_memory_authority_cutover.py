@@ -464,6 +464,24 @@ def test_r6_search_graph_hits_are_only_memory_or_learning(vault_dir, tmp_path):
     assert all(row.get("node_type") in {"memory", "learning"} for row in found["graph"])
 
 
+def test_the_hit_with_more_of_the_query_comes_before_a_newer_one_with_less(vault_dir, tmp_path):
+    """Distinct terms count, so a title that repeats one word stays behind."""
+    service = _both(vault_dir, tmp_path)
+    for title in ("zephyrine quokkalike", "zephyrine zephyrine zephyrine"):
+        service.upsert_memory(title=title, body="x", workspace_slug="lg")
+    with service.require_graph("lg").connection() as conn:
+        conn.execute(
+            "UPDATE memory_nodes SET updated_at = '2020-01-01' WHERE title LIKE '%quokka%'"
+        )
+
+    found = service.search("zephyrine quokkalike", workspace_slug="lg")
+
+    assert [row["title"] for row in found["graph"]] == [
+        "zephyrine quokkalike",
+        "zephyrine zephyrine zephyrine",
+    ]
+
+
 def test_r6_search_obsidian_hits_are_only_blog_or_checkpoint(vault_dir, tmp_path):
     """Cutover R6 — vault memory/learning peers must not appear in obsidian[]."""
     service = _both(vault_dir, tmp_path)

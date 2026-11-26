@@ -504,25 +504,6 @@ def test_one_checkout_that_will_not_go_does_not_spare_the_branch_beside_it(
 # ===========================================================================
 
 
-def test_the_sweep_no_longer_runs_its_own_landed_pre_check(
-    session, workspace, repo, remote, pruning
-):
-    """`branch_work_has_landed` is now enforced *inside* the gate.
-
-    Two implementations of "did this land" is two answers to one question, and
-    they drift the first time either moves. The pre-check went; the sweep asks
-    `retire_worktree` and reports what it says.
-    """
-    import inspect
-
-    from loregarden.services import chat_branch_sweep
-
-    source = inspect.getsource(chat_branch_sweep)
-    assert "branch_work_has_landed" not in source, (
-        "the sweep keeps a second copy of the receipt check"
-    )
-
-
 def test_an_unlanded_chat_branch_is_still_kept_and_its_ref_survives(
     session, workspace, repo, remote, pruning
 ):

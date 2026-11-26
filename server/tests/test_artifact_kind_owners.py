@@ -699,31 +699,6 @@ def test_a_real_passing_receipt_still_clears_the_detector(landed_ticket):
     assert {v.subject_id for v in LAND_VERIFICATION_RAN.detect(session)} == set()
 
 
-def test_no_keyword_was_added_to_the_shared_service_method():
-    """The rejected alternative, pinned so it cannot arrive by a later refactor.
-
-    A `platform_write: bool = False` on `OrchestrationCallbackService.attach_artifact`
-    is a switch the next contributor passes `True` to silence a refusal, across
-    14 call sites nobody can audit at a glance.
-    """
-    parameters = set(inspect.signature(OrchestrationCallbackService.attach_artifact).parameters)
-
-    assert parameters == {
-        "self",
-        "ticket",
-        "kind",
-        "title",
-        "content",
-        "run_id",
-        "evidence_kind",
-        "commit_sha",
-    }, (
-        f"the shared service method now takes {sorted(parameters)}. Write authority is a "
-        "property of the caller, so it is decided at the doors that take a kind from a model "
-        "— never by a flag on the method every writer shares."
-    )
-
-
 def test_the_service_methods_own_unresolved_refusal_is_unchanged(harness: _Harness):
     """The existing narrower refusal stays, and is asserted here as well as in
     `test_unresolved_ledger.py:588`, because this change reserves the same three

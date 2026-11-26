@@ -22,14 +22,17 @@ from datetime import datetime, timezone
 import pytest
 from loregarden.models.domain import (
     AgentRun,
+    DomainEvent,
+    EventType,
     ExternalHarness,
     RunStatus,
     Ticket,
 )
 from loregarden.services.external_harness import _resumable_stage_run
 from loregarden.services.run_service import fail_interrupted_runs
+from loregarden.services.stage_retry_budget import count_stage_dispatches, record_stage_dispatch
 from loregarden.services.triage_service import TRIAGE_AGENT_ID
-from sqlmodel import Session
+from sqlmodel import Session, select
 from tests.factories import make_workspace_ticket
 
 STAGE = "implement"
@@ -156,70 +159,21 @@ def test_an_internal_run_is_reaped_though_resume_could_never_adopt_it(
     )
 
 
-def test_the_reaper_says_why_it_is_not_the_per_dispatch_settle():
-    """AC3 of lg-milestone-that-976, the comment arm.
+def test_the_reaper_refunds_no_charge_and_records_no_decision(db_session: Session, ticket: Ticket):
+    """`settle_failed_handoff` refunds the dispatch and records a decision. This sweep
+    claims every in-flight run it can see, so refunding here would hand retry
+    budget back on every restart."""
+    _run(db_session, ticket, code="rrs-charged")
+    record_stage_dispatch(db_session, ticket.id, STAGE)
 
-    Four effects settle a dispatch that never attempted the work: the run
-    fails, the dispatch charge comes back, the stage goes back to PENDING and a
-    decision is recorded. This reaper does the first and none of the others, and
-    that difference is deliberate — it is the boot/orphan sweep, claiming every
-    run it can see, so refunding charges and forcing stages to PENDING would
-    hand retry budget back across every live stage on restart.
+    assert fail_interrupted_runs(db_session, ticket_id=ticket.id)
 
-    Pinned as a comment rather than as a call because the call arm is the bug.
-    The ticket's own description attributed the decision-recording orphan shape
-    to this function; it is `settle_orphaned_agent_runs`, in the same module.
-    A reader who makes that mistake while holding an editor turns a boot sweep
-    into a budget reset, and the superset INVARIANT above goes with it.
-    """
-    import ast
-    import inspect
-
-    from loregarden.services import run_service
-
-    source = inspect.getsource(run_service)
-    reaper = next(
-        node
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "fail_interrupted_runs"  # py-org: allow-isinstance - an ast node
-    )
-    # The comment block directly above `def` counts as much as one inside the
-    # body: it is where a reader looking for "how does this differ from the
-    # settle?" looks first, and `ast.get_source_segment` starts at the `def`
-    # line, so reading only the segment would have failed the arm AC3 asks for.
-    lines = source.splitlines()
-    lead: list[str] = []
-    cursor = reaper.lineno - 2
-    while cursor >= 0 and lines[cursor].strip().startswith("#"):
-        lead.insert(0, lines[cursor])
-        cursor -= 1
-    text = ast.get_source_segment(source, reaper) or ""
-    comments = "\n".join(line for line in lead + text.splitlines() if line.strip().startswith("#"))
-    assert "settle_failed_handoff" in comments, (
-        "nothing on fail_interrupted_runs says how it differs from the per-dispatch "
-        "settle in services/handoff_settle.py, or why: the next reader is as likely to "
-        "make this one refund and reset stages as to leave it alone"
-    )
-    assert "settle_orphaned_agent_runs" in comments, (
-        "the comment does not correct the record: the orphan shape that records a "
-        "decision is settle_orphaned_agent_runs, not this function"
-    )
-    called = {
-        node.func.attr
-        if isinstance(node.func, ast.Attribute)
-        else getattr(node.func, "id", "")  # py-org: allow-isinstance - an ast node
-        for node in ast.walk(reaper)
-        if isinstance(node, ast.Call)  # py-org: allow-isinstance - an ast node
-    }
-    forbidden = called & {
-        "refund_stage_dispatch_charged_before",
-        "refund_stage_dispatch_charged_since",
-        "finalize_stage",
-        "record_orchestrator_decision",
-    }
-    assert forbidden == set(), (
-        f"the boot sweep gained the per-dispatch settle's effects ({sorted(forbidden)}): "
-        "it claims every in-flight run on a ticket, so refunding charges or forcing "
-        "stages to PENDING hands retry budget back across every live stage on restart"
-    )
+    db_session.expire_all()
+    assert count_stage_dispatches(db_session, ticket.id, STAGE) == 1
+    decisions = db_session.exec(
+        select(DomainEvent).where(
+            DomainEvent.ticket_id == ticket.id,
+            DomainEvent.type == EventType.ORCHESTRATOR_DECISION,
+        )
+    ).all()
+    assert decisions == []

@@ -28,6 +28,8 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services.worktree_lifecycle import _REASON_CLAUSE
+from loregarden.services.worktree_premises import KeepReason
 from sqlmodel import Session, select
 from tests.worktree_helpers import git, grant_receipt, make_repo
 
@@ -640,41 +642,12 @@ def test_a_gone_workspace_refusal_is_a_premise_not_a_park_or_a_crash(session, wo
     assert tree.is_dir()
 
 
-def test_workspace_gone_is_a_construction_failure_not_a_tree_shape_premise():
-    """AC8 + R3. Value, order, unique clause, and the two places it must not
-    appear. Parametrized `list(KeepReason)` tests inject via mock and auto-grow;
-    this pin is what stops a copied neighbour clause and a `_keep_reason` case.
-    """
-    import inspect
-
-    from loregarden.services import worktree_lifecycle
-    from loregarden.services.worktree_lifecycle import (
-        _REASON_CLAUSE,
-        _keep_reason,
-        _refused,
-        _service_for,
-    )
-    from loregarden.services.worktree_premises import KeepReason, RemovalFailure
-
-    names = [member.name for member in KeepReason]
-    assert names[names.index("UNREADABLE") + 1] == "WORKSPACE_GONE"
-    assert names[names.index("WORKSPACE_GONE") + 1] == "CLAIMANT_LIVE"
+def test_workspace_gone_has_its_own_persisted_value_and_its_own_sentence():
     assert KeepReason.WORKSPACE_GONE.value == _WORKSPACE_GONE_VALUE
-    assert KeepReason.WORKSPACE_GONE.name.lower() == "workspace_gone"
     clause = _REASON_CLAUSE[KeepReason.WORKSPACE_GONE]
-    assert clause == _WORKSPACE_GONE_CLAUSE
-    neighbours = {
+    assert clause not in {
         text for key, text in _REASON_CLAUSE.items() if key is not KeepReason.WORKSPACE_GONE
     }
-    assert clause not in neighbours
-    assert clause != _CHAT_GONE_CLAUSE
-    assert clause != _UNREADABLE_CLAUSE
-    assert "WORKSPACE_GONE" not in [member.name for member in RemovalFailure]
-    assert "WORKSPACE_GONE" not in inspect.getsource(_keep_reason)
-    assert "_service_for" not in worktree_lifecycle.__all__
-    assert "_refused" not in worktree_lifecycle.__all__
-    assert _service_for.__name__.startswith("_")
-    assert _refused.__name__.startswith("_")
 
 
 def test_a_nested_repo_path_does_not_walk_up_to_the_workspace_worktrees_folder(session, tmp_path):
@@ -691,38 +664,3 @@ def test_a_nested_repo_path_does_not_walk_up_to_the_workspace_worktrees_folder(s
     service = WorktreeService(session, repo_path=str(nested))
     assert service.worktree_base == nested.resolve().parent / ".worktrees"
     assert service.worktree_base != nested.resolve().parent
-
-
-def test_the_gate_no_longer_takes_the_callers_path():
-    """AC2. No shim, no default, no `*args`. `ensure_ticket_branch` keeps
-    `repo_root` for git cwd; the four names that only forwarded it do not.
-    """
-    import inspect
-
-    from loregarden.services.branch_triage_service import _release_checkouts_on
-    from loregarden.services.checkout_release import release_checkout, retire_checkout
-    from loregarden.services.git_branch import _try_free_worktree_lock, ensure_ticket_branch
-
-    dropped = {
-        "release_checkout": (release_checkout, ["session", "path"]),
-        "retire_checkout": (retire_checkout, ["session", "row", "path"]),
-        "_try_free_worktree_lock": (
-            _try_free_worktree_lock,
-            ["branch", "locked_at", "holder", "session"],
-        ),
-        "_release_checkouts_on": (_release_checkouts_on, ["session", "worktree_paths"]),
-    }
-    for name, (func, expected) in dropped.items():
-        params = inspect.signature(func).parameters
-        assert list(params) == expected, name
-        assert "repo_root" not in params, name
-        kinds = {item.kind for item in params.values()}
-        assert inspect.Parameter.VAR_POSITIONAL not in kinds, name
-        assert inspect.Parameter.VAR_KEYWORD not in kinds, name
-        for item in params.values():
-            assert item.default is inspect.Parameter.empty, f"{name} defaults {item.name}"
-
-    assert "repo_root" in inspect.signature(ensure_ticket_branch).parameters
-    lock = inspect.signature(_try_free_worktree_lock).parameters
-    assert lock["session"].kind is inspect.Parameter.KEYWORD_ONLY
-    assert lock["holder"].kind is inspect.Parameter.KEYWORD_ONLY

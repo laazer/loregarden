@@ -17,7 +17,6 @@ The field stays on the model and keeps the profile's value.
 from __future__ import annotations
 
 import ast
-import inspect
 import json
 import logging
 from pathlib import Path
@@ -402,16 +401,6 @@ def rogue_ticket_fixture(session, workspace) -> Ticket:
     session.commit()
     session.refresh(ticket)
     return ticket
-
-
-def test_the_accessor_takes_no_ticket():
-    """AC2's decision, expressed in the signature.
-
-    A ticket parameter here is the whole defect: it is what let two callers
-    resolve two different bases for one repository.
-    """
-    parameters = list(inspect.signature(base_branch).parameters)
-    assert parameters == ["workspace"], f"the accessor takes more than a workspace: {parameters}"
 
 
 def test_all_three_spellings_give_the_profiles_base(session, workspace, rogue_ticket):

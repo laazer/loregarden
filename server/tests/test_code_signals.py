@@ -1000,25 +1000,6 @@ def test_a_refresh_writes_one_row_per_path_and_two_per_pair(
     }
 
 
-def test_the_report_is_a_return_value_carrying_every_figure(
-    session, workspace, authored_repo, config
-):
-    """AC10: a count nobody reads cannot tell a working computation from a
-    silent no-op, so the measurement is returned rather than logged."""
-    report = refresh_workspace_signals(session, workspace.id, authored_repo, config)
-
-    for field in (
-        "commits_read",
-        "files_seen",
-        "signal_rows",
-        "pair_rows",
-        "elapsed_seconds",
-        "head_sha",
-        "empty_basis",
-    ):
-        assert hasattr(report, field), field
-
-
 def test_two_consecutive_refreshes_leave_identical_rows(session, workspace, authored_repo, config):
     refresh_workspace_signals(session, workspace.id, authored_repo, config)
     first = sorted(

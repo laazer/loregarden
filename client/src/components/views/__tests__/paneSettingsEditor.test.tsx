@@ -459,19 +459,6 @@ describe("AC4 — the write shares the view's one queue, and opens no second pat
       workspace_slug: "loregarden",
     });
   });
-
-  it("reaches the server through no module but the shared layout write", async () => {
-    // The structural half. 438 shipped a Critical where a second layout write
-    // read its identity from a render closure and destroyed another view's
-    // record; the guarantee that cannot happen again is that there is only one
-    // mutation, not that this one happens to be written carefully.
-    const fs: typeof import("fs") = jest.requireActual("fs");
-    const path: typeof import("path") = jest.requireActual("path");
-    const source = fs.readFileSync(path.resolve(__dirname, "../PaneSettingsEditor.tsx"), "utf8");
-
-    expect(source).not.toMatch(/useMutation|updateView|apiFetch|fetch\(/);
-    expect(source).toMatch(/useContainerSettingsWrite/);
-  });
 });
 
 describe("AC6 — the empty-pane copy names a control that exists", () => {

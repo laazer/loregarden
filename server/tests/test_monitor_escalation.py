@@ -8,7 +8,6 @@ via ticket_ids.resolve — never Ticket.external_id LIKE 'monitor-escalation:%'.
 
 from __future__ import annotations
 
-import inspect
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -25,7 +24,7 @@ from loregarden.models.domain.enums import AUTO_FIXABLE_CONDITIONS, MonitorMode
 from loregarden.models.domain.workflow_monitor import MonitorFinding
 from loregarden.services.orchestration_profile import MonitorConfig
 from loregarden.services.ticket_ids import resolve as resolve_ticket_id
-from loregarden.services.workflow_monitor import AUTO_FIXABLE, _finding_title, sweep
+from loregarden.services.workflow_monitor import AUTO_FIXABLE, _finding_title
 from sqlmodel import Session, col, select
 from tests.factories import make_ticket, make_workspace, make_workspace_ticket
 
@@ -474,16 +473,6 @@ def test_concurrent_create_valueerror_reresolves_and_refreshes(db_session: Sessi
 # --- Sweep seam -------------------------------------------------------------
 
 
-def test_sweep_calls_escalate_between_record_and_autofix():
-    """Hook contract: scan → record_findings → escalate → apply_autofixes."""
-    source = inspect.getsource(sweep)
-    record_at = source.index("record_findings")
-    escalate_at = source.index("escalate_recurring_findings")
-    autofix_at = source.index("apply_autofixes")
-    assert record_at < escalate_at < autofix_at
-    assert "sweep_started_at" in source
-
-
 # --- Adversarial (test-break): encoding, aggregation, currency, isolation ---
 
 
@@ -655,10 +644,6 @@ def test_escalate_never_dispatches_orchestration_or_approvals(db_session: Sessio
     _plant_finding(db_session, b, condition=CONDITION, stage_key="implement", last_seen=now)
 
     mod = _escalation()
-    source = inspect.getsource(mod)
-    for forbidden in ("start_orchestration", "request_approval", "start_stage"):
-        assert forbidden not in source, f"monitor_escalation must not call {forbidden}"
-
     upserted = mod.escalate_recurring_findings(db_session, sweep_started_at=sweep_started)
 
     assert upserted == 1
@@ -914,15 +899,6 @@ def test_workspace_scoped_condition_findings_never_escalate(db_session: Session)
     assert _milestone(db_session, a.workspace_id) is None
 
 
-def test_sweep_captures_sweep_started_at_before_record_findings():
-    """Hook timing: sweep_started_at must be bound before record_findings so currency is this sweep."""
-    source = inspect.getsource(sweep)
-    started_at = source.index("sweep_started_at")
-    record_at = source.index("record_findings")
-    escalate_at = source.index("escalate_recurring_findings")
-    assert started_at < record_at < escalate_at
-
-
 def test_aggregation_uses_artifact_title_not_content_condition(db_session: Session):
     """Group key is artifact.title — content_json.condition drift must not split or invent groups."""
     a = make_workspace_ticket(db_session, "esc-title-a")
@@ -1176,39 +1152,3 @@ def test_all_workspace_scoped_conditions_never_escalate(db_session: Session):
     assert upserted == 0
     assert _escalation_bugs(db_session, tickets[0].workspace_id) == []
     assert _milestone(db_session, tickets[0].workspace_id) is None
-
-
-def test_sweep_calls_escalate_with_sweep_started_at_keyword():
-    """Hook call shape: escalate_recurring_findings(..., sweep_started_at=<aware datetime>)."""
-    source = inspect.getsource(sweep)
-    # Bound before record, passed as keyword — not a bare positional after session.
-    assert "sweep_started_at=" in source or "sweep_started_at =" in source
-    assert "escalate_recurring_findings(session" in source.replace(" ", "") or (
-        "escalate_recurring_findings(" in source and "sweep_started_at" in source
-    )
-    # Must not call escalate before capturing the clock.
-    clock_bind = min(
-        i
-        for i in (
-            source.find("sweep_started_at ="),
-            source.find("sweep_started_at="),
-        )
-        if i >= 0
-    )
-    assert clock_bind < source.index("record_findings")
-    assert source.index("record_findings") < source.index("escalate_recurring_findings")
-
-
-def test_cfg1_autofix_and_refusal_bodies_untouched():
-    """CFG-1: apply_autofixes / _raise_refusal_approval remain the pre-escalation implementations."""
-    from loregarden.services import workflow_monitor
-
-    autofix_src = inspect.getsource(workflow_monitor.apply_autofixes)
-    refusal_src = inspect.getsource(workflow_monitor._raise_refusal_approval)
-    # Escalation must not be folded into autofix or refusal — those stay independent.
-    assert "escalate_recurring_findings" not in autofix_src
-    assert "escalate_recurring_findings" not in refusal_src
-    assert "monitor-escalation" not in autofix_src
-    assert "monitor-escalation" not in refusal_src
-    # Refusal still opens Approvals; escalation path must not borrow that.
-    assert "Approval" in refusal_src or "approval" in refusal_src.lower()

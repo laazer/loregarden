@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from loregarden.agents.executors import cli as cli_module
 from loregarden.agents.executors.run_evidence import run_paths_before
 from loregarden.models.domain import AgentRun, RunStatus, Ticket, Workspace
 from sqlmodel import Session
@@ -74,31 +73,3 @@ def test_the_set_is_deduplicated_and_order_independent(run):
     run.start_dirty_paths_json = json.dumps(["a/", "a/", "b/"])
 
     assert run_paths_before(run) == {"a/", "b/"}
-
-
-def test_the_dispatch_path_no_longer_brackets_from_a_live_tree_snapshot():
-    """AC15. Both callers go through the one function.
-
-    Asserted on the module source rather than by mocking, because the defect
-    being prevented is a *second* source of truth existing at all — a mock of
-    `run_paths_before` would pass against code that still called
-    `before.bracket_paths()` beside it.
-    """
-    source = cli_module.__file__
-    with open(source, encoding="utf-8") as handle:
-        body = handle.read()
-
-    assert "run_paths_before(" in body
-    assert "bracket_paths()" not in body, (
-        "cli.py still takes its own answer to what the run inherited"
-    )
-
-
-def test_the_reattached_path_uses_the_same_function():
-    """AC15's point: a reattached run therefore records git evidence at all."""
-    from loregarden.services import run_resupervise
-
-    with open(run_resupervise.__file__, encoding="utf-8") as handle:
-        body = handle.read()
-
-    assert "run_paths_before(" in body

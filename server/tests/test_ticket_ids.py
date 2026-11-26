@@ -531,14 +531,6 @@ class TestInitiativeSpelling:
         spelled = tid.spell_initiative_external_id(slug, 1)
         assert re.match(r"^init-[a-z0-9-]+-\d+$", spelled), spelled
 
-    def test_module_documents_reserved_init_prefix(self):
-        """R2.AC3 — scheme + reserved prefix live beside spell_external_id docs."""
-        from loregarden.services import ticket_ids as tid
-
-        doc = (tid.__doc__ or "") + "\n" + (tid.spell_external_id.__doc__ or "")
-        assert "init-" in doc.lower() or "init-<" in doc.lower()
-        assert "initiative" in doc.lower()
-
 
 class TestInitiativeNumbering:
     """R1 — global initiative_number_pool + delete-safe next_initiative_number."""
@@ -645,8 +637,7 @@ class TestInitiativeResolveInclude:
         workspace = make_workspace(db_session, slug="init-bare-num")
         initiative = self._seed_initiative(db_session, title="Bare Number", number=903)
         found = resolve(db_session, str(initiative.ticket_number), workspace_id=workspace.id)
-        assert found is None or found.id != initiative.id
-        assert found is None or found.work_item_type != WorkItemType.INITIATIVE
+        assert found is None
 
     def test_workspace_structured_number_path_never_returns_initiative(self, db_session: Session):
         """R4.AC4 — trailing number under a workspace prefix stays workspace-ticket only."""
@@ -657,7 +648,7 @@ class TestInitiativeResolveInclude:
         initiative = self._seed_initiative(db_session, title="Trailing Number", number=904)
         ref = f"{workspace.ticket_prefix}-anything-{initiative.ticket_number}"
         found = resolve(db_session, ref, workspace_id=workspace.id)
-        assert found is None or found.id != initiative.id
+        assert found is None
 
     def test_legacy_spelling_include_matches_like_external_id(self, db_session: Session):
         """R4.AC5"""

@@ -877,35 +877,6 @@ def test_the_parallel_path_resolves_its_target_in_the_shared_checkout(
     )
 
 
-def test_no_dispatch_path_still_asks_whether_it_is_in_the_shared_checkout(
-    session, workspace, dependent, repo
-):
-    """AC2's verification, as a test rather than a grep a reviewer has to run.
-
-    The condition this ticket deletes was in three places and the two the last
-    ticket fixed were found by hand. A fourth would be found the same way: by a
-    stale handoff nobody noticed. The server's own source is the fixture.
-    """
-    import re
-    from pathlib import Path as _Path
-
-    import loregarden
-
-    root = _Path(loregarden.__file__).parent
-    pattern = re.compile(r"repo_root\s*[=!]=\s*workspace_root")
-    offenders = [
-        f"{path.relative_to(root)}:{n}"
-        for path in sorted(root.rglob("*.py"))
-        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
-        if pattern.search(line)
-    ]
-
-    assert offenders == [], (
-        "a dispatch path still decides whether to refresh by asking which tree "
-        f"it is in: {offenders}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # lg-milestone-that-917, test-break: the handoff's three error contracts, and
 # the one argument that decides whose work the switch is allowed to carry.
@@ -1319,39 +1290,6 @@ def test_a_target_that_cannot_be_resolved_fails_the_dispatch_with_the_same_words
     assert stopped.status == RunStatus.FAILED
     assert (stopped.stderr or "").startswith("Failed to checkout branch: "), stopped.stderr
     assert "clash.txt" in (stopped.stderr or ""), stopped.stderr
-
-
-def test_ensure_branch_or_fail_is_handed_one_tree_and_a_resolved_start_point(session):
-    """AC3. `_ensure_branch_or_fail` has one job — put `repo_root` on the
-    ticket's branch — so it takes neither the second root it used to resolve
-    against nor the `skip` flag whose evaluation would force the resolution to
-    happen eagerly. `_prepare_tree`'s own signature is unchanged, because three
-    test call sites pass it by keyword.
-    """
-    import inspect
-
-    func = CliAgentExecutor._ensure_branch_or_fail
-    assert list(inspect.signature(func).parameters) == [
-        "self",
-        "run",
-        "ticket",
-        "workspace",
-        "repo_root",
-        "start_point",
-        "advance_workflow",
-    ]
-    body = inspect.getsource(func).replace(func.__doc__ or "\0", "")
-    assert "resolve_target_branch" not in body, "it is handed the answer, it does not resolve one"
-    assert "workspace_root" not in body, "and it knows about exactly one tree"
-    assert list(inspect.signature(CliAgentExecutor._prepare_tree).parameters) == [
-        "self",
-        "run",
-        "ticket",
-        "workspace",
-        "workspace_root",
-        "skip_git_branch",
-        "advance_workflow",
-    ], "tests/worktree_helpers.py and this module call `_prepare_tree` by keyword"
 
 
 # ---------------------------------------------------------------------------

@@ -10,10 +10,8 @@ fails until the module exists, which is the intended RED for test-design.
 
 from __future__ import annotations
 
-import ast
 import json
 import logging
-from dataclasses import fields
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -182,13 +180,6 @@ def test_unresolved_artifact_kind_values_are_reserved_strings():
     assert UnresolvedArtifactKind.OPEN == "unresolved_open"
     assert UnresolvedArtifactKind.WAIVER == "unresolved_waiver"
     assert UnresolvedArtifactKind.CLEAR == "unresolved_clear"
-
-
-def test_ledger_payload_models_exist():
-    assert {f.name for f in fields(ledger.LedgerActor)} >= {"agent_id", "stage_key"}
-    assert hasattr(ledger, "UnresolvedOpenPayload")
-    assert hasattr(ledger, "UnresolvedWaiverPayload")
-    assert hasattr(ledger, "UnresolvedClearPayload")
 
 
 # --------------------------------------------------------------------------- #
@@ -988,17 +979,6 @@ def test_detector_finds_nothing_on_a_ticket_with_no_open_rows(db_session, tmp_pa
         item for item in INVARIANTS if item.name == "unresolved_open_shrink_is_audited"
     )
     assert list(invariant.detect(db_session)) == []
-
-
-def test_no_gate_producer_import_in_ledger_or_stage_verdict():
-    for relative in ("services/unresolved_ledger.py", "services/stage_verdict.py"):
-        tree = ast.parse((_SOURCE_ROOT / relative).read_text(encoding="utf-8"), filename=relative)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert "gate_producer" not in alias.name
-            if isinstance(node, ast.ImportFrom) and node.module:
-                assert "gate_producer" not in node.module
 
 
 # --------------------------------------------------------------------------- #

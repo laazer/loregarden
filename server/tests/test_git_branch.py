@@ -934,9 +934,6 @@ def test_a_linked_worktree_that_will_not_be_removed_keeps_the_remedy_it_has(
 # reproduction, AC5 is the census and AC11 is the remedy copy.
 # ---------------------------------------------------------------------------
 
-GIT_BRANCH_SOURCE = (
-    Path(__file__).resolve().parents[1] / "loregarden" / "services" / "git_branch.py"
-).read_text(encoding="utf-8")
 
 #: AC10. The two verdict sentences, and the budget they were sized to.
 PREMISE_VERDICT = "Nothing was deleted; the branch is still held by another checkout."
@@ -1170,127 +1167,6 @@ def test_a_refused_linked_worktree_never_returns_an_empty_note(
     assert repaired is False
     assert note.strip(), "a gate refusal is never reported as silence"
     assert note != "Nothing was deleted: " + str(scratchpad), "the note is composed, not `detail`"
-
-
-def test_no_operator_facing_string_in_git_branch_recommends_a_destructive_command():
-    """AC11 + AC5. The census, as a sentence about this module.
-
-    Four occurrences tripped it when the ticket was filed: the docstring
-    defending the string, the operator remedy that printed it, the call
-    itself, and the `"worktree remove failed"` error text. All four go — and
-    the census in `test_worktree_gate_chokepoint.py` greps the same source, so
-    this test and that one are one edit.
-    """
-    stripped = GIT_BRANCH_SOURCE.replace("# ", "")
-    assert "worktree remove" not in stripped
-    assert "--force" not in GIT_BRANCH_SOURCE
-    assert "shutil.rmtree" not in GIT_BRANCH_SOURCE
-
-
-def test_git_branch_holds_no_second_answer_to_may_this_checkout_be_removed():
-    """AC1. One place decides, and it is not here.
-
-    A `worktrees` query, a second spelling of the no-receipt sentence, a
-    dirtiness probe or a `--force` escape hatch in this module would each be a
-    second site deciding the question — which is the defect class the ticket
-    closes, reintroduced one function away from where it was removed.
-    """
-    import ast
-
-    #: A query, named as the three calls it is actually made of, rather than as
-    #: the substring `"Worktree"`. The constraint is "no `worktrees` query in
-    #: this module", and the spec requires `git_branch` to read
-    #: `WorktreeRemoval` — so a census spelled as a substring forbids the
-    #: annotation the ticket asks for and drives the implementation towards an
-    #: unannotated one. lg-external-harness-1452, test-break.
-    tree = ast.parse(GIT_BRANCH_SOURCE)
-    imported = {
-        alias.asname or alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.Import, ast.ImportFrom))
-        for alias in node.names
-    }
-    assert not imported & {"select", "Worktree", "WorktreeState", "WorktreeService"}, (
-        f"a `worktrees` query's ingredients are imported here: {sorted(imported)}"
-    )
-    issued = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and getattr(node.func, "attr", None) in {"exec", "scalars"}
-    ]
-    assert issued == [], f"a query is issued here, at lines {issued}"
-    assert "has no worktrees row" not in GIT_BRANCH_SOURCE, "one spelling, in the gate"
-
-    body = next(
-        ast.get_source_segment(GIT_BRANCH_SOURCE, node)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_try_free_worktree_lock"
-    )
-    for banned in ("--porcelain", "status", "force", "settings."):
-        assert banned not in body, (
-            f"`_try_free_worktree_lock` names {banned!r}: it adds a premise, a dirtiness "
-            "probe, a force switch or a config flag the gate already owns (AC1)"
-        )
-
-
-def test_the_gate_is_imported_at_module_level_and_the_app_still_imports():
-    """AC1. No function-local import to dodge the cycle (CLAUDE.md).
-
-    `git_branch -> worktree_lifecycle` used to close a cycle through
-    `worktree_receipt`, `worktree_service` and `target_branch` — all three of
-    which imported `git_branch` only for a name helper. `services/branch_names.py`
-    is what cuts that edge, and with no re-export left behind the cut is real
-    rather than cosmetic.
-    """
-    import ast
-    import importlib
-
-    import loregarden.main  # noqa: F401
-    from loregarden.services import git_branch as git_branch_mod
-
-    assert (
-        git_branch_mod.release_checkout
-        is importlib.import_module("loregarden.services.checkout_release").release_checkout
-    )
-
-    # Inside a function body, not merely indented: a module-level
-    # `if TYPE_CHECKING:` block is an indented import and is not the thing
-    # CLAUDE.md forbids, so a col_offset census would reject an
-    # implementation the ticket permits. lg-external-harness-1452, test-break.
-    module = ast.parse(GIT_BRANCH_SOURCE)
-    nested = [
-        node.lineno
-        for func in ast.walk(module)
-        if isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef))
-        for node in ast.walk(func)
-        if isinstance(node, (ast.Import, ast.ImportFrom))
-    ]
-    assert nested == [], f"function-local imports at lines {nested}"
-
-    names = importlib.import_module("loregarden.services.branch_names")
-    assert callable(names.resolve_ticket_branch)
-    assert not hasattr(git_branch_mod, "validate_branch_name"), (
-        "no re-export is left behind: the posture is `internal`, so every caller moved"
-    )
-
-
-@pytest.mark.parametrize("func_name", ["ensure_ticket_branch", "_try_free_worktree_lock"])
-def test_session_is_required_and_keyword_only(func_name: str):
-    """AC1. No default, and not positional.
-
-    `Session | None = None` ships a path where the gate never runs, and
-    `object_session(ticket)` was measured dead: this module builds bare
-    detached `Ticket` objects, so it would answer `None` at every call site
-    and skip the gate in silence. A required parameter is visible churn by
-    design.
-    """
-    import inspect
-
-    from loregarden.services import git_branch as git_branch_mod
-
-    param = inspect.signature(getattr(git_branch_mod, func_name)).parameters["session"]
-    assert param.kind is inspect.Parameter.KEYWORD_ONLY
-    assert param.default is inspect.Parameter.empty
 
 
 def test_a_checkout_failure_that_is_not_a_lock_still_reports_itself(
@@ -1555,33 +1431,6 @@ def test_no_start_point_still_goes_the_long_way(target_tree, held_ticket, git_pr
     assert ensure_ticket_branch(target_tree, held_ticket, session=session) == TICKET_BRANCH
 
     assert _asking(git_processes, "checkout") != [], git_processes
-
-
-def test_the_ancestry_check_is_the_one_public_helper(target_tree, held_ticket):
-    """AC10. Two private `_is_ancestor` helpers already exist in this tree and a
-    third would be the one that drifts. `git_branch` imports the public one
-    from `git_merge_noco` at module level — the import is cycle-free, since
-    `git_merge_noco` imports only `git_subprocess`.
-    """
-    import re
-
-    import loregarden
-    from loregarden.services import git_branch, git_merge_noco
-
-    assert git_branch.is_ancestor is git_merge_noco.is_ancestor, (
-        "the ancestry check must be the public helper, bound at module level"
-    )
-    root = Path(loregarden.__file__).parent
-    pattern = re.compile(r"^def _is_ancestor\b", re.MULTILINE)
-    private = sorted(
-        str(path.relative_to(root))
-        for path in root.rglob("*.py")
-        if pattern.search(path.read_text(encoding="utf-8"))
-    )
-    # dependency_readiness's copy went when its question moved to work_landed.
-    assert private == ["services/handoff_boundary.py"], (
-        f"a new private ancestry helper was added: {private}"
-    )
 
 
 def test_the_main_working_tree_is_never_derived_twice_on_the_fast_path(

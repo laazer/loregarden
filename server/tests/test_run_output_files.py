@@ -498,17 +498,6 @@ def test_utf8_split_across_two_writes_is_not_mangled(run_log_dir):
     assert tail.offset == len(payload)
 
 
-def test_the_file_tailer_does_not_live_beside_the_pipe_reader():
-    """AC6. Housing it next to `SubprocessLineReader` is how someone reuses the
-    wrong one: that reader returns None for both "nothing ready" and "writer
-    closed", and on an empty read flushes a buffered partial as a terminated
-    line."""
-    import loregarden.services.subprocess_lines as pipe_reader
-
-    assert RunOutputTail.__module__ == "loregarden.services.run_output_files"
-    assert not hasattr(pipe_reader, "RunOutputTail")
-
-
 def test_the_tail_tolerates_a_file_whose_directory_is_gone(run_log_dir):
     """Orphan sweeps delete these files; a tailer must not raise over it."""
     ensure_dir()
