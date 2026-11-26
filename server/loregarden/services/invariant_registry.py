@@ -40,6 +40,7 @@ from loregarden.services.diff_artifact_repair import DIFFS_SHOW_NO_DELETED_FILE_
 from loregarden.services.done_ticket_ship import (
     violations_for_invariant as _recorded_ship_violations,
 )
+from loregarden.services.external_run_boundary import EXTERNAL_RUNS_RECORD_THEIR_START
 from loregarden.services.finding_placement_checks import (
     follow_ups_under_their_source,
     unrecorded_children_of_a_run,
@@ -1266,6 +1267,7 @@ ORPHANED_SYMBOL_MAP_PARTITION = Invariant(
 INVARIANTS: tuple[Invariant, ...] = (
     CLOSED_TICKETS_TAKE_NO_ANSWERS,
     DIFFS_SHOW_NO_DELETED_FILE_HEADER,
+    EXTERNAL_RUNS_RECORD_THEIR_START,
     QUEUED_OVERRIDES_APPLY,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     WAITING_ENTRIES_HAVE_NO_LIVE_WORK,

@@ -92,15 +92,6 @@ def test_grouping_by_stage_answers_a_different_question():
     assert {r.key for r in rows} == {"implement", "review"}
 
 
-def test_the_tool_channel_wins_when_an_agent_uses_both():
-    """An agent that calls the tool and also prints the sentinel used the typed
-    channel; recording the fallback would overstate the sentinel's share. The
-    guard lives in run_completion — this pins the intent."""
-    run = _run("planner", StageVerdictChannel.TOOL)
-    # run_completion only writes SENTINEL when the channel is still UNKNOWN.
-    assert run.verdict_channel is StageVerdictChannel.TOOL
-
-
 def test_rows_written_before_the_column_read_as_unknown():
     run = AgentRun(run_code="old", ticket_id="t", workspace_id="w", stage_key="implement")
     assert run.verdict_channel is StageVerdictChannel.UNKNOWN

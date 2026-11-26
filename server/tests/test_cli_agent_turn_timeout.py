@@ -8,7 +8,6 @@ empty, so nothing showed that both had already resolved their conflicts.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from unittest import mock
 
@@ -30,9 +29,16 @@ SAID = json.dumps(
 
 
 def _hanging_cli(first_line: str) -> list[str]:
-    """A CLI that writes one line and then never finishes."""
-    code = f"import sys, time; print({first_line!r}, flush=True); time.sleep(60)"
-    return [sys.executable, "-c", code]
+    """A CLI that writes one line and then never finishes.
+
+    A shell, not a Python interpreter: under a loaded full-suite run Python's
+    start-up sometimes outlasted the 1s turn, which then timed out with nothing
+    written. `sh` prints within milliseconds.
+    """
+    return ["/bin/sh", "-c", 'printf "%s\\n" "$1"; exec sleep 60', "sh", first_line]
+
+
+TURN_TIMEOUT_SECONDS = 1
 
 
 @pytest.fixture(name="hanging_turn")
@@ -46,7 +52,9 @@ def hanging_turn_fixture(tmp_path: Path):
             mock.patch.object(cli_agent_runner, "resolve_workspace_root", return_value=repo),
             mock.patch.object(cli_agent_runner, "get_agent", return_value={"adapter": "claude"}),
             mock.patch.object(cli_agent_runner, "build_triage_invocation", return_value=invocation),
-            mock.patch.object(cli_agent_runner, "resolve_agent_timeout", return_value=1),
+            mock.patch.object(
+                cli_agent_runner, "resolve_agent_timeout", return_value=TURN_TIMEOUT_SECONDS
+            ),
         ):
             with pytest.raises(CliTurnTimeout) as raised:
                 cli_agent_runner.run_cli_agent_turn(
@@ -63,7 +71,7 @@ def hanging_turn_fixture(tmp_path: Path):
 def test_an_unwatched_turn_keeps_what_it_wrote(hanging_turn):
     timeout = hanging_turn("Resolved shared.txt; running tests.")
 
-    assert "timed out after 1s" in str(timeout)
+    assert f"timed out after {TURN_TIMEOUT_SECONDS}s" in str(timeout)
     assert timeout.output.strip() == "Resolved shared.txt; running tests."
 
 

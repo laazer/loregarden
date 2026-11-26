@@ -69,6 +69,7 @@ from loregarden.services.invariant_registry import (
     EVERY_BLOCK_IS_SETTLED,
     EVERY_BUSY_LANE_HAS_AN_OCCUPANT,
     EXHAUSTED_GATES_BLOCK,
+    EXTERNAL_RUNS_RECORD_THEIR_START,
     FAILED_RUNS_HAVE_A_FAILURE_KIND,
     FINDINGS_OUTLIVE_THEIR_SOURCE,
     FINISHED_PASSES_CLOSE_THEIR_CARRIER,
@@ -467,6 +468,9 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # Stored diffs a parser fixed since rendered wrongly. Not at startup: it
     # reads every diff artifact naming the bad row, and nothing waits on it.
     _invariant(DIFFS_SHOW_NO_DELETED_FILE_HEADER, at_startup=False),
+    # External runs that finished with no start commit; report-only, since the
+    # commit cannot be recovered (lg-verdict-outcome-2756).
+    _invariant(EXTERNAL_RUNS_RECORD_THEIR_START, at_startup=False),
 )
 
 

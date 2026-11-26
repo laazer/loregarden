@@ -16,6 +16,7 @@ so the two drivers cannot drift apart.
 from __future__ import annotations
 
 import json
+from unittest import mock
 from uuid import uuid4
 
 import pytest
@@ -23,7 +24,9 @@ from loregarden.models.domain import (
     AgentRun,
     Artifact,
     ExternalHarness,
+    OrchestratorDecision,
     ParallelAgentSpec,
+    RunStatus,
     StageStatus,
     Ticket,
     TicketState,
@@ -43,6 +46,7 @@ from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
+from tests.history_helpers import decision_kinds
 
 PLAN_STAGE = "plan"
 #: Three lenses on one plan — the shape the live workflow uses. Same agent in
@@ -322,3 +326,162 @@ def ticket_repo_path(db_session: Session, ticket: Ticket) -> str:
     workspace = db_session.get(Workspace, ticket.workspace_id)
     assert workspace is not None
     return workspace.repo_path
+
+
+# --- re-checkout after some or all members came back ---------------------------
+
+
+def _plan_runs(db_session: Session, ticket: Ticket) -> list[AgentRun]:
+    return list(
+        db_session.exec(
+            select(AgentRun).where(
+                AgentRun.ticket_id == ticket.id, AgentRun.stage_key == PLAN_STAGE
+            )
+        ).all()
+    )
+
+
+def test_a_member_that_passed_is_not_offered_again(db_session: Session, ticket: Ticket):
+    orch_run, first = _checkout(db_session, ticket)
+    runs = [db_session.get(AgentRun, r.agent_run_id) for r in first.runs]
+    finish_external_stage(db_session, runs[0], transcript=_report("pass"))
+
+    again = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert {r.agent_run_id for r in again.runs} == {runs[1].id, runs[2].id}
+    assert len(_plan_runs(db_session, ticket)) == len(PLAN_LANES)
+
+
+def test_a_stage_whose_members_all_settled_elsewhere_is_settled_on_checkout(
+    db_session: Session, ticket: Ticket
+):
+    """Members finished outside `finish_external_stage` leave the stage RUNNING; the
+    next checkout must settle it rather than hand back nothing, forever."""
+    orch_run, first = _checkout(db_session, ticket)
+    orch = OrchestrationService(db_session)
+    for view in first.runs:
+        run = db_session.get(AgentRun, view.agent_run_id)
+        orch.complete_run(
+            run, status=RunStatus.SUCCEEDED, stdout=_report("pass"), advance_workflow=False
+        )
+    assert _stage_status(db_session, ticket) == StageStatus.RUNNING
+
+    again = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert (again.runs, again.message) == ([], external_harness._SETTLED_MESSAGE)
+    assert _stage_status(db_session, ticket) == StageStatus.DONE
+    db_session.refresh(orch_run)
+    assert orch_run.current_stage_key == PLAN_STAGE
+
+
+def test_a_tree_that_cannot_be_prepared_hands_out_no_prompts(db_session: Session, ticket: Ticket):
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    refused = "The ticket's tree could not be refreshed."
+
+    with mock.patch.object(
+        external_harness, "prepare_tree_for_parallel_stage", return_value=refused
+    ):
+        stage = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert (stage.runs, stage.message) == ([], refused)
+
+
+def test_a_fresh_attempt_supersedes_members_left_running(db_session: Session, ticket: Ticket):
+    """The stage was reset under live members: a new checkout retires them first."""
+    orch_run, first = _checkout(db_session, ticket)
+    stale = {r.agent_run_id for r in first.runs}
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).one()
+    stages = json.loads(instance.stages_json)
+    for entry in stages:
+        if entry.get("key") == PLAN_STAGE:
+            entry["status"] = StageStatus.PENDING.value
+    instance.stages_json = json.dumps(stages)
+    ticket.workflow_stage_status = StageStatus.PENDING
+    db_session.add_all([instance, ticket])
+    db_session.commit()
+
+    again = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert stale.isdisjoint({r.agent_run_id for r in again.runs})
+    for run_id in stale:
+        assert db_session.get(AgentRun, run_id).status != RunStatus.RUNNING
+
+
+def test_a_rework_round_re_runs_only_the_lens_that_rejected(db_session: Session, ticket: Ticket):
+    """Nothing changed in the tree since two lenses passed, so their passes carry
+    forward; the lens that rejected is the only one handed out again."""
+    orch_run, first = _checkout(db_session, ticket)
+    runs = [db_session.get(AgentRun, r.agent_run_id) for r in first.runs]
+    finish_external_stage(db_session, runs[0], transcript=_report("pass"))
+    finish_external_stage(db_session, runs[1], transcript=_report("pass"))
+    finish_external_stage(
+        db_session,
+        runs[2],
+        transcript=_report("needs_rework", reroute_to_stage="scope", context="scope it again"),
+    )
+    scope = begin_external_stage(db_session, orch_run, stage_key="scope")
+    finish_external_stage(
+        db_session, db_session.get(AgentRun, scope.runs[0].agent_run_id), transcript=_report("pass")
+    )
+
+    second = begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    assert [r.skill_name for r in second.runs] == [runs[2].skill_name]
+    # A lens that quietly did not run must not look like one that ran and found
+    # nothing: each carried-forward pass is on the history rail.
+    assert (
+        decision_kinds(db_session, ticket.id).count(OrchestratorDecision.CARRIED_FORWARD_PASS) == 2
+    )
+
+
+def _head(path) -> str:
+    return run_git(
+        ["rev-parse", "HEAD"], cwd=path, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_each_member_records_the_commit_it_started_on_and_keeps_it(
+    db_session: Session, ticket: Ticket
+):
+    from pathlib import Path
+
+    orch_run, first = _checkout(db_session, ticket)
+    tree = Path(first.runs[0].repo_path)
+    started_on = _head(tree)
+    runs = [db_session.get(AgentRun, r.agent_run_id) for r in first.runs]
+    assert {run.start_head_sha for run in runs} == {started_on}
+
+    run_git(
+        ["commit", "--allow-empty", "-m", "a lane committed"],
+        cwd=tree,
+        check=True,
+        capture_output=True,
+    )
+    begin_external_stage(db_session, orch_run, stage_key=PLAN_STAGE)
+
+    for run in runs:
+        db_session.refresh(run)
+        assert run.start_head_sha == started_on
+
+
+def test_a_single_agent_checkout_records_the_commit_it_started_on_and_keeps_it(
+    db_session: Session, ticket: Ticket
+):
+    from pathlib import Path
+
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    stage = begin_external_stage(db_session, orch_run, stage_key="scope")
+
+    tree = Path(stage.runs[0].repo_path)
+    started_on = _head(tree)
+    run = db_session.get(AgentRun, stage.runs[0].agent_run_id)
+    assert run.start_head_sha == started_on
+
+    run_git(["commit", "--allow-empty", "-m", "work"], cwd=tree, check=True, capture_output=True)
+    again = begin_external_stage(db_session, orch_run, stage_key="scope")
+
+    assert again.runs[0].agent_run_id == run.id
+    db_session.refresh(run)
+    assert run.start_head_sha == started_on
