@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from loregarden.models.domain import (
+    CapacityClass,
     CapacityPool,
     DockerFootprint,
     DockerGrantState,
@@ -65,6 +66,7 @@ from loregarden.services.capacity_environment import (  # noqa: F401
     WORKERS_ENV,
     child_environment,
 )
+from loregarden.services.capacity_label import parse_holder_label
 from loregarden.services.capacity_line import leases_ahead
 from loregarden.services.capacity_progress import (
     PROGRESS_ENV,
@@ -97,6 +99,7 @@ from loregarden.services.docker_wait_estimate import (
     poll_interval_for,
 )
 from loregarden.services.signal_relay import SignalRelay, Terminated
+from loregarden.services.sweep_limit import sweep_holder
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
 
@@ -154,10 +157,18 @@ class CapacityRequest:
     workspace_id: str | None = None
     #: Nest under this lease: draw on its grant first, never wait in line.
     parent_lease_id: str | None = None
+    #: A sweep waits for its repository's one sweep slot (`sweep_limit`).
+    capacity_class: CapacityClass = CapacityClass.ORDINARY
+    #: The repository's git common directory; required for a sweep.
+    repo_key: str = ""
     #: Join the priority tier, ahead of every normal waiter, for this reason
     #: (`capacity_priority`). Empty joins the normal line. A nested claim never
     #: waits, so it has no use for one.
     priority_reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.capacity_class is CapacityClass.SWEEP and not self.repo_key:
+            raise ValueError("a sweep needs repo_key: the slot is one per repository")
 
 
 def fit_to_ceiling(session: Session, request: CapacityRequest, report: Report) -> tuple[float, int]:
@@ -228,6 +239,8 @@ def acquire(
         workspace_id=request.workspace_id,
         holder_pid=os.getpid(),
         pool=request.pool,
+        capacity_class=request.capacity_class,
+        repo_key=request.repo_key,
         priority_reason=request.priority_reason,
     )
     if reservation.state is DockerGrantState.REJECTED:
@@ -301,7 +314,7 @@ def _poll_until_granted(
         drain_waiters(session)
 
         estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
-        line = _queue_line(session, lease, estimate)
+        line = _sweep_line(session, lease) or _queue_line(session, lease, estimate)
         now = clock()
         if line != last_line or said_at is None or now - said_at >= _REPRINT_SECONDS:
             report(f"{line} · waited {format_seconds(now - joined_at)}")
@@ -350,6 +363,21 @@ def _queue_line(session: Session, lease: DockerLease, estimate: WaitEstimate) ->
     ).one()
     return (
         f"capacity: waiting for {lease.pool.value} capacity — {ahead} ahead, {estimate.describe()}"
+    )
+
+
+def _sweep_line(session: Session, lease: DockerLease) -> str | None:
+    """Why a sweep waits when the reason is another sweep, not room: who that is."""
+    holder = sweep_holder(session, lease)
+    if holder is None:
+        return None
+    label = parse_holder_label(holder.holder_label, pid=holder.holder_pid)
+    state = "holds" if holder.status in OCCUPYING else "is ahead in line for"
+    return (
+        f"capacity: sweep waiting — one sweep per repository, and '{label.what}' "
+        f"on {label.branch or label.worktree or 'an unnamed branch'} "
+        f"(pid {label.pid if label.pid is not None else 'unknown'}) {state} "
+        f"{Path(lease.repo_key).name or lease.repo_key}'s sweep slot"
     )
 
 

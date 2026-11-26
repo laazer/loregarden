@@ -147,6 +147,8 @@ def test_the_cli_runs_the_command_in_the_callers_directory(tmp_path) -> None:
         parent_lease="",
         priority=None,
         started_file="started",
+        capacity_class="ordinary",
+        repo=None,
     )
 
     with (
@@ -463,6 +465,8 @@ def test_the_cli_exits_75_when_the_line_stopped_moving(tmp_path) -> None:
         parent_lease="",
         priority=None,
         started_file=None,
+        capacity_class="ordinary",
+        repo=None,
     )
     stalled = CapacityQueueStalled("still queued — 3 ahead")
 

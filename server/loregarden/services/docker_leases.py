@@ -37,6 +37,7 @@ from datetime import datetime, timedelta, timezone
 
 from loregarden.config import settings
 from loregarden.models.domain import (
+    CapacityClass,
     CapacityPool,
     DockerCapacityPool,
     DockerFootprint,
@@ -81,6 +82,7 @@ from loregarden.services.host_capacity import (
     resolve_host_ceiling,
 )
 from loregarden.services.run_lease import pid_alive
+from loregarden.services.sweep_limit import first_grantable
 from sqlalchemy import bindparam, func, text, update
 from sqlmodel import Session, col, select
 
@@ -553,14 +555,13 @@ def _head_waiter(session: Session) -> DockerLease | None:
     The pool and the queue move under this session whenever anything else
     grants or releases; a promotion decided from a cached read would compare
     against state that no longer exists.
+
+    A sweep whose repository already has one holding or ahead is passed over,
+    not waited behind (`sweep_limit`), so this reads the whole line — tens of
+    rows at the deepest it has been — and takes the first that rule lets through.
     """
     session.expire_all()
-    return session.exec(
-        select(DockerLease)
-        .where(DockerLease.status == DockerLeaseStatus.WAITING)
-        .order_by(DockerLease.position)
-        .limit(1)
-    ).first()
+    return first_grantable(session, _waiters(session))
 
 
 def _claim_promotion(session: Session, lease: DockerLease) -> bool:
@@ -703,6 +704,8 @@ def reserve(
     holder_pid: int | None = None,
     pool: CapacityPool = CapacityPool.DOCKER,
     takes_slot: bool = True,
+    capacity_class: CapacityClass = CapacityClass.ORDINARY,
+    repo_key: str = "",
     priority_reason: str = "",
     invoke: DockerInvoke = run_docker,
 ) -> DockerReservation:
@@ -783,6 +786,8 @@ def reserve(
         holder_pid=holder_pid,
         pool=pool,
         takes_slot=takes_slot,
+        capacity_class=capacity_class,
+        repo_key=repo_key,
         footprint=footprint,
         cpus=price_cpus,
         memory_mb=price_memory,

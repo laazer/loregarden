@@ -3,6 +3,14 @@
 #
 #   capacity-run.sh <label> [capacity flags…] -- <command…>
 #   capacity-run.sh "pre-push server-tests" --footprint heavy --workspace loregarden -- bash x.sh
+#   capacity-run.sh "mutation sweep" --footprint heavy --class sweep -- python sweep.py
+#
+# --class sweep marks a timing or mutation sweep: at most one per repository
+# holds at a time, and a second waits, naming the holder's label, branch and pid.
+# Every worktree of a repository shares its one slot (the wrapper passes the git
+# common directory as --repo). Pushes and landings are ordinary work and never
+# wait on a sweep's slot.
+#
 #   capacity-run.sh "fix push" --footprint heavy --priority "unblocks the queue" -- git push
 #
 # --priority "<reason>" joins ahead of every normal waiter, behind earlier
@@ -121,6 +129,41 @@ if [ -z "$cli" ]; then
   fi
 fi
 stall_flag="${stall_flag:---stall-timeout}"
+
+# A sweep's slot is one per repository, so it is keyed by the git common
+# directory, which every worktree of the repository shares.
+is_sweep=""
+prev=""
+for arg in ${cli_args[@]+"${cli_args[@]}"}; do
+  if [ "$arg" = "--class=sweep" ] || { [ "$prev" = "--class" ] && [ "$arg" = "sweep" ]; }; then
+    is_sweep=1
+  fi
+  prev="$arg"
+done
+if [ -n "$is_sweep" ]; then
+  if [ -n "${primary:-}" ] && ! grep -q -- '"--class"' "$primary/server/loregarden/cli/capacity.py"; then
+    warn "WARNING: $primary predates sweep classes; '$label' runs as ordinary work, and"
+    warn "the one-sweep-per-repository limit is NOT enforced. Update that checkout to main."
+    kept=()
+    skip=""
+    for arg in ${cli_args[@]+"${cli_args[@]}"}; do
+      if [ -n "$skip" ]; then skip=""; continue; fi
+      case "$arg" in
+        --class=*) continue ;;
+        --class) skip=1; continue ;;
+      esac
+      kept+=("$arg")
+    done
+    cli_args=(${kept[@]+"${kept[@]}"})
+  else
+    common_dir="$(git rev-parse --git-common-dir 2>/dev/null)" &&
+      repo_key="$(cd "$common_dir" && pwd -P)" || {
+      warn "--class sweep needs a git repository: its slot is one per repository."
+      exit 2
+    }
+    cli_args+=(--repo "$repo_key")
+  fi
+fi
 
 repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 branch="$(git branch --show-current 2>/dev/null || true)"

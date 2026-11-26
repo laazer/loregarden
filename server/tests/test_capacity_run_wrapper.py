@@ -347,6 +347,43 @@ def test_a_command_under_a_held_parent_reserves_as_a_child_or_not_at_all(
     )
 
 
+def test_a_sweep_is_keyed_by_the_repository_every_worktree_shares(tmp_path, fake_cli) -> None:
+    """`--class sweep` passes the git common directory, so two worktrees share one slot."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    run_git(["init", "-q", "-b", "main"], cwd=repo, check=True)
+    # CI runners have no global identity; a commit without one exits 128.
+    run_git(["config", "user.email", "test@example.com"], cwd=repo, check=True)
+    run_git(["config", "user.name", "Test"], cwd=repo, check=True)
+    run_git(["commit", "-q", "--allow-empty", "-m", "root"], cwd=repo, check=True)
+    worktree = tmp_path / "wt"
+    run_git(["worktree", "add", "-q", "-b", "claude/sweep", str(worktree)], cwd=repo, check=True)
+    seen = []
+    for place in (repo, worktree):
+        (tmp_path / "args").unlink(missing_ok=True)
+        result = subprocess.run(
+            ["bash", str(WRAPPER), "mutation sweep", "--class", "sweep", "--", "true"],
+            env=_env(tmp_path, fake_cli),
+            cwd=place,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+        seen.append((tmp_path / "args").read_text())
+
+    common = str((repo / ".git").resolve())
+    assert all(f"--class sweep --repo {common} " in args for args in seen), seen
+
+
+def test_ordinary_work_names_no_repository(tmp_path, fake_cli) -> None:
+    result = _without_terminal(tmp_path, fake_cli, "true")
+
+    assert result.returncode == 0, result.stderr
+    assert "--repo" not in (tmp_path / "args").read_text()
+
+
 # ---- --priority ------------------------------------------------------------
 
 

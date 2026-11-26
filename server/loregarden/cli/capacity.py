@@ -22,7 +22,7 @@ from pathlib import Path
 
 from loregarden.cli.errors import UsageError
 from loregarden.db import session as db_session
-from loregarden.models.domain import CapacityPool, DockerFootprint, Workspace
+from loregarden.models.domain import CapacityClass, CapacityPool, DockerFootprint, Workspace
 from loregarden.services.capacity_environment import CALLER_CWD_ENV, LEASE_ENV
 from loregarden.services.capacity_run import (
     DEFAULT_STALL_SECONDS,
@@ -69,6 +69,9 @@ def _run(args: argparse.Namespace) -> str:
         raise UsageError("give the command to run after `--`")
     if not args.footprint and not (args.cpus and args.memory_mb):
         raise UsageError("pass --footprint, or both --cpus and --memory-mb")
+    capacity_class = CapacityClass(args.capacity_class)
+    if capacity_class is CapacityClass.SWEEP and not args.repo:
+        raise UsageError("--class sweep needs --repo: the limit is one sweep per repository")
     if args.priority is not None and not args.priority.strip():
         raise UsageError(
             "--priority needs a reason; it is kept on the lease and shown on the board"
@@ -86,6 +89,8 @@ def _run(args: argparse.Namespace) -> str:
         ttl_seconds=args.ttl,
         workspace_id=_workspace_id(args.workspace),
         parent_lease_id=args.parent_lease or None,
+        capacity_class=capacity_class,
+        repo_key=args.repo or "",
         priority_reason=args.priority or "",
     )
     try:
@@ -123,6 +128,20 @@ def register(sub: argparse._SubParsersAction) -> None:
         help="host (default) for processes; docker for containers, also charged to host.",
     )
     run.add_argument("--workspace", help="Workspace slug the work belongs to.")
+    run.add_argument(
+        "--class",
+        dest="capacity_class",
+        choices=[kind.value for kind in CapacityClass],
+        default=CapacityClass.ORDINARY.value,
+        help=(
+            "sweep for a timing or mutation sweep: at most one per repository holds "
+            "at a time. Pushes and landings are ordinary (default) and never wait on it."
+        ),
+    )
+    run.add_argument(
+        "--repo",
+        help="The repository's git common directory; required with --class sweep.",
+    )
     run.add_argument(
         "--stall-timeout",
         # The old name, still accepted: a worktree's wrapper calls the PRIMARY

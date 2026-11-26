@@ -68,6 +68,21 @@ class DockerLeaseStatus(StrEnum):
     ORPHANED = "orphaned"
 
 
+class CapacityClass(StrEnum):
+    """What kind of work a lease holds, beyond its size.
+
+    ``SWEEP`` is a timing or mutation sweep: heavy, optional, and run many
+    times over. On 2026-11-25 several sessions each ran one beside the pushes
+    and held load at 60-77 on 10 cores, slowing every suite on the box. So at
+    most one sweep per repository holds at a time (`services/sweep_limit.py`);
+    everything else, pushes and landings included, is ``ORDINARY`` and never
+    waits on that rule.
+    """
+
+    ORDINARY = "ordinary"
+    SWEEP = "sweep"
+
+
 class DockerHolderKind(StrEnum):
     """Who a lease belongs to, which decides how its liveness is judged.
 
