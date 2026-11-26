@@ -8,6 +8,7 @@ from loregarden.config import settings
 from loregarden.core.workflow_loader import (
     get_template_stages,
     get_template_stages_at_version,
+    get_template_transitions_at_version,
     safe_load_yaml_file,
     sync_workflow_templates,
 )
@@ -243,6 +244,16 @@ def resolve_ticket_stages(
     # shares a template, and a caller that sorted or trimmed it in place would
     # corrupt every later read in the request.
     return template, list(cached)
+
+
+def resolve_ticket_transitions(session: Session, ticket: Ticket) -> list[dict[str, str]]:
+    """The transitions of the template version this ticket's stages come from."""
+    template, _ = resolve_ticket_stages(session, ticket)
+    if template is None:
+        return []
+    instance = workflow_instance_for(session, ticket.id)
+    pinned = instance.template_version if instance and instance.template_id == template.id else None
+    return get_template_transitions_at_version(session, template, pinned)
 
 
 class WorkflowService:

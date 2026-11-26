@@ -73,7 +73,11 @@ from loregarden.services.tree_publish_scheduler import (
     publish_and_settle,
     schedule_tree_publish,
 )
-from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_service import (
+    resolve_ticket_stages,
+    resolve_ticket_transitions,
+    workflow_instance_for,
+)
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session
 
@@ -225,8 +229,7 @@ def _offer_conflict_resolution(
 
 
 def _transitions(session: Session, ticket: Ticket) -> list[dict[str, str]]:
-    template, _ = resolve_ticket_stages(session, ticket)
-    return StateMachine.parse_transitions(template.transitions_json) if template else []
+    return resolve_ticket_transitions(session, ticket)
 
 
 def _resolution_brief(result: LandResult) -> str:

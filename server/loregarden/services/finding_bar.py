@@ -67,6 +67,7 @@ JUDGING_AGENTS = frozenset(
         "static_qa",
         "security_reviewer",
         "gdscript_reviewer",
+        "python_reviewer",
         "visual_qa",
     }
 )

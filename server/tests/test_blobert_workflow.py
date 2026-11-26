@@ -19,9 +19,9 @@ def test_blobert_template_loaded(client: TestClient):
     assert "blobert-tdd" in templates
     blobert = templates["blobert-tdd"]
     assert blobert["name"] == "Blobert TDD"
-    # 12 since 0124 inserted `ui-design` before `spec`: blobert gets the design
-    # stage too, with a brief written for a game rather than a page.
-    assert blobert["stage_count"] == 12
+    # 0124 inserted `ui-design` before `spec`: blobert gets the design stage too,
+    # with a brief written for a game rather than a page. 20261125 added `verify`.
+    assert blobert["stage_count"] == 13
 
 
 def test_blobert_template_stage_metadata(client: TestClient, db_session: Session):
@@ -41,6 +41,7 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
         "test-design",
         "test-break",
         "implement",
+        "verify",
         "script_review",
         "ac_gate",
         "playtest",
@@ -68,6 +69,8 @@ def test_blobert_template_stage_metadata(client: TestClient, db_session: Session
         "gdscript_reviewer",
         "static_qa",
         "architecture_reviewer",
+        "python_reviewer",
+        "security_reviewer",
     ]
 
     optional = {stage.key for stage in stages if stage.optional}
@@ -118,6 +121,8 @@ def test_blobert_ticket_stage_views_for_stepper(client: TestClient, db_session: 
         "gdscript_reviewer",
         "static_qa",
         "architecture_reviewer",
+        "python_reviewer",
+        "security_reviewer",
     ]
     assert by_key["implement"]["stage_type"] == "classify"
     assert len(by_key["implement"]["agents"]) == 6  # 6 since 0129 added the backend lane

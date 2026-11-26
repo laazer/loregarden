@@ -256,7 +256,7 @@ def test_skill_migration_preserves_existing_non_skill_data(tmp_path, monkeypatch
             text("SELECT created_by, change_note FROM studio_agent_versions")
         ).one() == ("operator", "existing snapshot")
         assert conn.execute(
-            text("SELECT name, version, built_in FROM workflow_templates")
+            text("SELECT name, version, built_in FROM workflow_templates WHERE id='tpl-1'")
         ).one() == ("Operator Template", 4, 0)
         assert conn.execute(text("SELECT title, description FROM tickets")).one() == (
             "Operator Ticket",

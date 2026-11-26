@@ -8,6 +8,7 @@ from loregarden.agents.registry import AGENTS, get_agent
 from loregarden.core.workflow_loader import (
     get_template_stages,
     get_template_stages_at_version,
+    get_template_transitions_at_version,
     sync_workflow_templates,
 )
 from loregarden.models.domain import (
@@ -301,7 +302,8 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
                 StudioWorkflowStage(key="plan", name="Plan", agent_id="planner", order=1),
                 StudioWorkflowStage(key="spec", name="Spec", agent_id="spec", order=2),
                 StudioWorkflowStage(key="done", name="Done", order=3, terminal=True),
-            ]
+            ],
+            transitions=[{"from": "plan", "to": "spec"}, {"from": "spec", "to": "done"}],
         ),
     )
     svc.publish_workflow("pinwf")
@@ -313,6 +315,12 @@ def test_template_stages_resolve_from_pinned_version(db_session: Session):
     assert len(pinned) == v1_stage_count
     live = get_template_stages_at_version(db_session, template, template.version)
     assert len(live) == 3
+
+    # And v1's routes: the live plan -> spec edge names a stage v1 does not have.
+    pinned_edges = get_template_transitions_at_version(db_session, template, 1)
+    live_edges = get_template_transitions_at_version(db_session, template, None)
+    assert {e["to"] for e in pinned_edges} <= {stage.key for stage in pinned}
+    assert "spec" in {e["to"] for e in live_edges}
 
 
 # ---- Per-run pinning ------------------------------------------------------------

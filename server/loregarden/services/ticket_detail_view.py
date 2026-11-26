@@ -62,8 +62,9 @@ from loregarden.services.ticket_relations import TicketRelationService
 from loregarden.services.ticket_split_view import ticket_split
 from loregarden.services.ticket_state_service import RESOLVED_STATES
 from loregarden.services.ticket_tags import load_tags
-from loregarden.services.workflow_routing import normalize_transitions_for_api
+from loregarden.services.workflow_routing import normalize_transitions
 from loregarden.services.workflow_service import (
+    resolve_ticket_transitions,
     workspace_for,
 )
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
@@ -484,7 +485,7 @@ def ticket_detail(session: Session, ticket: Ticket) -> TicketDetail:
     session.refresh(ticket)
     summary = ticket_summary(session, ticket)
     template = orch.get_template_for_ticket(ticket)
-    transitions = normalize_transitions_for_api(template.transitions_json) if template else []
+    transitions = normalize_transitions(resolve_ticket_transitions(session, ticket))
     posture = resolve_compatibility_posture(session, ticket)
     prereq_ids, dependent_ids = _dependency_edge_ids(session, ticket.id)
     criteria = load_criteria(ticket.acceptance_criteria_json)

@@ -35,8 +35,8 @@ def _passing_report(agent_id: str) -> str:
 
 
 def _setup_interrupted_script_review(db_session: Session) -> tuple[Ticket, OrchestrationRun, list]:
-    """A script_review ticket where gdscript_reviewer and static_qa already
-    succeeded before a server restart, and architecture_reviewer was orphaned
+    """A script_review ticket where every other lane already succeeded before
+    a server restart, and architecture_reviewer was orphaned
     mid-run (then marked FAILED/BLOCKED by fail_interrupted_runs)."""
     sync_workflow_templates(db_session)
     template = db_session.exec(
@@ -79,11 +79,11 @@ def _setup_interrupted_script_review(db_session: Session) -> tuple[Ticket, Orche
     db_session.add(orch_run)
     db_session.commit()
 
-    # gdscript_reviewer and static_qa already finished successfully before the crash.
+    # Every other lane already finished successfully before the crash.
     now = datetime.now(timezone.utc)
     review_stage = next(s for s in stages if s.key == "script_review")
     lane_skill = {spec.agent_id: spec.skill_name for spec in review_stage.parallel_agents}
-    for agent_id in ("gdscript_reviewer", "static_qa"):
+    for agent_id in lane_skill.keys() - {"architecture_reviewer"}:
         finished = AgentRun(
             run_code=f"prior_{agent_id}",
             ticket_id=ticket.id,

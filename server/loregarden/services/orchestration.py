@@ -96,6 +96,7 @@ from loregarden.services.tree_publish_scheduler import refuse_closing_unpublishe
 from loregarden.services.unresolved_ledger import visible_unresolved
 from loregarden.services.workflow_service import (
     resolve_ticket_stages,
+    resolve_ticket_transitions,
     resolve_workspace_stages,
     workflow_instance_for,
 )
@@ -197,10 +198,7 @@ class OrchestrationService:
         return parse_stage_map(instance, stages).get(stage_key)
 
     def _resolve_transitions(self, ticket: Ticket) -> list[dict[str, str]]:
-        template = self.get_template_for_ticket(ticket)
-        if not template:
-            return []
-        return StateMachine.parse_transitions(template.transitions_json)
+        return resolve_ticket_transitions(self.session, ticket)
 
     def ensure_workflow_instance(
         self, ticket: Ticket, *, commit: bool = True

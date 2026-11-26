@@ -27,7 +27,6 @@ from typing import Any
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.config import settings
-from loregarden.core.state_machine import StateMachine
 from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.models.domain import (
     OrchestratorDecision,
@@ -49,7 +48,11 @@ from loregarden.services.orchestration_recovery import (
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
 from loregarden.services.repair_brief import arm_repair_turn
 from loregarden.services.requeue import requeue_stage
-from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
+from loregarden.services.workflow_service import (
+    resolve_ticket_stages,
+    resolve_ticket_transitions,
+    workflow_instance_for,
+)
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session
 
@@ -117,8 +120,7 @@ def dispatch_ci_fix(
 
     previous = latest_orchestration_run(session, ticket)
     instance = _reopen(session, ticket, workflow, reason)
-    template, _ = resolve_ticket_stages(session, ticket)
-    transitions = StateMachine.parse_transitions(template.transitions_json) if template else []
+    transitions = resolve_ticket_transitions(session, ticket)
     arm_repair_turn(
         session,
         ticket,
