@@ -6,13 +6,13 @@ what the gate catches, which fix each shape is told to apply, and the waiver
 that keeps genuinely foreign objects committable.
 """
 
-import ast
 import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 from tests.repo_paths import REPO_ROOT
+from tests.source_ast import parse_source
 
 _SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 _CHECKER_PATH = _SCRIPTS / "py_organization_check.py"
@@ -39,7 +39,7 @@ UNCLASSIFIED_LABEL = "unclassified construct at"
 
 
 def _errors(source: str, *, path: str = "service.py", touched: set[int] | None = None) -> list[str]:
-    tree = ast.parse(source)
+    tree = parse_source(source)
     lines = source.splitlines()
     if touched is None:
         touched = set(range(1, len(lines) + 2))
@@ -291,7 +291,7 @@ def test_the_live_tree_holds_no_unclassifiable_isinstance_calls():
             source = py.read_text(encoding="utf-8")
             lines = source.splitlines()
             errors = checker.isinstance_errors(
-                py, ast.parse(source), lines, set(range(1, len(lines) + 2))
+                py, parse_source(source), lines, set(range(1, len(lines) + 2))
             )
             offenders.extend(_unclassified(errors))
 

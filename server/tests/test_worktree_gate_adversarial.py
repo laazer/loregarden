@@ -60,6 +60,7 @@ from loregarden.services.worktree_lifecycle import (
 )
 from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
+from tests.source_ast import parse_source
 from tests.worktree_helpers import git, grant_receipt, make_repo, make_run
 from tests.worktree_helpers import make_ticket_on_id_branch as _ticket
 
@@ -292,7 +293,7 @@ def _destructive_calls(source: str, names: set[str]) -> set[str]:
     are both counted, and so is a module alias
     (`from loregarden.services import directory_release as dr; dr.release_directory(...)`).
     """
-    tree = ast.parse(source)
+    tree = parse_source(source)
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):

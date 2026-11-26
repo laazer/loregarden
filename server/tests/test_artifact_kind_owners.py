@@ -96,6 +96,7 @@ from loregarden.testing.factories import (
 from sqlalchemy import text
 from sqlmodel import Session, select
 from tests.repo_paths import REPO_ROOT
+from tests.source_ast import parse_path, parse_source
 
 PACKAGE = REPO_ROOT / "server" / "loregarden"
 
@@ -498,7 +499,7 @@ def _data_driven_kind_writers() -> set[tuple[str, str]]:
     """Every `kind=<not written as code>` on an artifact writer, by file and function."""
     found: set[tuple[str, str]] = set()
     for source in sorted(PACKAGE.rglob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
+        tree = parse_path(source)
         for node in ast.walk(tree):
             if not isinstance(
                 node, ast.FunctionDef | ast.AsyncFunctionDef
@@ -561,7 +562,7 @@ def test_no_artifact_aware_module_sets_kind_after_construction():
         text = source.read_text(encoding="utf-8")
         if "Artifact" not in text:
             continue
-        tree = ast.parse(text)
+        tree = parse_source(text)
         for node in ast.walk(tree):
             targets = (
                 [*node.targets]
@@ -1304,7 +1305,7 @@ def test_the_census_classifier_tells_a_coded_kind_from_one_that_arrives_as_data(
     deciding whether the census is complete can see the answer here instead of
     inferring it from the implementation.
     """
-    tree = ast.parse(source)
+    tree = parse_source(source)
     call = next(
         node
         for node in ast.walk(tree)
@@ -1367,7 +1368,7 @@ def test_no_caller_splats_a_dict_into_an_artifact_writer():
     """
     splats: list[tuple[str, str, int]] = []
     for source in sorted(PACKAGE.rglob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
+        tree = parse_path(source)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):  # py-org: allow-isinstance
                 continue
@@ -1396,7 +1397,7 @@ def test_the_artifact_row_is_never_constructed_under_an_alias():
     """
     aliased: list[tuple[str, str]] = []
     for source in sorted(PACKAGE.rglob("*.py")):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
+        tree = parse_path(source)
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):  # py-org: allow-isinstance
                 continue

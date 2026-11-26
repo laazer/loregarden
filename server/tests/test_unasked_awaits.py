@@ -42,6 +42,7 @@ from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import set_stage_status
 from sqlmodel import Session, select
 from tests.factories import make_task_in_tree
+from tests.source_ast import parse_source
 
 
 def _instance(session: Session, ticket: Ticket) -> WorkflowInstance:
@@ -323,7 +324,7 @@ def _discovered_awaiting_writers() -> frozenset[str]:
         if "StageStatus.AWAITING" not in text:
             continue
         relative = path.relative_to(_SOURCE_ROOT).as_posix()
-        for node in ast.walk(ast.parse(text, filename=relative)):
+        for node in ast.walk(parse_source(text, relative)):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = {
                     child.name

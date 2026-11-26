@@ -46,6 +46,7 @@ import pytest
 from loregarden.services.capacity_progress import LeaseProgress, describe_progress
 from loregarden.services.gate_runner import GATE_EX_UNAVAILABLE
 from tests.repo_paths import REPO_ROOT
+from tests.source_ast import parse_path
 
 SCRIPTS = REPO_ROOT / ".lefthook" / "scripts"
 JUDGE = SCRIPTS / "judge_test_run.py"
@@ -658,7 +659,7 @@ def test_the_seam_leaves_the_runners_own_output_alone(tmp_path) -> None:
 
 def test_the_judge_needs_only_the_standard_library() -> None:
     """It runs from a git hook, before any project environment is guaranteed."""
-    tree = ast.parse(JUDGE.read_text(encoding="utf-8"))
+    tree = parse_path(JUDGE)
     roots = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):  # py-org: allow-isinstance - walking an AST

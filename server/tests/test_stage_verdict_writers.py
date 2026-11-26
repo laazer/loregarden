@@ -49,6 +49,7 @@ from loregarden.services.workflow_routing import apply_stage_route
 from loregarden.services.workflow_state import initial_stages_json, parse_stage_map
 from loregarden.testing.factories import findings_fragment
 from sqlmodel import Session, select
+from tests.source_ast import parse_source
 
 _SOURCE_ROOT = pathlib.Path(__file__).resolve().parents[1] / "loregarden"
 
@@ -687,7 +688,7 @@ def _sources() -> dict[str, str]:
 
 @functools.cache
 def _tree(relative: str) -> ast.Module:
-    return ast.parse(_sources()[relative], filename=relative)
+    return parse_source(_sources()[relative], relative)
 
 
 def _called_names(node: ast.AST) -> set[str]:

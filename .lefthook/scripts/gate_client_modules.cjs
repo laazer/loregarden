@@ -26,7 +26,16 @@
 
 const fs = require("fs");
 const path = require("path");
-const { createRequire } = require("module");
+const nodeModule = require("module");
+const { createRequire } = nodeModule;
+
+// Every gate launch otherwise recompiles typescript.js (~9 MB) from source,
+// about a third of a launch's CPU, and a commit or test run launches dozens.
+// Node 22.1+ keeps V8's compiled code under os.tmpdir(), keyed by content, so a
+// changed file is recompiled. Older Nodes lack it and compile as before; a
+// cache that cannot be opened is the same as none (NODE_DISABLE_COMPILE_CACHE
+// turns it off).
+nodeModule.enableCompileCache?.();
 
 /** `sysexits.h` EX_UNAVAILABLE; `gate_runner.GATE_EX_UNAVAILABLE` agrees. */
 const EX_UNAVAILABLE = 69;

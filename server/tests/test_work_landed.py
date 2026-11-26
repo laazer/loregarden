@@ -26,6 +26,7 @@ from unittest import mock
 import pytest
 from loregarden.services import git_merge_noco, work_landed
 from loregarden.services.work_landed import landing_commit
+from tests.source_ast import parse_path
 
 SERVICES = Path(__file__).resolve().parents[1] / "loregarden"
 
@@ -232,7 +233,7 @@ def test_no_surface_asks_the_question_any_other_way():
         relative = path.relative_to(SERVICES).as_posix()
         if relative in _OWNERS:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+        tree = parse_path(path)
         for node in ast.walk(tree):
             names = []
             if isinstance(node, ast.ImportFrom):  # py-org: allow-isinstance

@@ -42,6 +42,7 @@ from loregarden.services.worktree_lifecycle import (
 from loregarden.services.worktree_receipt import Unresolved
 from loregarden.services.worktree_service import CleanupRefusal, WorktreeService
 from sqlmodel import Session, select
+from tests.source_ast import parse_path
 from tests.worktree_helpers import git, grant_receipt, make_repo
 
 
@@ -2299,7 +2300,7 @@ def _parked_at_stores() -> list[tuple[str, str | None, ast.AST | None]]:
         relative = path.relative_to(_PACKAGE).as_posix()
         if relative.startswith("db/versions/"):
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
+        tree = parse_path(path)
         class_ann = {
             id(stmt)
             for node in ast.walk(tree)

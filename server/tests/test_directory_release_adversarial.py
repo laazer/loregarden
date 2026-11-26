@@ -42,6 +42,7 @@ from loregarden.services.directory_release import (
     ReleaseDisposition,
     release_directory,
 )
+from tests.source_ast import parse_path
 from tests.worktree_helpers import git, make_repo
 
 
@@ -269,7 +270,7 @@ def _production_construction_sites() -> list[tuple[str, int, set[str]]]:
     found: list[tuple[str, int, set[str]]] = []
     for source in sorted(package.rglob("*.py")):
         visitor = _ConstructionSites(source)
-        visitor.visit(ast.parse(source.read_text()))
+        visitor.visit(parse_path(source))
         found.extend(visitor.sites)
     return found
 
@@ -308,7 +309,7 @@ def test_the_disposition_parameter_carries_no_default():
     change deletes, and every arm that forgets to decide then reports `INTACT`
     — the one member that claims nothing was touched.
     """
-    module = ast.parse(Path(directory_release.__file__).read_text())
+    module = parse_path(Path(directory_release.__file__))
     initialisers = [
         child
         for node in ast.walk(module)

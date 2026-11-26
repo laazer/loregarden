@@ -9,7 +9,10 @@ dispatcher that skips a guard fails the suite instead of shipping.
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
+
+from tests.source_ast import parse_path, parse_source
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "loregarden"
 
@@ -37,15 +40,16 @@ def _calls_in(node: ast.AST) -> list[ast.Call]:
     ]
 
 
-def _functions() -> list[tuple[str, ast.FunctionDef, str]]:
+@functools.cache
+def _functions() -> tuple[tuple[str, ast.FunctionDef, str], ...]:
     """Every function in the package: (module path, node, module source)."""
     found: list[tuple[str, ast.FunctionDef, str]] = []
     for path in sorted(SOURCE_ROOT.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
-        for node in ast.walk(ast.parse(source)):
+        for node in ast.walk(parse_source(source, str(path))):
             if isinstance(node, ast.FunctionDef):  # py-org: allow-isinstance - AST node types
                 found.append((str(path.relative_to(SOURCE_ROOT)), node, source))
-    return found
+    return tuple(found)
 
 
 def _sets_stage_running(node: ast.AST) -> bool:
@@ -83,7 +87,7 @@ def callers_of(name: str) -> set[tuple[str, str]]:
 
 def function_node(module: str, function: str) -> ast.FunctionDef:
     """The definition of ``function`` in ``module`` (relative to the package)."""
-    tree = ast.parse((SOURCE_ROOT / module).read_text(encoding="utf-8"))
+    tree = parse_path(SOURCE_ROOT / module)
     return next(
         node
         for node in ast.walk(tree)

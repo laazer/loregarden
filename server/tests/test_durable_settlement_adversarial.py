@@ -189,13 +189,15 @@ def test_output_written_before_a_cancel_is_still_reported(
     """
     marker = tmp_path / "agent-partial.pid"
     script = _PID_AND_SPIN.format(marker=str(marker))
-    calls = {"n": 0}
+    out = run_key.paths.out
 
-    def cancel_after_first_look(_run_id: str) -> bool:
-        calls["n"] += 1
-        return calls["n"] > 12
+    # Cancel the moment the agent's line is on disk, before the loop has
+    # necessarily read it: the output then reaches the result only through the
+    # drain after the kill. (Counting a dozen 0.5s looks waited ~6s for the same.)
+    def cancel_once_the_agent_has_written(_run_id: str) -> bool:
+        return out.exists() and "working" in out.read_text()
 
-    with mock.patch.object(print_mode, "cancel_requested", cancel_after_first_look):
+    with mock.patch.object(print_mode, "cancel_requested", cancel_once_the_agent_has_written):
         stdout, _stderr, status = _print_run(run_key, script, timeout=60)
 
     agent_pid = marker.read_text().strip() if marker.exists() else ""

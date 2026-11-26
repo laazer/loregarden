@@ -24,6 +24,7 @@ from loregarden.services.git_subprocess import (
     scrubbed_git_env,
 )
 from sqlmodel import Session
+from tests.source_ast import parse_source
 
 
 @pytest.fixture(name="session")
@@ -227,7 +228,7 @@ def _gh_argv_sites(source: str) -> list[int]:
         return []
     return [
         node.lineno
-        for node in ast.walk(ast.parse(source))
+        for node in ast.walk(parse_source(source))
         if isinstance(node, ast.List | ast.Tuple)  # py-org: allow-isinstance — AST node type
         and node.elts
         and isinstance(node.elts[0], ast.Constant)  # py-org: allow-isinstance — AST node type
