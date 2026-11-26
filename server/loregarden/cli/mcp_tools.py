@@ -224,7 +224,12 @@ def _run_tool(
     run_id: str,
     allow_stale: bool,
 ) -> str:
-    db_session.init_db()
+    if _is_read_only(name):
+        # A read migrates nothing: from a worktree carrying an unshipped
+        # migration, `init_db` is refused by `shared_database_guard`.
+        db_session.open_db_for_read()
+    else:
+        db_session.init_db()
     refuse_stale_write(name, allow_stale=allow_stale, supervised=orchestrated)
     with Session(db_session.engine) as session:
         return execute_tool(

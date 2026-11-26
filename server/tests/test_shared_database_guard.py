@@ -8,18 +8,30 @@ in between. These build a real primary checkout with a linked worktree and an
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
 import pytest
+from loregarden.cli import mcp_tools
+from loregarden.cli import merge_queue as merge_queue_cli
+from loregarden.cli.errors import EXIT_USAGE
+from loregarden.cli.main import main as cli_main
 from loregarden.db import migrations
+from loregarden.db import session as db_session
 from loregarden.db.shared_database_guard import (
     UnshippedMigrationError,
     assert_may_migrate,
     primary_checkout,
 )
+from loregarden.mcp.tool_ids import McpTool
+from loregarden.models.domain import MergeQueueEntry, MergeQueueState
 from loregarden.services.git_subprocess import run_git
-from sqlmodel import SQLModel, create_engine
+from sqlalchemy import Engine
+from sqlmodel import Session, SQLModel, create_engine
+from tests.db_templates import copy_database
+from tests.factories import make_workspace
 
 SHIPPED = "0001_shipped"
 UNSHIPPED = "0002_branch_only"
@@ -204,3 +216,130 @@ def test_the_guard_module_still_imports_on_its_own():
         capture_output=True,
         text=True,
     )
+
+
+# --- reads migrate nothing --------------------------------------------------
+#
+# `merge-queue wait` is what CLAUDE.md says to run right after enqueueing a PR,
+# and a branch with a new migration is a normal thing to enqueue. It used to
+# open the database through `init_db`, which migrates, so from that worktree
+# the guard refused a command that had nothing to write.
+
+
+@pytest.fixture
+def live_from_worktree(checkouts, schema_template) -> Iterator[Engine]:
+    """Live data in the primary, migrated to main; a worktree build that also carries UNSHIPPED."""
+    primary, worktree = checkouts
+    database = primary / "data/loregarden.db"
+    database.unlink()
+    copy_database(schema_template, database)
+    engine = create_engine(f"sqlite:///{database}")
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "CREATE TABLE schema_migrations "
+            "(id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        )
+        for mid, _ in migrations.MIGRATIONS:
+            conn.exec_driver_sql("INSERT INTO schema_migrations (id) VALUES (?)", (mid,))
+    branch = [*migrations.MIGRATIONS, (UNSHIPPED, lambda conn: None)]
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch.object(migrations, "MIGRATIONS", branch))
+        stack.enter_context(mock.patch.object(db_session, "MIGRATIONS", branch))
+        stack.enter_context(mock.patch.object(migrations, "_CODE_ROOT", worktree))
+        stack.enter_context(mock.patch.object(db_session, "engine", engine))
+        yield engine
+    engine.dispose()
+
+
+def _applied(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        return {row[0] for row in conn.exec_driver_sql("SELECT id FROM schema_migrations")}
+
+
+def _merged_entry(engine: Engine) -> str:
+    with Session(engine) as session:
+        workspace = make_workspace(session, slug="queue-wait")
+        entry = MergeQueueEntry(
+            workspace_id=workspace.id,
+            pr_number=977,
+            pr_url="https://github.com/o/r/pull/977",
+            pr_head_branch="claude/x",
+            source_branch="claude/x",
+            head_sha="a" * 40,
+            position=1,
+            state=MergeQueueState.MERGED,
+            detail="landed",
+        )
+        session.add(entry)
+        session.commit()
+        return entry.id
+
+
+def test_the_fixture_reproduces_the_refusal(live_from_worktree):
+    """The control: migrating from this worktree is still refused."""
+    with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
+        db_session.init_db()
+
+
+def test_merge_queue_wait_reads_the_entry_from_a_worktree_with_an_unshipped_migration(
+    live_from_worktree, capsys
+):
+    entry_id = _merged_entry(live_from_worktree)
+
+    with mock.patch.object(merge_queue_cli, "_server_up", return_value=True):
+        code = cli_main(["merge-queue", "wait", entry_id, "--poll-seconds", "0"])
+
+    out, err = capsys.readouterr()
+    assert code == 0, err
+    assert out.startswith("merged")
+    assert UNSHIPPED in err  # says it read without migrating
+    assert UNSHIPPED not in _applied(live_from_worktree)
+
+
+def test_a_read_only_mcp_call_reads_without_migrating(live_from_worktree):
+    entry_id = _merged_entry(live_from_worktree)
+
+    output = mcp_tools._run_tool(
+        McpTool.MERGE_QUEUE_STATUS.value,
+        {"entry_id": entry_id, "live": False},
+        orchestrated=False,
+        run_id="",
+        allow_stale=False,
+    )
+
+    assert entry_id in output
+    assert UNSHIPPED not in _applied(live_from_worktree)
+
+
+def test_a_write_mcp_call_is_still_refused(live_from_worktree):
+    with pytest.raises(UnshippedMigrationError, match=UNSHIPPED):
+        mcp_tools._run_tool(
+            McpTool.CREATE_TICKET.value, {}, orchestrated=False, run_id="", allow_stale=False
+        )
+
+
+def test_wait_on_a_database_never_migrated_exits_unreadable_not_stopped(live_from_worktree, capsys):
+    with live_from_worktree.begin() as conn:
+        conn.exec_driver_sql("DROP TABLE schema_migrations")
+
+    with pytest.raises(SystemExit) as exited:
+        cli_main(["merge-queue", "wait", "any-entry"])
+
+    assert exited.value.code == merge_queue_cli.EXIT_WAIT_UNREADABLE
+    assert "never been migrated" in capsys.readouterr().err
+
+
+def test_wait_with_no_database_exits_unreadable_and_creates_none(tmp_path):
+    missing = tmp_path / "gone/loregarden.db"
+    engine = create_engine(f"sqlite:///{missing}")
+    with mock.patch.object(db_session, "engine", engine):
+        with pytest.raises(SystemExit) as exited:
+            cli_main(["merge-queue", "wait", "any-entry"])
+
+    assert exited.value.code == merge_queue_cli.EXIT_WAIT_UNREADABLE
+    assert not missing.exists()
+
+
+def test_wait_on_an_unknown_entry_is_a_usage_error_not_stopped(live_from_worktree):
+    with mock.patch.object(merge_queue_cli, "_server_up", return_value=True):
+        assert cli_main(["merge-queue", "wait", "no-such-entry"]) == EXIT_USAGE
