@@ -459,7 +459,11 @@ def _verify_candidate(
         said: list[str] = []
         ran = ""
         progress = holder / "progress.json"
-        extra_env = {PROGRESS_ENV: str(progress)}
+        # Pin the subprocess's repo root to `tree`: the server's own ambient
+        # LOREGARDEN_REPO_ROOT would otherwise be inherited and win over cwd in
+        # server/tests/repo_paths.find_repo_root, pointing this landing worktree's
+        # rerun at the primary checkout's fixtures instead of its own.
+        extra_env = {PROGRESS_ENV: str(progress), "LOREGARDEN_REPO_ROOT": str(tree)}
         base = _land_base(repo_root, candidate)
         if base:
             extra_env[LAND_BASE_ENV] = base
