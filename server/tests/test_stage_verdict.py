@@ -8,11 +8,13 @@ Do not call standing_of.proves.
 from __future__ import annotations
 
 import json
+import logging
 import textwrap
 from dataclasses import fields
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from loregarden.agents.registry import SPEC_AGENT_ID, UI_DESIGN_AGENT_ID
 from loregarden.agents.stage_context import build_orchestration_context
 from loregarden.models.domain import (
@@ -40,6 +42,7 @@ from loregarden.services.stage_verdict import (
     StageVerdict,
     UnresolvedItem,
     VerdictSignal,
+    _load_pair_catalogs,
     claim_from_tool_outcome,
     collect_signals,
     derive_verdict,
@@ -1194,3 +1197,45 @@ def test_claimed_blocked_outranks_checklist_veto(db_session, tmp_path):
     verdict = _verdict(db_session, ticket, stage, report=_report("blocked"), agent_id="spec")
     assert verdict.status is StageReportStatus.BLOCKED
     assert "handoff:test_suite_complete incomplete" in _names(verdict)
+
+
+# --------------------------------------------------------------------------- #
+# Loading a workspace's pair catalog
+# --------------------------------------------------------------------------- #
+
+
+def test_a_missing_pair_catalog_is_normal_and_says_nothing(tmp_path, caplog):
+    with caplog.at_level(logging.WARNING):
+        assert _load_pair_catalogs(tmp_path / "absent.py") is None
+    assert caplog.records == []
+
+
+@pytest.mark.parametrize(
+    ("name", "source"),
+    [
+        ("catalog.py", "raise RuntimeError('half-written catalog')\n"),
+        ("catalog.py", "OTHER = {}\n"),
+        ("catalog.txt", "PAIR_CATALOGS = {}\n"),
+    ],
+    ids=["raises-on-import", "no-PAIR_CATALOGS", "not-a-module"],
+)
+def test_an_unusable_pair_catalog_is_skipped(tmp_path, caplog, name, source):
+    path = tmp_path / name
+    path.write_text(source)
+    with caplog.at_level(logging.WARNING):
+        assert _load_pair_catalogs(path) is None
+
+
+@pytest.mark.parametrize("source", ["raise RuntimeError('x')\n", "OTHER = {}\n"])
+def test_a_broken_pair_catalog_is_reported(tmp_path, caplog, source):
+    path = tmp_path / "catalog.py"
+    path.write_text(source)
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.stage_verdict"):
+        _load_pair_catalogs(path)
+    assert [r.levelno >= logging.WARNING for r in caplog.records] == [True]
+
+
+def test_a_pair_catalog_is_read_from_the_file(tmp_path):
+    path = tmp_path / "catalog.py"
+    path.write_text("PAIR_CATALOGS = {'a': ['b']}\n")
+    assert _load_pair_catalogs(path) == {"a": ["b"]}
