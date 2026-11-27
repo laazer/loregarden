@@ -158,8 +158,11 @@ git:
   # the full suite ran past 1800s, and lg-milestone-that-2250 was refused seven
   # times in a row on 2026-11-06, every refusal a timeout. `_verify_candidate`
   # exports the target's tip as LOREGARDEN_TESTS_BASE, so the script runs the
-  # test files the landing's diff reaches (`select_pytest_targets.py`), widening
-  # to the full suite whenever it cannot map the change. `bash` because there is
+  # test files nearest the landing's diff (`--nearest`), at most 300
+  # (`LOREGARDEN_LAND_TEST_FILES`, see `push-base.sh`). The whole import reach
+  # was ~640 files for a one-service change and ran into the 30-minute wall
+  # limit (lg-milestone-that-2820); the tree's PR runs CI's full suite in the
+  # merge queue before anything reaches main. `bash` because there is
   # no shell; the path is relative to the throwaway tree's root, so it is the
   # CANDIDATE's own copy of the script that runs. CI still runs everything.
   #

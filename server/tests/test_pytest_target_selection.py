@@ -42,6 +42,7 @@ selector = _load()
         "server/tests/conftest.py",
         "server/tests/factories.py",
         "server/tests/worktree_helpers.py",
+        "server/tests/hermetic.gitconfig",
         "server/pyproject.toml",
         "server/loregarden/data/seed.json",
         ".gitignore",
@@ -90,6 +91,7 @@ def test_the_hook_config_selects_the_tests_that_check_it():
         ["scripts/reload-backend.sh", "server/loregarden/services/doctor.py"],
         ["CLAUDE.md"],
         [".github/pull_request_template.md", "docs/tauri.md"],
+        ["server/tests/fixtures/run_75d1f3_tool_calls.jsonl"],
     ],
 )
 def test_mappable_change_is_narrowed(paths):
@@ -203,6 +205,45 @@ def test_a_deleted_helper_still_runs_what_imported_it(helper_repo: Path):
     (helper_repo / "server" / "tests" / "built_helpers.py").unlink()
     selected = selector.select(helper_repo, ["server/tests/built_helpers.py"])
     assert _names(selected) == {"test_built.py"}
+
+
+_FIXTURE = "server/tests/fixtures/run_tool_calls.jsonl"
+
+
+def test_a_fixture_selects_the_tests_naming_it_and_the_importers_of_helpers_naming_it(
+    helper_repo: Path,
+):
+    """lg-hive-office-2784: two new fixture files sent its landing to the full suite."""
+    tests = helper_repo / "server" / "tests"
+    (tests / "test_payload.py").write_text(
+        'from pathlib import Path\n\nPAYLOAD = Path(__file__).parent / "fixtures" / '
+        '"run_tool_calls.jsonl"\n',
+        encoding="utf-8",
+    )
+    (tests / "base_helpers.py").write_text(
+        'FIXTURES = "fixtures"\nRUN = "run_tool_calls.jsonl"\n', encoding="utf-8"
+    )
+    selected = selector.select(helper_repo, [_FIXTURE])
+    assert _names(selected) == {"test_payload.py", "test_base.py", "test_built.py"}
+
+
+def test_a_deleted_fixture_still_selects_what_named_it(helper_repo: Path):
+    tests = helper_repo / "server" / "tests"
+    (tests / "test_payload.py").write_text('RUN = "run_tool_calls.jsonl"\n', encoding="utf-8")
+    assert _names(selector.select(helper_repo, [_FIXTURE])) == {"test_payload.py"}
+
+
+def test_every_file_conftest_names_under_the_tests_tree_changes_every_test():
+    """A fixture conftest reads is not a fixture: changing it changes every test."""
+    tests = _ROOT / "server" / "tests"
+    conftest = (tests / "conftest.py").read_text(encoding="utf-8")
+    named = {
+        path.name
+        for path in tests.rglob("*")
+        if path.is_file() and path.suffix != ".py" and path.name in conftest
+    }
+    assert named, "conftest names no data file: this test checks nothing"
+    assert named <= selector._SHARED_TEST_FILES
 
 
 @pytest.fixture
@@ -347,10 +388,10 @@ def test_a_packages_own_file_reaches_everything_imported_from_it(hub_repo: Path)
 
 @pytest.mark.parametrize(
     ("named_base", "reach"),
-    [("", "--nearest --budget 40"), ("origin/main", "")],
+    [("", "--nearest --budget 40"), ("origin/main", "--nearest --budget 300")],
     ids=["push", "landing"],
 )
-def test_a_push_runs_the_nearest_and_a_named_range_runs_the_whole_reach(named_base, reach):
+def test_a_push_and_a_landing_run_the_nearest_each_on_its_own_budget(named_base, reach):
     result = subprocess.run(
         ["bash", "-euc", 'source "$0"; printf "%s" "${SELECT_REACH[@]+${SELECT_REACH[*]}}"']
         + [str(_ROOT / ".lefthook" / "scripts" / "push-base.sh")],
@@ -388,6 +429,25 @@ def test_a_bad_push_file_budget_fails_the_push(budget):
     result = _source_push_base(LOREGARDEN_PUSH_TEST_FILES=budget)
     assert result.returncode != 0
     assert "LOREGARDEN_PUSH_TEST_FILES" in result.stderr
+
+
+def test_a_landing_takes_its_file_budget_from_the_environment_and_ignores_the_pushes():
+    result = _source_push_base(
+        LOREGARDEN_TESTS_BASE="origin/main",
+        LOREGARDEN_LAND_TEST_FILES="120",
+        LOREGARDEN_PUSH_TEST_FILES="7",
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "--nearest --budget 120"
+
+
+@pytest.mark.parametrize("budget", ["0", "-3", "forty", "4 0", "1.5"])
+def test_a_bad_landing_file_budget_refuses_to_run(budget):
+    result = _source_push_base(
+        LOREGARDEN_TESTS_BASE="origin/main", LOREGARDEN_LAND_TEST_FILES=budget
+    )
+    assert result.returncode != 0
+    assert "LOREGARDEN_LAND_TEST_FILES" in result.stderr
 
 
 @pytest.fixture
@@ -765,6 +825,18 @@ def test_cli_runs_everything_when_nothing_is_reachable(git_repo: Path):
     orphan.write_text("X = 1\n", encoding="utf-8")
     _git(git_repo, "add", "-A")
     _git(git_repo, "commit", "-qm", "add orphan module")
+
+    result = _run_cli(git_repo, "HEAD~1")
+    assert result.returncode == selector.EXIT_RUN_EVERYTHING
+    assert "no test file reaches" in result.stderr
+
+
+def test_cli_runs_everything_for_a_fixture_no_test_names(git_repo: Path):
+    fixture = git_repo / "server" / "tests" / "fixtures" / "orphan.json"
+    fixture.parent.mkdir()
+    fixture.write_text("{}\n", encoding="utf-8")
+    _git(git_repo, "add", "-A")
+    _git(git_repo, "commit", "-qm", "add an unread fixture")
 
     result = _run_cli(git_repo, "HEAD~1")
     assert result.returncode == selector.EXIT_RUN_EVERYTHING
