@@ -8,6 +8,7 @@ card, no block, and nothing else on record.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 from unittest import mock
@@ -29,6 +30,7 @@ from loregarden.services import (
     integration_branch_health,
     integration_merge_agent,
 )
+from loregarden.services.git_merge_noco import MergeOutcome
 from loregarden.services.github_pr_service import _refuse_tree_member, create_ticket_pull_request
 from loregarden.services.integration_branch_health import check_integration_branches
 from loregarden.services.integration_conflict_card import (
@@ -197,6 +199,86 @@ def test_a_clean_tree_and_a_finished_tree_raise_nothing(session, repo, tree):
     session.commit()
     assert check_integration_branches(session) == []
     assert _cards(session, ms) == []
+
+
+def test_a_workspace_with_no_repository_is_not_checked(session, tmp_path):
+    plain = tmp_path / "not-a-repo"
+    plain.mkdir()
+    ws = Workspace(slug="plain", name="plain", repo_path=str(plain))
+    session.add(ws)
+    session.commit()
+
+    with mock.patch.object(integration_branch_health, "run_git") as git_call:
+        assert integration_branch_health.check_workspace(session, ws) == []
+    git_call.assert_not_called()
+
+
+def test_a_repository_with_no_trees_reports_nothing(session, workspace, repo):
+    assert integration_branch_health.check_workspace(session, workspace) == []
+
+
+def test_a_base_the_repository_lacks_previews_nothing(session, workspace, repo, tree, caplog):
+    _conflict(repo)
+    with (
+        mock.patch.object(integration_branch_health, "base_branch", return_value="no-such-base"),
+        mock.patch.object(integration_branch_health, "merge_preview") as preview,
+        caplog.at_level(logging.WARNING, logger=integration_branch_health.logger.name),
+    ):
+        assert integration_branch_health.check_workspace(session, workspace) == []
+    preview.assert_not_called()
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_a_conflict_a_merge_turn_may_take_gets_a_turn_and_no_card(session, workspace, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+    with (
+        mock.patch.object(integration_branch_health, "merge_turn_refusal", return_value=""),
+        mock.patch.object(integration_branch_health, "schedule_merge_turn") as schedule,
+    ):
+        report = integration_branch_health.check_workspace(session, workspace)
+
+    assert [(r.branch, r.conflicted_files) for r in report] == [(BRANCH, ("shared.txt",))]
+    (turn,) = schedule.call_args.args
+    assert (turn.root_id, turn.branch, turn.files) == (ms.id, BRANCH, ("shared.txt",))
+    assert _cards(session, ms) == []
+
+
+def test_a_conflict_no_merge_turn_may_take_goes_to_a_person(session, workspace, repo, tree):
+    ms, _ = tree
+    _conflict(repo)
+    with (
+        mock.patch.object(
+            integration_branch_health, "merge_turn_refusal", return_value="merge turns are off"
+        ),
+        mock.patch.object(integration_branch_health, "schedule_merge_turn") as schedule,
+    ):
+        integration_branch_health.check_workspace(session, workspace)
+
+    schedule.assert_not_called()
+    assert len(_cards(session, ms)) == 1
+
+
+def test_a_preview_git_could_not_run_is_logged_and_left_out(session, workspace, repo, tree, caplog):
+    ms, _ = tree
+    _conflict(repo)
+    check_integration_branches(session)
+    assert len(_cards(session, ms)) == 1
+    integration_branch_health._PREVIEWS.clear()
+
+    failed = MergeOutcome(ok=False, detail="git could not merge")
+    with (
+        mock.patch.object(integration_branch_health, "merge_preview", return_value=failed),
+        caplog.at_level(logging.WARNING, logger=integration_branch_health.logger.name),
+    ):
+        assert integration_branch_health.check_workspace(session, workspace) == []
+
+    assert len(_cards(session, ms)) == 1, "a failed preview closes nothing"
+    assert [
+        r
+        for r in caplog.records
+        if r.name == integration_branch_health.logger.name and r.levelno >= logging.WARNING
+    ]
 
 
 def test_the_sweep_closes_the_card_once_main_holds_the_branch_squashed(session, repo, tree):

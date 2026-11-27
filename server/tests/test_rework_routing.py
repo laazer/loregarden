@@ -313,3 +313,32 @@ def test_a_pause_on_uncharged_rounds_is_reported(db_session, ticket):
         db_session, ticket, target_stage="implement", from_stage="review", context="one more"
     )
     assert pauses_on_uncharged_rounds(db_session) == []
+
+
+def test_a_pause_with_no_readable_target_or_no_ticket_is_not_judged(db_session, ticket):
+    """There is nothing to count rounds against, so it is no evidence of a broken cap."""
+    db_session.add_all(
+        [
+            Approval(
+                ticket_id=None,
+                workspace_id=ticket.workspace_id,
+                kind=ApprovalKind.REWORK_PAUSE,
+                title="Rework paused",
+                level="high",
+                tool_input_json=ReworkPausePayload(target_stage="implement").model_dump_json(),
+                status=ApprovalStatus.PENDING,
+            ),
+            Approval(
+                ticket_id=ticket.id,
+                workspace_id=ticket.workspace_id,
+                kind=ApprovalKind.REWORK_PAUSE,
+                title="Rework paused",
+                level="high",
+                tool_input_json="not a payload",
+                status=ApprovalStatus.PENDING,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    assert pauses_on_uncharged_rounds(db_session) == []

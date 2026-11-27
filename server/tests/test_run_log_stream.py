@@ -1,5 +1,7 @@
 import json
+from unittest import mock
 
+import pytest
 from loregarden.models.domain import Artifact, RunStatus, Ticket
 from loregarden.services.artifact_service import load_run_log
 from loregarden.services.run_log_stream import RunLogStreamer, format_stream_payload
@@ -902,3 +904,132 @@ def test_run_log_streamer_logs_each_tool_call_after_the_text_that_led_to_it():
             )
     finally:
         stream_mod.engine = original_engine
+
+
+# --- the closing `result` event ---------------------------------------------------
+
+
+class _Stream:
+    """A streamer on a throwaway database, read back the way the run log is."""
+
+    def __init__(self, session: Session, ticket: Ticket, *, partial_output: bool) -> None:
+        self.session = session
+        make_agent_run(
+            session,
+            run_id="run_result",
+            run_code="run_result",
+            ticket_id=ticket.id,
+            workspace_id=ticket.workspace_id,
+        )
+        self.streamer = RunLogStreamer(
+            run_id="run_result",
+            ticket_id=ticket.id,
+            run_code="run_result",
+            agent_id="planner",
+            skill_name="plan",
+            partial_output=partial_output,
+        )
+
+    def send(self, payload: dict) -> None:
+        self.streamer.append_stream_line(json.dumps(payload))
+
+    def token(self, text: str) -> None:
+        self.send({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+
+    def result(self, result) -> None:
+        self.send({"type": "result", "result": result})
+
+    def lines(self, tag: str) -> list[str]:
+        # No log at all is what a run that has written nothing yet reads back.
+        content = load_run_log(self.session, "run_result") or {"lines": []}
+        return [line["text"] for line in content["lines"] if line["tag"] == tag]
+
+    def live(self):
+        return load_run_log(self.session, "run_result")["live"]
+
+
+@pytest.fixture(name="stream_db")
+def stream_db_fixture():
+    import loregarden.services.run_log_stream as stream_mod
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    SQLModel.metadata.create_all(engine)
+    with mock.patch.object(stream_mod, "engine", engine), Session(engine) as session:
+        seed_database(session)
+        ticket = session.exec(select(Ticket).limit(1)).first()
+        assert ticket
+        yield session, ticket
+
+
+@pytest.fixture(name="partial")
+def partial_fixture(stream_db):
+    return _Stream(*stream_db, partial_output=True)
+
+
+@pytest.fixture(name="whole")
+def whole_fixture(stream_db):
+    return _Stream(*stream_db, partial_output=False)
+
+
+def test_a_partial_result_adds_only_what_the_tokens_had_not_shown(partial):
+    partial.token("Hello")
+    partial.token(" there")
+    partial.result("Hello there, and the rest")
+
+    assert partial.lines("OUT") == ["Hello there, and the rest"]
+    assert partial.live() is None
+
+
+def test_a_partial_result_that_is_not_the_streamed_text_adds_nothing(partial):
+    partial.token("Hello")
+    partial.token(" there")
+    partial.result("Something else entirely")
+
+    assert partial.lines("OUT") == ["Hello there"]
+
+
+def test_each_partial_message_starts_fresh_after_its_result(partial):
+    partial.token("Same words")
+    partial.result("Same words")
+    partial.token("Same words")
+    partial.token(" again")
+    partial.result("Same words again, finished")
+
+    assert partial.lines("OUT") == ["Same words", "Same words again, finished"]
+
+
+def test_a_result_repeating_the_streamed_deltas_is_written_once(whole):
+    for word in ("Final", " answer"):
+        whole.send({"type": "content_block_delta", "delta": {"text": word}})
+    assert whole.live() == "Final answer"
+
+    whole.result("  Final answer  ")
+
+    assert whole.lines("OUT") == ["Final answer"]
+    assert whole.live() is None
+
+
+@pytest.mark.parametrize(
+    "result", [{"text": "From a dict"}, {"output": "From a dict"}], ids=["text", "output"]
+)
+def test_a_dict_result_writes_its_text(whole, result):
+    whole.result(result)
+    assert whole.lines("OUT") == ["From a dict"]
+
+
+@pytest.mark.parametrize(
+    "result", [{}, {"text": ""}, "   ", None], ids=["empty", "blank", "ws", "none"]
+)
+def test_a_result_with_no_text_writes_no_output(whole, result):
+    whole.result(result)
+    assert whole.lines("OUT") == []
+
+
+def test_reasoning_buffered_when_the_result_arrives_keeps_its_channel(whole):
+    whole.send({"type": "content_block_delta", "delta": {"thinking": "Weighing it"}})
+    whole.result({})
+
+    assert whole.lines("THINK") == ["Weighing it"]
+    assert whole.lines("OUT") == []

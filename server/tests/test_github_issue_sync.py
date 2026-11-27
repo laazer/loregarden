@@ -38,6 +38,7 @@ from loregarden.services.github_issue_sync import (
 )
 from loregarden.services.operations.github_issue_operations import IssueNotLinked
 from loregarden.services.ticket_service import TicketService
+from loregarden.testing.factories import make_ticket
 from pydantic import ValidationError
 from sqlmodel import Session, select
 from tests.github_fake import REPO, FakeGh
@@ -139,6 +140,46 @@ def test_publish_opens_an_issue_and_records_the_base(db_session: Session, gh: Fa
 def test_publishing_twice_is_refused(db_session: Session, gh: FakeGh, ticket: Ticket, linked):
     with pytest.raises(ValueError, match="already linked"):
         publish_ticket(db_session, ticket)
+
+
+def test_an_initiative_is_never_published(db_session: Session, gh: FakeGh):
+    initiative = make_ticket(
+        db_session,
+        workspace_id=None,
+        title="Cross-repo push",
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    with pytest.raises(ValueError):
+        publish_ticket(db_session, initiative)
+    assert gh.calls == []
+    assert link_for_ticket(db_session, initiative.id) is None
+
+
+def test_a_ticket_whose_workspace_cannot_be_found_is_not_published(
+    db_session: Session, gh: FakeGh, ticket: Ticket
+):
+    with (
+        patch("loregarden.services.github_issue_sync.workspace_for_ticket", return_value=None),
+        pytest.raises(LookupError),
+    ):
+        publish_ticket(db_session, ticket)
+    assert gh.calls == []
+
+
+def test_publishing_a_finished_ticket_closes_the_issue_it_opens(
+    db_session: Session, gh: FakeGh, ticket: Ticket
+):
+    ticket.state = TicketState.DONE
+    db_session.add(ticket)
+    db_session.commit()
+
+    result = publish_ticket(db_session, ticket)
+
+    link = link_for_ticket(db_session, ticket.id)
+    assert link is not None
+    assert SyncField.CLOSURE in result.pushed
+    issue = gh.issues[link.issue_number]
+    assert (issue["state"], issue["stateReason"]) == ("CLOSED", "COMPLETED")
 
 
 # --- sync, each direction -----------------------------------------------------
