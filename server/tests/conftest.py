@@ -327,6 +327,26 @@ def no_configured_gh_user(monkeypatch):
     monkeypatch.setattr(git_subprocess, "_gh_tokens", {})
 
 
+#: The host pool at a size no test reaches; see `_host_pool_never_binds`.
+_HOST_POOL_NEVER_BINDS = {
+    "host_capacity_cpus": 1024.0,
+    "host_capacity_memory_mb": 1024 * 1024,
+    "host_capacity_max_leases": 1024,
+}
+
+
+def _machine_independent_settings(scratch: Path) -> dict[str, object]:
+    """The settings that keep the suite from measuring the machine running it.
+
+    `no_installed_docker` and `_host_pool_never_binds` apply them to each test;
+    `seeded_template` applies them while it boots, because its recovery pass runs
+    the startup sweep, which measures any pool whose ceiling is unknown and writes
+    the answer into the template every `client` test starts from. Without them a
+    CI runner's 2-cpu host ceiling became every test's host ceiling.
+    """
+    return {"docker_binary": str(scratch / "no-installed-docker"), **_HOST_POOL_NEVER_BINDS}
+
+
 @pytest.fixture(autouse=True)
 def no_installed_docker(monkeypatch, tmp_path):
     """No test reaches this machine's docker daemon.
@@ -338,7 +358,8 @@ def no_installed_docker(monkeypatch, tmp_path):
     reports as docker not installed. Docker tests patch above `run_docker` and
     are unaffected.
     """
-    monkeypatch.setattr(settings, "docker_binary", str(tmp_path / "no-installed-docker"))
+    for name, value in _machine_independent_settings(tmp_path).items():
+        monkeypatch.setattr(settings, name, value)
 
 
 @pytest.fixture(autouse=True)
@@ -360,9 +381,8 @@ def _host_pool_never_binds(monkeypatch):
     where the derived ceiling is near zero. A docker test must not pass or fail on
     that, so the host is overridden to a size no test reaches; a test about the
     host pool sets its own ceiling on the row."""
-    monkeypatch.setattr(settings, "host_capacity_cpus", 1024.0)
-    monkeypatch.setattr(settings, "host_capacity_memory_mb", 1024 * 1024)
-    monkeypatch.setattr(settings, "host_capacity_max_leases", 1024)
+    for name, value in _HOST_POOL_NEVER_BINDS.items():
+        monkeypatch.setattr(settings, name, value)
 
 
 #: Whether `isolated_db` handed this test the seeded template, for `client` to read.
@@ -448,6 +468,8 @@ def seeded_template_fixture(tmp_path_factory, schema_template) -> SeededTemplate
         with ExitStack() as stack:
             for target in _ENGINE_BINDINGS:
                 stack.enter_context(patch(target, engine))
+            for name, value in _machine_independent_settings(root).items():
+                stack.enter_context(patch.object(settings, name, value))
             with Session(engine) as session:
                 seed_database(session)
                 _repoint_seeded_workspace(session, template.repo)

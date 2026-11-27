@@ -54,7 +54,14 @@ from loregarden.services.docker_leases import (
     release_lease,
     repair_pool,
 )
-from loregarden.services.docker_ledger import OCCUPYING, as_utc, container_names, last_seen_at
+from loregarden.services.docker_ledger import (
+    OCCUPYING,
+    as_utc,
+    container_names,
+    last_seen_at,
+    load_pool,
+    pool_ceiling,
+)
 from loregarden.services.docker_probe import DockerLiveness, probe_lease_liveness
 from loregarden.services.docker_subprocess import run_docker
 from loregarden.services.parallel_queue import (
@@ -152,6 +159,21 @@ def _expired(lease: DockerLease, *, now: datetime) -> bool:
     return expiry is not None and expiry <= now
 
 
+def _measure_unmeasured(session: Session, *, invoke: DockerInvoke) -> None:
+    """Measure a pool whose ceiling is not known, before the idle return.
+
+    The page's board is a read and measures nothing, so this is what keeps a
+    fresh install's first view from showing the `unknown` default's zeroes: the
+    sweep runs at startup. It is the test the board used to make on each view
+    (behind the probe cache, so a failing probe costs one `docker info` every
+    few minutes, not one per sweep). Once a pool is known, the re-measure below
+    keeps it current while there is work.
+    """
+    for pool_name in (CapacityPool.HOST, CapacityPool.DOCKER):
+        if not pool_ceiling(load_pool(session, pool_name)).known:
+            refresh_ceiling(session, pool_name=pool_name, invoke=invoke)
+
+
 def reap_docker_leases(
     session: Session,
     *,
@@ -170,6 +192,7 @@ def reap_docker_leases(
     if not settings.docker_capacity_enabled:
         return report
 
+    _measure_unmeasured(session, invoke=invoke)
     leases = list(session.exec(select(DockerLease).where(DockerLease.status.in_(OCCUPYING))).all())
     waiting_count = session.exec(
         select(func.count())

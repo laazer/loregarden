@@ -7,6 +7,7 @@ import logging
 import re
 import subprocess
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1037,30 +1038,77 @@ def _diff_artifact_is_valid(content: dict[str, Any]) -> bool:
     return isinstance(sections, list) and len(sections) > 0
 
 
+#: Diffs a page read captured because no stored one still described the work,
+#: keyed as the stored row is: the ticket and the base it was taken against. A
+#: read stores no row (the run that changes the work does,
+#: `refresh_execution_artifacts`), and without this each load of such a ticket
+#: ran git again: on live, 2,815 of 3,371 tickets had no reusable row, and a
+#: capture takes 0.1-0.6s.
+_read_captures: OrderedDict[tuple[str, str | None], dict[str, Any]] = OrderedDict()
+_READ_CAPTURE_LIMIT = 256
+_read_captures_lock = threading.Lock()
+
+
+def _stored_diff(session: Session, ticket: Ticket, plan: _TicketDiffPlan) -> dict[str, Any] | None:
+    """The stored diff, while it still describes the work.
+
+    Skip keeps a valid stored row; a SHA reuses only when stored.range equals
+    that SHA; no parent keeps today's sections.
+    """
+    existing = session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.DIFF)
+    ).first()
+    if existing is None:
+        return None
+    stored = json.loads(existing.content_json or "{}")
+    if _diff_artifact_is_valid(stored) and (
+        plan.skip or plan.against is None or stored.get("range") == plan.against
+    ):
+        return stored
+    return None
+
+
+def diff_for_read(
+    session: Session,
+    *,
+    ticket: Ticket,
+    workspace: Workspace,
+) -> dict[str, Any] | None:
+    """The ticket's diff, for a read: writes nothing.
+
+    The stored diff while it describes the work, else one captured from git
+    now and remembered in this process under the stored row's key, so the
+    next read reuses it as it would have reused the row.
+    """
+    plan = _ticket_diff_plan(session, ticket=ticket, workspace=workspace)
+    stored = _stored_diff(session, ticket, plan)
+    if stored is not None or plan.skip:
+        return stored
+    key = (ticket.id, plan.against)
+    with _read_captures_lock:
+        if key in _read_captures:
+            _read_captures.move_to_end(key)
+            return _read_captures[key]
+    diff = _capture_from_plan(workspace, plan)
+    if diff and diff.get("sections"):
+        with _read_captures_lock:
+            _read_captures[key] = diff
+            while len(_read_captures) > _READ_CAPTURE_LIMIT:
+                _read_captures.popitem(last=False)
+    return diff
+
+
 def ensure_diff_artifact(
     session: Session,
     *,
     ticket: Ticket,
     workspace: Workspace,
 ) -> dict[str, Any] | None:
-    """Return stored diff or capture from git on demand.
-
-    Plan first, then reuse: skip keeps a valid stored row; a SHA reuses only
-    when stored.range equals that SHA; no parent keeps today's sections reuse.
-    """
+    """Return the stored diff, or capture one from git and store it."""
     plan = _ticket_diff_plan(session, ticket=ticket, workspace=workspace)
-    existing = session.exec(
-        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "diff")
-    ).first()
-    if existing:
-        stored = json.loads(existing.content_json or "{}")
-        if _diff_artifact_is_valid(stored) and (
-            plan.skip or plan.against is None or stored.get("range") == plan.against
-        ):
-            return stored
-
-    if plan.skip:
-        return None
+    stored = _stored_diff(session, ticket, plan)
+    if stored is not None or plan.skip:
+        return stored
 
     diff = _capture_from_plan(workspace, plan)
     if diff and diff.get("sections"):
@@ -1075,20 +1123,18 @@ def ensure_diff_artifact(
     return diff
 
 
-def ensure_test_artifact(
-    session: Session,
-    *,
-    ticket: Ticket,
-) -> dict[str, Any] | None:
-    """Return stored test artifact or derive from the latest QA run output."""
+def _stored_tests(session: Session, ticket: Ticket) -> dict[str, Any] | None:
     existing = session.exec(
-        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == "test")
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.TEST)
     ).first()
-    if existing:
-        stored = json.loads(existing.content_json or "{}")
-        if _test_artifact_is_valid(stored):
-            return stored
+    if existing is None:
+        return None
+    stored = json.loads(existing.content_json or "{}")
+    return stored if _test_artifact_is_valid(stored) else None
 
+
+def _tests_from_runs(session: Session, ticket: Ticket) -> tuple[AgentRun, dict[str, Any]] | None:
+    """The latest test-stage run's results, derived from its output."""
     runs = session.exec(
         select(AgentRun).where(AgentRun.ticket_id == ticket.id).order_by(AgentRun.created_at.desc())
     ).all()
@@ -1101,16 +1147,42 @@ def ensure_test_artifact(
             continue
         tests = _build_test_artifact(session, run)
         if tests:
-            _upsert_artifact(
-                session,
-                ticket_id=ticket.id,
-                run_id=run.id,
-                kind=ArtifactKind.TEST,
-                title=tests.get("summary", "test results"),
-                content=tests,
-            )
-            return tests
+            return run, tests
     return None
+
+
+def tests_for_read(session: Session, *, ticket: Ticket) -> dict[str, Any] | None:
+    """The ticket's test results, for a read: stored, or derived from the latest
+    test-stage run without storing them."""
+    stored = _stored_tests(session, ticket)
+    if stored is not None:
+        return stored
+    derived = _tests_from_runs(session, ticket)
+    return derived[1] if derived else None
+
+
+def ensure_test_artifact(
+    session: Session,
+    *,
+    ticket: Ticket,
+) -> dict[str, Any] | None:
+    """Return stored test artifact or derive from the latest QA run output."""
+    stored = _stored_tests(session, ticket)
+    if stored is not None:
+        return stored
+    derived = _tests_from_runs(session, ticket)
+    if derived is None:
+        return None
+    run, tests = derived
+    _upsert_artifact(
+        session,
+        ticket_id=ticket.id,
+        run_id=run.id,
+        kind=ArtifactKind.TEST,
+        title=tests.get("summary", "test results"),
+        content=tests,
+    )
+    return tests
 
 
 def list_ticket_artifacts(

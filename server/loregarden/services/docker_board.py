@@ -38,8 +38,8 @@ from loregarden.services.docker_ledger import (
     as_utc,
     container_names,
     last_seen_at,
-    load_pool,
     pool_ceiling,
+    read_pool,
     shortfalls,
 )
 from loregarden.services.docker_subprocess import run_docker
@@ -192,23 +192,23 @@ def capacity_status(
 ) -> dict:
     """The whole board: ceiling, holders, the line, and what could not be verified.
 
-    Measures once if the ledger has never been measured. Without that, the
-    first thing anyone runs reports a ceiling of zero from the `unknown`
-    default and reads as a broken feature on a machine where docker is
-    perfectly healthy. Afterwards the reap sweep keeps the number current, so
-    this stays a read on every subsequent call.
+    `measure_if_unknown` measures a pool that has never been measured, for an
+    agent about to claim against it; otherwise this writes nothing. The page
+    passes False: the reap sweep measures a never-measured pool at startup
+    (`docker_reaper`), so its first view shows the machine, not the zeroes of
+    the `unknown` default.
     """
     stamp = now or datetime.now(timezone.utc)
-    pool = load_pool(session)
+    pool = read_pool(session)
     ceiling = pool_ceiling(pool)
     if measure_if_unknown and not ceiling.known:
         ceiling = refresh_ceiling(session, invoke=invoke)
-        pool = load_pool(session)
-    host = load_pool(session, CapacityPool.HOST)
+        pool = read_pool(session)
+    host = read_pool(session, CapacityPool.HOST)
     host_ceiling = pool_ceiling(host)
     if measure_if_unknown and not host_ceiling.known:
         host_ceiling = refresh_ceiling(session, pool_name=CapacityPool.HOST)
-        host = load_pool(session, CapacityPool.HOST)
+        host = read_pool(session, CapacityPool.HOST)
 
     holders = list(
         session.exec(

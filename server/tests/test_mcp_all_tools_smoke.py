@@ -509,11 +509,15 @@ def test_every_advertised_tool_is_callable(client: TestClient, isolated_db):
                 DockerLease(
                     id=SETTLED_LEASE_ID, holder_label="smoke", status=DockerLeaseStatus.RELEASED
                 ),
+                # Bigger than any machine, so no drain a tool sets off grants it:
+                # the startup sweep measures the ceiling, so a claim of nothing fits.
                 DockerLease(
                     id=WAITING_LEASE_ID,
                     holder_label="smoke waiting",
                     status=DockerLeaseStatus.WAITING,
                     position=1,
+                    cpus=1_000_000.0,
+                    memory_mb=1_000_000_000,
                 ),
             ]
         )

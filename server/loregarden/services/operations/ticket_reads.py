@@ -102,9 +102,7 @@ TICKET_READS = (
     ),
     Operation(
         id=OperationId.TICKET_DETAIL,
-        # It reconciles the ticket and backfills missing diff and test
-        # artifacts on the way (`ticket_detail_view.ticket_detail`).
-        effect=Effect.WRITE,
+        effect=Effect.READ,
         args=TicketKey,
         handler=_detail,
         unavailable_on={

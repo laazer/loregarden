@@ -2,12 +2,11 @@
 
 Both were written twice, as MCP tools and as routes under `/api/docker/`.
 
-The board is a write, though it reads like a read. `capacity_status` measures
-the ceiling the first time anyone looks at a ledger that has never been
-measured, which stores the probe; and an agent's poll naming its lease records
-the poll and, unless throttled, runs a promotion pass. The page names no lease,
-so its call measures at most once and is otherwise a read; it is declared by
-what it can do, not by what it usually does.
+An agent's board is a write, though it reads like a read: its poll naming a
+lease records the poll and, unless throttled, runs a promotion pass, and it
+measures a ceiling nobody has measured yet. The page's board is a separate
+operation and a read: it names no lease and measures nothing, since the reap
+sweep measures a never-measured pool at startup (`docker_reaper`).
 
 Prioritizing a waiter is the third: the same operation behind the MCP tool (and
 so the CLI's `mcp call`) and the REST route, so both require the same reason.
@@ -50,6 +49,13 @@ class CapacityQuery(BaseModel):
     #: Marks the call as a queued caller's poll, and adds `lease` to the board.
     lease_id: str = ""
     """Optionally report on just this lease, as `lease`, alongside the board."""
+    include_waiting: bool = True
+    """Include the queue. Defaults to true."""
+
+
+class BoardQuery(BaseModel):
+    model_config = _LENIENT
+
     include_waiting: bool = True
     """Include the queue. Defaults to true."""
 
@@ -171,6 +177,14 @@ def _prioritize(session: Session, request: Prioritize, _caller: Caller) -> dict[
     return prioritize_lease(session, request.lease_id, reason=request.reason).as_dict()
 
 
+def _page_board(session: Session, query: BoardQuery, _caller: Caller) -> dict[str, Any]:
+    """The board, read: no poll is recorded and no ceiling measured."""
+    board = capacity_status(session, measure_if_unknown=False)
+    if not query.include_waiting:
+        board.pop("waiting", None)
+    return board
+
+
 def _agent_release_reply(session: Session, result: dict[str, Any]) -> dict[str, Any]:
     """An agent is told what force release did not do, and what is free now."""
     return {
@@ -194,6 +208,19 @@ DOCKER_CAPACITY_OPERATIONS = (
         effect=Effect.WRITE,
         args=CapacityQuery,
         handler=_board,
+        unavailable_on={
+            Transport.REST: "the page reads docker_capacity_board, which records no poll",
+        },
+    ),
+    Operation(
+        id=OperationId.DOCKER_CAPACITY_BOARD,
+        effect=Effect.READ,
+        args=BoardQuery,
+        handler=_page_board,
+        unavailable_on={
+            Transport.MCP: "agents read docker_capacity_status, which also takes their poll",
+            Transport.CLI: "the CLI runs MCP's tools, which do not offer it",
+        },
     ),
     Operation(
         id=OperationId.DOCKER_LEASE_FORCE_RELEASE,
