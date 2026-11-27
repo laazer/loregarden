@@ -698,13 +698,14 @@ A fix that leaves nothing persisted (a crash, a wrong label, a typo) says
 - **Pre-push runs only the tests nearest your commits, closest first.** `select_pytest_targets.py`
   walks the import graph (string constants included, so `import_module("loregarden.x")` counts)
   and pytest runs the tests within two imports of a changed module, plus those that read the
-  package's source or name a changed file; jest runs `--changedSince`. A landing runs
-  everything its diff reaches (`LOREGARDEN_TESTS_BASE`). A hook or repo script (`.lefthook/scripts/`,
+  package's source or name a changed file; jest runs `--changedSince`. A landing
+  (`LOREGARDEN_TESTS_BASE`) runs the same nearest tests, capped at `LOREGARDEN_LAND_TEST_FILES`
+  (default 300), since its tree's PR still runs CI's full suite in the merge queue. A hook or repo script (`.lefthook/scripts/`,
   `scripts/`) selects the tests that name it, or name a script that runs or imports it. A push
   never runs the full server suite: it runs at most `LOREGARDEN_PUSH_TEST_FILES` (default 40)
   files, closest first, and a change it cannot map (`conftest.py`, `pyproject.toml`, anything
   outside `server/`/`client/`) or that reaches nothing runs what the rest of the diff reaches, or
-  an even sample. A landing still falls back to the full suite there. CI and the merge queue run
+  an even sample, and a landing does the same within its own cap. CI and the merge queue run
   everything before anything lands, so a green push *predicts* CI rather than proving it. Each
   push prints its time against `LOREGARDEN_PUSH_BUDGET_SECONDS` (default 300) and logs it, with
   any full-suite reason; `.lefthook/scripts/push_run_log.py report --repo .` gives the 7-day

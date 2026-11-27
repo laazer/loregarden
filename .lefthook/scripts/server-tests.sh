@@ -9,8 +9,8 @@
 # select_pytest_targets.py walks the import graph. A push never runs the full
 # suite: it runs at most LOREGARDEN_PUSH_TEST_FILES (default 40) files nearest
 # the change, or an even sample of the suite when it cannot map the change, and
-# says what it left out (push-base.sh). A landing falls back to the full suite
-# whenever it cannot map a change (see the selector's docstring).
+# says what it left out (push-base.sh). A landing does the same with a larger
+# budget, LOREGARDEN_LAND_TEST_FILES (default 300).
 #
 # This means a green push no longer *proves* green CI. CI still runs the whole
 # suite on every PR, so a miss costs a slower signal, not an unguarded merge.
@@ -19,7 +19,8 @@
 #
 # Land verification runs this too (agent_context/orchestration/loregarden.yaml),
 # in a detached tree at the candidate merge, with LOREGARDEN_TESTS_BASE set to
-# the target's tip — so a landing runs the tests its own diff reaches.
+# the target's tip — so a landing runs at most 300 of the tests nearest its own
+# diff (push-base.sh).
 #
 # --lint-only stops after the ruff steps: push-server-tests.sh asks for that when
 # every test this would run has already passed on this tree.

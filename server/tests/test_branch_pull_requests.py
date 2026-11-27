@@ -20,6 +20,7 @@ from loregarden.services.branch_triage_service import (
     branch_triage_snapshot,
 )
 from sqlmodel import Session, select
+from tests.slow_test_ceiling import load_factor
 
 RUN_GH = "loregarden.services.github_pr_listing.run_gh"
 #: This repository's scale on 2026-10-21, when the fan-out was found.
@@ -313,4 +314,8 @@ def test_the_branch_snapshot_makes_no_remote_call_and_fits_its_budget(repo, work
     assert len(snapshot["branches"]) == MEASURED_BRANCH_COUNT + 1
     assert sum(1 for b in snapshot["branches"] if b["ahead"]) == MEASURED_BRANCH_COUNT
     assert "pr" not in snapshot["branches"][0]
-    assert elapsed < SNAPSHOT_BUDGET_SECONDS, f"snapshot took {elapsed:.2f}s"
+    # Scaled by the run queue per core, as the per-test ceiling is: the budget is
+    # what the snapshot may cost on an idle machine, and a landing at load 165 on
+    # 10 cores measured 24.0s for a snapshot that takes ~5s idle.
+    budget = SNAPSHOT_BUDGET_SECONDS * load_factor()
+    assert elapsed < budget, f"snapshot took {elapsed:.2f}s of a {budget:.1f}s budget"

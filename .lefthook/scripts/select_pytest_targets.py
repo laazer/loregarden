@@ -47,6 +47,14 @@ much:
   by `import`, never through the package graph, so before this every hook-only
   change ran the full suite: 32 minutes for a 20-line shell fix. A script no
   test names still selects zero, and zero still means everything.
+* A test fixture (a non-Python file under `server/tests/`, such as a recorded
+  `.json` or `.jsonl` payload) selects the tests that name it, and the tests
+  importing a helper that names it. Tests open fixtures by name
+  (`FIXTURES / "run_75d1f3_tool_calls.jsonl"`), so the import graph never sees
+  them. A new fixture used to send its whole landing to the full suite: two
+  fixture files, read by two test files, made lg-hive-office-2784's 31-file
+  landing a full run of 8680 tests over 29 minutes. A fixture nothing names
+  still selects zero, and zero still means everything.
 * Markdown outside `agent_context/` (`CLAUDE.md`, `AGENTS.md`, the PR template,
   `docs/`) is read the same way, by name, so it takes the same path: the tests
   that name it, and the tests of any script that names it. A one-line doc fix
@@ -55,7 +63,7 @@ much:
   registry and other `importlib.import_module("loregarden.x")` dispatch does not
   slip through.
 
-* `--nearest` (a push, whose PR gets CI's full run) keeps the tests within
+* `--nearest` (a push or a landing; either way a PR gets CI's full run) keeps the tests within
   `NEAREST_HOPS` imports of a changed module. 284 of the package's 1019 modules
   are one import cycle, so "reaches" is most of the suite for almost any service:
   a median of 611 of 835 files over the 472 commits to 2026-11-24 that changed a
@@ -63,10 +71,14 @@ much:
   the graph reaches at all were within two hops, at a median of 233 files. A
   changed module with no test that near keeps its nearest ones, and the tests
   that read the package's source (`rglob("*.py")`) or name the changed file are
-  kept at any distance. A landing does not pass it: nothing runs after a landing
-  that would catch the miss.
+  kept at any distance. A landing passes it too: a land verification is the
+  first check of a ticket's work on its tree, not the last. Every landing on an
+  integration branch opens or updates the tree's PR (`tree_open_pr`), and the
+  merge queue runs CI's full suite on that PR merged onto main before anything
+  reaches main. Without it, a 3-file change to `services/doctor.py` selected 636
+  files, and lg-milestone-that-2820 was stopped at the 30-minute wall limit.
 
-* `--budget N` (a push) caps the run at N files, closest first, and never exits
+* `--budget N` (a push, or a landing with a larger N) caps the run at N files, closest first, and never exits
   2: where the selector would otherwise ask for everything (an unmappable path,
   nothing reachable, an empty diff, a module it cannot parse) it runs what the
   mappable part of the change reaches, or, when that is nothing, an even spread
@@ -75,7 +87,9 @@ much:
   held this machine's capacity for 1-4 hours each, at load 60-77, while CI ran
   the same full suite in about 9 minutes on 4 shards; CI and the merge queue
   require that full run before anything lands, so a push only needs a fast
-  first signal. A landing never passes it.
+  first signal. A landing passes a larger one (300 by default, push-base.sh):
+  uncapped, a change near `enums.py` selected ~640 files and ran into the
+  30-minute wall limit, and a full-suite fallback cannot finish inside it.
 
 What can still be missed: a test that reaches changed code through a data file,
 a subprocess, or a name assembled at runtime. CI still runs the whole suite on
@@ -150,11 +164,20 @@ def is_named_doc(path: str) -> bool:
 #: importing it, 2 the tests importing a module that does. See the module docstring.
 NEAREST_HOPS = 2
 
+
+def is_test_fixture(path: str) -> bool:
+    """A data file tests open by name: anything under `server/tests/` but Python."""
+    return path.startswith("server/tests/") and not path.endswith(".py")
+
+
 #: Longest string constant kept as a possible script name; prose is longer.
 _MAX_NAME_LENGTH = 200
 
 #: Changing one of these changes how every test runs, so nothing narrower is honest.
-_SHARED_TEST_FILES = frozenset({"conftest.py", "factories.py", "worktree_helpers.py"})
+#: `hermetic.gitconfig` is the global git config `conftest.py` gives every test.
+_SHARED_TEST_FILES = frozenset(
+    {"conftest.py", "factories.py", "worktree_helpers.py", "hermetic.gitconfig"}
+)
 
 
 def _run_git(args: list[str], repo: Path) -> str:
@@ -188,6 +211,8 @@ def full_suite_reason(paths: list[str]) -> str | None:
             return f"{path} is outside server/ (tests read repo files no import graph sees)"
         if path.startswith("server/tests/") and Path(path).name in _SHARED_TEST_FILES:
             return f"{path} changes how every test runs"
+        if is_test_fixture(path):
+            continue
         if not path.endswith(".py"):
             return f"{path} is not Python (no import edge to follow)"
     return None
@@ -634,6 +659,8 @@ class ChangeSet:
     script_files: frozenset[str] = frozenset()
     #: changed test helpers (`tests.repo_paths`): run their importers, not them
     test_helpers: frozenset[str] = frozenset()
+    #: changed test fixtures, repo-relative (`is_test_fixture`)
+    fixture_files: frozenset[str] = frozenset()
 
 
 def _classify_test_path(repo: Path, rel: str, tests: set[Path], helpers: set[str]) -> None:
@@ -657,9 +684,13 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
     context_files: set[str] = set()
     script_files: set[str] = set()
     test_helpers: set[str] = set()
+    fixture_files: set[str] = set()
     for rel in paths:
         if rel.startswith(f"{CLIENT_DIR}/"):
             client = True
+        elif is_test_fixture(rel):
+            # A deleted fixture still names the tests that opened it.
+            fixture_files.add(rel)
         elif rel.startswith(NARROWABLE_CONTEXT_TREES):
             context_files.add(rel)
         elif (
@@ -684,6 +715,7 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
         context_files=frozenset(context_files),
         script_files=frozenset(script_files),
         test_helpers=frozenset(test_helpers),
+        fixture_files=frozenset(fixture_files),
     )
 
 
@@ -723,6 +755,7 @@ def _needs_graph(changes: ChangeSet) -> bool:
         or changes.context_files
         or changes.script_files
         or changes.test_helpers
+        or changes.fixture_files
     )
 
 
@@ -748,7 +781,24 @@ def _other_readers(repo: Path, changes: ChangeSet, graph: ImportGraph) -> set[Pa
         selected |= {test for test, imports in graph.test_edges.items() if imports & readers}
     if changes.script_files:
         selected |= _tests_reaching_scripts(graph, scripts_reaching(repo, changes.script_files))
+    if changes.fixture_files:
+        selected |= _tests_reading_fixtures(graph, changes.fixture_files)
     return selected
+
+
+def _tests_reading_fixtures(graph: ImportGraph, fixtures: frozenset[str]) -> set[Path]:
+    """Tests naming one of these fixtures, and tests importing a helper that names one."""
+    naming = {
+        test
+        for test, names in graph.test_scripts.items()
+        if any(names_context_file(names, rel) for rel in fixtures)
+    }
+    helpers = frozenset(
+        helper
+        for helper, names in graph.helper_imports.items()
+        if any(names_context_file(names, rel) for rel in fixtures)
+    )
+    return naming | helper_importers(graph, helpers).keys()
 
 
 def _source_readers(changes: ChangeSet, graph: ImportGraph) -> dict[Path, int]:
