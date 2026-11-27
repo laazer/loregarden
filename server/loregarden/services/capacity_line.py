@@ -14,7 +14,8 @@ wait is gone now, so no new caller can pick it.
 So the limit here is on the line *not moving*, as `capacity_run` puts it for
 the pre-push wrapper: the clock restarts whenever a lease ahead of this one
 ends. Only a line where nothing ahead has finished for `stall_seconds` gives up,
-and that is a holder that may be hung, which is a person's to look at.
+and that is a holder that may be hung, which is a person's to look at. Unlike
+there, a holder seen working does not restart this clock.
 
 Kept apart from `capacity_run`, whose queue machinery reaches `docker_reaper`
 and from there the orchestrator, so the gate path can import this without a

@@ -20,9 +20,22 @@ samples the command's CPU beside it and a hung one is named to whoever waits.
 behind a seventh is an orderly line that takes hours to drain, and giving up the
 place in it because the clock ran out is a failure nobody caused. So the limit
 is on the line *not moving*: the clock restarts whenever a lease ahead of this
-one ends. Only a line where nothing ahead has finished for `stall_seconds` gives
-up — and it says so as `CapacityQueueStalled`, naming who is holding, so it is
-never mistaken for the ledger failing.
+one ends, or a holder ahead is seen working (`seconds_since_working`: its command
+used CPU, or reported progress). Only a line with neither for `stall_seconds`
+gives up — and it says so as `CapacityQueueStalled`, naming who is holding, so it
+is never mistaken for the ledger failing. On 2026-11-25 ends alone were counted,
+and a push at the head of the line lost its place after 3h50m behind a suite and
+a mutation run that were both working.
+
+A holder nothing measured (an older wrapper, the docker pool, a sampler that
+stopped) is neither working nor idle: it does not restart the clock, so the line
+behind it lasts `stall_seconds` from the last time something ahead ended. One
+working holder is enough, whatever the others are doing: a release of its grant
+is what the line waits for, and a hung one beside it is named on every line.
+
+**A holder that spins forever is bounded by its own age.** Its activity counts
+for the first four hours of its hold (`WORKING_HOLD_COUNTS_SECONDS`), so the line
+gives up `stall_seconds` after that, at five hours by default.
 
 **Failing to get capacity raises**, with the reason. Running the command
 anyway is the caller's decision to make — the pre-push wrapper asks the person
@@ -53,7 +66,15 @@ from loregarden.models.domain import (
     DockerLeaseEndReason,
     DockerLeaseStatus,
 )
-from loregarden.services.capacity_activity import CpuSync, describe_hang
+from loregarden.models.domain.enums import utcnow
+from loregarden.services.capacity_activity import (
+    WORKING_HOLD_COUNTS_SECONDS,
+    CpuSync,
+    describe_hang,
+    lease_activity,
+    past_counting,
+    seconds_since_working,
+)
 from loregarden.services.capacity_children import reserve_child
 
 # `child_environment` and the variable names it writes moved to
@@ -125,10 +146,9 @@ Report = Callable[[str], None]
 SessionFactory = Callable[[], Session]
 
 
-#: How long the line may go without anything ahead finishing. Above the longest
-#: hold the ledger has seen for a pre-push suite (2765s for a full server run,
-#: measured 2026-10-03), so one legitimately slow suite does not strand the line
-#: behind it, while a holder that has hung is still noticed within the hour.
+#: How long the line may go with nothing ahead ending or being seen working. An
+#: unmeasured suite can legitimately take longer (16 to 121 minutes, 2026-11-25),
+#: but nothing tells it from a hung one, and a hung one is noticed within the hour.
 DEFAULT_STALL_SECONDS = 3600.0
 
 
@@ -137,7 +157,7 @@ class CapacityNotGranted(RuntimeError):
 
 
 class CapacityQueueStalled(CapacityNotGranted):
-    """Still in line, but nothing ahead has finished for `stall_seconds`.
+    """Still in line, but nothing ahead has ended or been seen working for `stall_seconds`.
 
     Not a ledger failure: the ledger answered every poll. A subclass so a caller
     that only knows "capacity was not granted" still stops, and one that can say
@@ -152,9 +172,9 @@ class CapacityRequest:
     footprint: DockerFootprint = DockerFootprint.CUSTOM
     cpus: float = 0.0
     memory_mb: int = 0
-    #: Give up the place in line when nothing ahead of it has ended for this
-    #: long. Time spent in a line that is moving never counts. Zero waits only
-    #: for an immediate grant.
+    #: Give up the place in line when nothing ahead of it has ended, or been
+    #: seen working, for this long. Time spent in a line that is moving never
+    #: counts. Zero waits only for an immediate grant.
     stall_seconds: float = DEFAULT_STALL_SECONDS
     ttl_seconds: int | None = None
     workspace_id: str | None = None
@@ -305,6 +325,10 @@ def _poll_until_granted(
             # the line is moving, however long it still is.
             moved_at = clock()
         ahead_of_us = set(front)
+        working = seconds_since_working(front.values(), now=utcnow())
+        if working is not None:
+            # A holder at work is the line being alive, as of when it was last seen.
+            moved_at = max(moved_at, clock() - working)
         if clock() - moved_at >= request.stall_seconds:
             message = _stall_message(session, lease, front, stalled=clock() - moved_at)
             release_lease(session, lease.id, reason=DockerLeaseEndReason.ABANDONED)
@@ -335,23 +359,38 @@ def _stall_message(
 ) -> str:
     ahead = sum(1 for other in front.values() if other.status is DockerLeaseStatus.WAITING)
     estimate = estimate_waits(session).get(lease.id, UNKNOWN_WAIT)
-    now = datetime.now(timezone.utc)
+    now = utcnow()
     holders = _holders_suspect_first(front.values(), now=now)
     if holders:
         suspect = holders[0]
         granted = as_utc(suspect.granted_at)
         held = f" for {(now - granted).total_seconds():.0f}s" if granted else ""
-        hang = describe_hang(suspect, now=now)
-        holding = f"'{suspect.holder_label}' has held {suspect.cpus:g} cpus{held}" + (
-            f", {hang}" if hang else ""
+        holding = (
+            f"'{suspect.holder_label}' has held {suspect.cpus:g} cpus{held}, "
+            f"{_why_it_did_not_count(suspect, now=now)}"
         )
     else:
         holding = "nothing is holding capacity"
     return (
         f"still queued for {lease.pool.value} capacity — {ahead} ahead, "
-        f"{estimate.describe()} — but nothing ahead has finished for {stalled:.0f}s "
-        f"({holding}); gave up the place in line. The ledger is answering: the line "
-        "stopped moving."
+        f"{estimate.describe()} — but nothing ahead has finished or been seen working "
+        f"for {stalled:.0f}s ({holding}); gave up the place in line. The ledger is answering: "
+        "the line stopped moving."
+    )
+
+
+def _why_it_did_not_count(holder: DockerLease, *, now: datetime) -> str:
+    """What was known of the holder a line stalled behind, so nobody has to guess."""
+    activity = lease_activity(holder, now=now)
+    if activity is None:
+        return "whether it is working is not measured"
+    if past_counting(holder, now=now) and not activity.looks_hung:
+        return (
+            "still working, but past the "
+            f"{format_seconds(WORKING_HOLD_COUNTS_SECONDS)} its activity counts for"
+        )
+    return describe_hang(holder, now=now) or (
+        f"no CPU use or progress for {format_seconds(activity.idle_seconds)}"
     )
 
 

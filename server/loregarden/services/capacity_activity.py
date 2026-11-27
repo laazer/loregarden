@@ -10,8 +10,10 @@ CPU time is evidence no reporter has to volunteer. `CpuSync` samples it over the
 command's whole process tree and records on the lease when the tree last used
 any; `lease_activity` reads that back together with the last progress report.
 
-**This only reports.** A command waiting on a network, or on the docker daemon,
-also uses no CPU, so the ledger never ends a lease over it: a person decides.
+**This never ends a lease.** A command waiting on a network, or on the docker
+daemon, also uses no CPU, so a person decides about one that looks hung. What it
+does decide is whether the line behind a lease is alive (`seconds_since_working`,
+read by `capacity_run`).
 
 **Not measured is not idle.** A lease with no recent sample — held by something
 other than `capacity run`, by a build older than this, or across a laptop's
@@ -24,7 +26,7 @@ import os
 import subprocess
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -48,6 +50,13 @@ WORKING_CPU_SHARE = 0.05
 #: No CPU and no progress for this long, and the command looks hung. Well past
 #: the suite's 120s per-test timeout, which ends an ordinary hang by itself.
 HUNG_AFTER_SECONDS = 15 * 60
+
+#: How long into a hold its activity keeps the line behind it alive. A command
+#: spinning in a loop uses CPU forever, so past this a hold has to end to count.
+#: Above the longest test run the ledger has held (181 minutes, a server suite at
+#: load ~60 on 2026-11-25), and it also leaves out a dev stack, which is busy for
+#: days (27h and 68h on the ledger) and was never about to finish.
+WORKING_HOLD_COUNTS_SECONDS = 4 * 3600
 
 #: A gap this many samples long was not watched, so it says nothing.
 _MISSED_SAMPLES = 3
@@ -93,6 +102,26 @@ def describe_hang(lease: DockerLease, *, now: datetime) -> str:
     if activity is None or not activity.looks_hung:
         return ""
     return f"no CPU use or progress for {format_seconds(activity.idle_seconds)}, may be hung"
+
+
+def past_counting(lease: DockerLease, *, now: datetime) -> bool:
+    """Whether this hold is so old that its activity no longer says the line is alive."""
+    granted_at = as_utc(lease.granted_at)
+    return (
+        granted_at is not None and (now - granted_at).total_seconds() >= WORKING_HOLD_COUNTS_SECONDS
+    )
+
+
+def seconds_since_working(leases: Iterable[DockerLease], *, now: datetime) -> int | None:
+    """How long since any of these holders was last seen working, or None.
+
+    None when no reading says: unmeasured, or measured on a hold old enough that
+    its activity no longer counts. Neither is idle, and neither is working.
+    """
+    readings = (
+        lease_activity(lease, now=now) for lease in leases if not past_counting(lease, now=now)
+    )
+    return min((reading.idle_seconds for reading in readings if reading is not None), default=None)
 
 
 def parse_cpu_time(text: str) -> float:

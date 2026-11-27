@@ -151,8 +151,9 @@ def register(sub: argparse._SubParsersAction) -> None:
         type=float,
         default=DEFAULT_STALL_SECONDS,
         help=(
-            "Give up the place in line when nothing ahead has finished for this many "
-            f"seconds (default {DEFAULT_STALL_SECONDS:.0f}). Time in a moving line never counts."
+            "Give up the place in line when nothing ahead has finished or been seen "
+            f"working for this many seconds (default {DEFAULT_STALL_SECONDS:.0f}). "
+            "Time in a moving line never counts."
         ),
     )
     run.add_argument(
