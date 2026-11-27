@@ -545,3 +545,15 @@ def test_planner_runs_in_a_workspace_that_is_checked_out(db_session, workspaces)
 
     _milestone(db_session, here, "Home", initiative)
     assert planner_workspace(db_session, initiative).id == here.id
+
+
+def test_the_refusal_names_each_missing_workspace_once(db_session, workspaces):
+    _, there = workspaces
+    initiative = _initiative(db_session)
+    _milestone(db_session, there, "Away 1", initiative)
+    _milestone(db_session, there, "Away 2", initiative)
+
+    with pytest.raises(ValueError) as refused:
+        planner_workspace(db_session, initiative)
+
+    assert f"({there.slug})" in str(refused.value)

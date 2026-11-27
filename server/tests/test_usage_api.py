@@ -1481,3 +1481,18 @@ def test_stored_snapshot_is_none_when_nothing_has_been_read(tmp_path, monkeypatc
     monkeypatch.setattr(usage_service, "_usage_cache_path", lambda: tmp_path / "absent.json")
 
     assert usage_service.snapshot_from_stored_cache() is None
+
+
+@pytest.mark.parametrize(
+    ("oauth", "label"),
+    [
+        ({"subscriptionType": "max", "rateLimitTier": "default_claude_max_20x"}, "Max 20x"),
+        ({"subscriptionType": "max", "rateLimitTier": "default_claude_max_5X"}, "Max 5X"),
+        ({"subscriptionType": "team_premium", "rateLimitTier": "default"}, "Team Premium"),
+        ({"subscriptionType": "pro"}, "Pro"),
+        ({"subscriptionType": "  ", "rateLimitTier": "max_20x"}, None),
+        ({}, None),
+    ],
+)
+def test_the_claude_plan_label_reads_the_subscription_and_its_tier(oauth, label):
+    assert usage_service._claude_plan_label(oauth) == label

@@ -292,6 +292,31 @@ def test_complete_stage_refuses_a_reject_whose_test_passes(db_session, ticket):
     assert "named no unmet criterion" in recorded["reason"]
 
 
+@pytest.mark.parametrize(
+    ("outcome", "findings"),
+    [
+        ("pass", [{**FINDING, "test": PASSES}]),
+        ("reject", None),
+        ("reject", [{**FINDING, "blocking": False, "test": PASSES}]),
+    ],
+    ids=["a-pass", "no-findings-given", "nothing-blocking"],
+)
+def test_a_call_that_makes_no_reject_runs_no_test(db_session, ticket, outcome, findings):
+    """A passing test would refuse it; these are not rejects the bar judges."""
+    stage = WorkflowStageDef(key="test-break", name="Test break", agent_id="verifier")
+
+    refuse_unshown_reject(
+        db_session,
+        ticket,
+        stage,
+        None,
+        outcome=outcome,
+        findings=None if findings is None else [Finding(**f) for f in findings],
+    )
+
+    assert _decisions(db_session, ticket, "reject_tests_recorded") == []
+
+
 # ---- the Stop hook refuses a sentinel reject while the turn is open ------------
 
 

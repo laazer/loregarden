@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,7 +32,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.disk_usage import cleanup, store
 from loregarden.services.disk_usage.roots import ScanPlan, ScanRoot, WorktreeRef, scan_plan
-from loregarden.services.disk_usage.safety import SafetyContext, assess
+from loregarden.services.disk_usage.safety import SafetyContext, assess, list_process_cwds
 from loregarden.services.disk_usage.scanner import (
     MIN_NODE_BYTES,
     KindHints,
@@ -655,3 +656,43 @@ def test_execute_with_an_unknown_plan_is_a_conflict(client) -> None:
         "/api/machine/disk/cleanup/execute", json={"plan_id": "nope", "paths": ["/x"]}
     )
     assert response.status_code == 409
+
+
+# --- which processes sit in which directory --------------------------------------
+
+
+def _lsof_printing(stdout: str, returncode: int = 0):
+    return mock.patch(
+        "loregarden.services.disk_usage.safety.subprocess.run",
+        return_value=subprocess.CompletedProcess([], returncode, stdout=stdout, stderr="denied"),
+    )
+
+
+def test_lsof_fields_become_pid_command_and_directory():
+    # 13 has no command field; 14's name is not a path (an unreadable cwd).
+    with _lsof_printing("p12\ncpython\nn/Users/x\np13\nn/tmp\np14\ncbash\nnunknown\n", 1):
+        assert list_process_cwds() == [
+            ("12", "python", Path("/Users/x")),
+            ("13", "", Path("/tmp")),
+        ]
+
+
+def test_lsof_that_lists_nothing_is_no_answer():
+    with _lsof_printing("  \n", 1):
+        assert list_process_cwds() is None
+
+
+@pytest.mark.parametrize(
+    "failure", [FileNotFoundError("lsof"), subprocess.TimeoutExpired(["lsof"], 20)]
+)
+def test_lsof_that_cannot_run_is_no_answer(failure):
+    with mock.patch("loregarden.services.disk_usage.safety.subprocess.run", side_effect=failure):
+        assert list_process_cwds() is None
+
+
+def test_the_real_lsof_lists_this_process_in_its_directory():
+    cwds = list_process_cwds()
+    assert cwds is not None
+    assert (str(os.getpid()), Path.cwd().resolve()) in {
+        (pid, path.resolve()) for pid, _, path in cwds
+    }

@@ -809,8 +809,37 @@ def test_workspace_scoped_findings_are_not_persisted(db_session: Session):
 
 
 def test_record_findings_ignores_findings_with_no_ticket(db_session: Session):
-    assert record_findings(db_session, []) == 0
+    ticketless = MonitorFinding(
+        condition=MonitorCondition.STALLED_RUN, stage_key="implement", summary="stalled"
+    )
+    assert record_findings(db_session, [ticketless]) == 0
     assert _finding_rows(db_session) == []
+
+
+def test_a_recorded_finding_keeps_when_it_was_first_seen(db_session: Session):
+    ticket = make_workspace_ticket(db_session, "monitor-first-seen")
+    finding = MonitorFinding(
+        condition=MonitorCondition.STALLED_RUN,
+        ticket_id=ticket.id,
+        stage_key="implement",
+        summary="stalled",
+    )
+    first, later = (
+        datetime(2026, 11, 1, tzinfo=timezone.utc),
+        datetime(2026, 11, 2, tzinfo=timezone.utc),
+    )
+
+    with patch.object(workflow_monitor, "_utcnow", side_effect=[first, later]):
+        touched = [record_findings(db_session, [finding]), record_findings(db_session, [finding])]
+
+    assert touched == [1, 1]
+    with Session(db_session.get_bind()) as fresh:
+        (row,) = fresh.exec(
+            select(Artifact).where(Artifact.kind == MonitorArtifactKind.FINDING.value)
+        ).all()
+    payload = json.loads(row.content_json)
+    assert (payload["first_seen"], payload["last_seen"]) == (first.isoformat(), later.isoformat())
+    assert payload["occurrences"] == 2
 
 
 def test_an_empty_ticket_id_reads_as_every_ticket_not_as_a_half_answer(db_session: Session):
