@@ -36,7 +36,9 @@ def test_create_feature_work_item_gets_workflow(client: TestClient):
     assert len(body["stages"]) >= 5
 
 
-def test_feature_ticket_backfills_workflow_on_load(client: TestClient):
+def test_a_feature_with_no_workflow_yet_shows_its_stages_and_no_cursor(client: TestClient):
+    """The page used to create the workflow on load; a read creates none and
+    invents no cursor, as the list does (lg-workflow-integrity-606)."""
     feature = next(
         t
         for t in client.get("/api/tickets?workspace=loregarden").json()
@@ -44,7 +46,7 @@ def test_feature_ticket_backfills_workflow_on_load(client: TestClient):
     )
     detail = client.get(f"/api/tickets/{feature['id']}").json()
     assert len(detail["stages"]) >= 5
-    assert detail["workflow_stage_key"]
+    assert detail["workflow_stage_key"] == feature["workflow_stage_key"]
 
 
 def test_create_task_work_item(client: TestClient):

@@ -24,6 +24,7 @@ from loregarden.main import app
 from loregarden.models.domain import TicketState, WorkItemType
 from loregarden.services.operations import OperationId
 from loregarden.services.operations.call import OPERATIONS
+from loregarden.services.operations.spec import Effect
 from loregarden.services.reference_survey.research import RefuteIn
 from loregarden.services.reference_survey.schedule import ReviewNowIn
 from loregarden.services.reference_survey.schemas import SourceIn
@@ -161,6 +162,20 @@ def test_the_openapi_components_keep_their_names():
         listed = set(components[body.__name__].get("properties", {}))
         sent = {field.alias or name for name, field in body.model_fields.items()}
         assert listed == sent, body.__name__
+
+
+def test_a_get_route_runs_only_read_operations():
+    """A GET that writes moves rows with no event behind it, and the strict read
+    guard cannot see an operation declared WRITE. The ticket page and the docker
+    board were two; each now runs a READ operation."""
+    writes = [
+        (route.path, name)
+        for route in _routes(app.routes)
+        if "GET" in route.methods
+        for name in set(re.findall(r"OperationId\.(\w+)", inspect.getsource(route.endpoint)))
+        if OPERATIONS[OperationId[name]].effect is not Effect.READ
+    ]
+    assert writes == []
 
 
 # --- the generator --------------------------------------------------------------

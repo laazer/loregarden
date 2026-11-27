@@ -32,14 +32,9 @@ router = APIRouter(prefix="/docker", tags=["docker-capacity"])
 
 @router.get("/capacity")
 def read_docker_capacity(session: Session = Depends(get_session)) -> dict:
-    """The ceiling, what holds it, and who is waiting.
-
-    `capacity_status` measures once when the ledger has never been measured, so
-    the first view of this tab reports the real machine rather than the zeroes a
-    never-probed pool row would show. Every later call reads the stored ceiling —
-    the probe is cached, and the reconciliation sweep keeps it current.
-    """
-    return run_rest_operation(session, OperationId.DOCKER_CAPACITY_STATUS, {})
+    """The ceiling, what holds it, and who is waiting. A read: the reap sweep
+    measures a never-measured pool at startup and keeps the ceiling current."""
+    return run_rest_operation(session, OperationId.DOCKER_CAPACITY_BOARD, {})
 
 
 class ForceReleaseRequest(

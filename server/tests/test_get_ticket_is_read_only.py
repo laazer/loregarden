@@ -1,5 +1,6 @@
 """Every read of a ticket's state writes nothing: the two MCP read tools and
-the two REST state routes, which build the same payload on the same read path.
+the two REST state routes, which build the same payload on the same read path,
+and the ticket page's detail and the docker board, which are declared reads.
 
 Both returned `ticket_state_payload`, whose stage map came from
 `build_stage_views`, which commits the ticket and its workflow instance. So every
@@ -12,11 +13,14 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 from loregarden.mcp.tools import execute_tool
-from loregarden.models.domain import WorkflowInstance
+from loregarden.models.domain import DockerCapacityPool, WorkflowInstance
+from loregarden.services import artifact_service
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.ticket_state_payload import ticket_state_payload
 from sqlalchemy import event
 from sqlmodel import Session, select
@@ -116,3 +120,61 @@ def test_rest_and_mcp_return_one_payload(client, db_session):
         "documents",
         "kept_code",
     }
+
+
+@pytest.mark.parametrize("cursor", ["as the workflow has it", "stale on the row"])
+def test_the_ticket_page_reads_a_ticket_without_writing(client, db_session, isolated_db, cursor):
+    """The page's detail reconciled the ticket and stored a missing diff and test
+    result on every load. It shows the cursor derived from the workflow, so a row
+    the workflow disagrees with reads correctly with nothing repaired."""
+    ticket = make_workspace_ticket(db_session, "lg-read-only-4")
+    ticket_state_payload(db_session, ticket.id)
+    if cursor == "stale on the row":
+        ticket.workflow_stage_key = "no-such-stage"
+        db_session.add(ticket)
+        db_session.commit()
+    derived = OrchestrationService(db_session).stage_cursor_for_read(ticket)
+
+    with _writes(isolated_db) as writes:
+        res = client.get(f"/api/tickets/{ticket.id}")
+
+    assert res.status_code == 200, res.text
+    assert writes == []
+    assert res.json()["workflow_stage_key"] == derived[0]
+
+
+def test_the_ticket_page_shows_a_captured_diff_without_storing_it(client, db_session, isolated_db):
+    """A ticket with no stored diff shows the one git gives now; the run that
+    changes the work stores it, not the page's read."""
+    ticket = make_workspace_ticket(db_session, "lg-read-only-5")
+    captured = {"file": "a.py", "range": "main", "sections": [{"path": "a.py", "lines": []}]}
+
+    with (
+        mock.patch.object(artifact_service, "capture_git_diff", return_value=captured),
+        _writes(isolated_db) as writes,
+    ):
+        res = client.get(f"/api/tickets/{ticket.id}")
+
+    assert res.status_code == 200, res.text
+    assert writes == []
+    assert res.json()["artifacts"]["diff"] == captured
+
+
+def test_the_docker_board_reads_an_unmeasured_ledger_without_writing(
+    client, db_session, isolated_db
+):
+    """The board measured a never-measured ceiling, and created the pool rows,
+    on the page's first view. The reap sweep measures instead: the client's
+    startup already did, so the rows are removed to read a ledger nobody has."""
+    measured = db_session.exec(select(DockerCapacityPool)).all()
+    assert measured, "the startup sweep should have measured the pools"
+    for pool in measured:
+        db_session.delete(pool)
+    db_session.commit()
+
+    with _writes(isolated_db) as writes:
+        res = client.get("/api/docker/capacity")
+
+    assert res.status_code == 200, res.text
+    assert writes == []
+    assert res.json()["ceiling"]["source"] == "unknown"

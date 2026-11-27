@@ -95,6 +95,8 @@ class OperationId(StrEnum):
     MEMORY_STATUS = "memory_status"
     MEMORY_RELATION_CREATE = "memory_relation_create"
     DOCKER_CAPACITY_STATUS = "docker_capacity_status"
+    #: The board as the page reads it: no poll, no measuring; a read.
+    DOCKER_CAPACITY_BOARD = "docker_capacity_board"
     DOCKER_LEASE_FORCE_RELEASE = "docker_lease_force_release"
     DOCKER_LEASE_PRIORITIZE = "docker_lease_prioritize"
     #: An agent's one-call answer about disk use; may start a scan.

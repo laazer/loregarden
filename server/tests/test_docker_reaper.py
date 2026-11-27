@@ -23,6 +23,7 @@ from unittest import mock
 
 import pytest
 from loregarden.models.domain import (
+    CapacityPool,
     DockerCeilingSource,
     DockerFootprint,
     DockerLease,
@@ -266,6 +267,41 @@ def test_a_clean_sweep_and_a_blind_one_are_distinguishable(session) -> None:
     `healthy` is what tells them apart."""
     empty = docker_reaper.reap_docker_leases(session, invoke=NoLivenessProbe(), now=NOW)
     assert empty.reclaimed == [] and empty.healthy is True
+
+
+def test_an_idle_sweep_measures_a_ceiling_nobody_has_measured(session) -> None:
+    """The page's board measures nothing, so the sweep, which runs at startup,
+    measures a pool whose ceiling is not known, with no lease on the ledger."""
+    pool = docker_leases.load_pool(session)
+    pool.ceiling_source = DockerCeilingSource.UNKNOWN
+    session.add(pool)
+    session.commit()
+    docker = NoLivenessProbe()
+
+    docker_reaper.reap_docker_leases(session, invoke=docker, now=NOW)
+
+    assert docker_leases.pool_ceiling(docker_leases.load_pool(session)).known
+    assert {call[0] for call in docker.calls} == {"info"}
+
+
+def test_an_idle_sweep_leaves_a_known_ceiling_and_docker_alone(session) -> None:
+    docker = NoLivenessProbe()
+    docker_reaper.reap_docker_leases(session, invoke=docker, now=NOW)
+    assert docker.calls == []
+    assert docker_leases.load_pool(session).ceiling_source is DockerCeilingSource.CONFIG_OVERRIDE
+
+
+def test_a_client_test_starts_from_the_pinned_host_not_the_machine_that_built_it(
+    client, isolated_db
+) -> None:
+    """The seeded template boots once per process and its recovery pass runs this
+    sweep, which measures an unknown pool. Built outside the per-test pins, it
+    stored the runner's own host (2.2 cpus on CI) and every `client` test inherited
+    it, so a 4-cpu claim was refused there and granted on a 10-cpu laptop."""
+    with Session(isolated_db) as session:
+        host = docker_leases.pool_ceiling(docker_leases.load_pool(session, CapacityPool.HOST))
+    assert host.source is DockerCeilingSource.CONFIG_OVERRIDE
+    assert host.cpus == 1024.0
 
 
 # ---- waiters and promotion --------------------------------------------

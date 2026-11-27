@@ -62,7 +62,7 @@ from loregarden.services.docker_ledger import (
     as_utc,
     booked,
     load_patience_seconds,
-    load_pool,
+    read_pool,
 )
 from loregarden.services.hold_history import HoldForecast, HoldStats, observed_hold_times
 from sqlmodel import Session, col, select
@@ -220,7 +220,7 @@ def estimate_waits(
     """
     stamp = now or datetime.now(timezone.utc)
     hold_stats = stats if stats is not None else observed_hold_times(session, now=stamp)
-    rows = {name: load_pool(session, name) for name in CapacityPool}
+    rows = {name: read_pool(session, name) for name in CapacityPool}
     host = rows[CapacityPool.HOST]
     waiters = session.exec(
         select(DockerLease)

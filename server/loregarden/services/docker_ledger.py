@@ -267,6 +267,13 @@ def load_pool(session: Session, pool: CapacityPool = CapacityPool.DOCKER) -> Doc
     return row
 
 
+def read_pool(session: Session, pool: CapacityPool = CapacityPool.DOCKER) -> DockerCapacityPool:
+    """The pool's row, for a read: an unsaved empty one where none exists yet,
+    so reading the board creates nothing (`load_pool` creates it)."""
+    row_id = POOL_ROW_IDS[pool]
+    return session.get(DockerCapacityPool, row_id) or DockerCapacityPool(id=row_id)
+
+
 def pool_ceiling(pool: DockerCapacityPool) -> Ceiling:
     return Ceiling(
         cpus=pool.ceiling_cpus,

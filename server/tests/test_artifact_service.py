@@ -8,9 +8,12 @@ from loregarden.models.domain import Artifact, ArtifactKind, Workspace, Worktree
 from loregarden.services import artifact_service
 from loregarden.services.artifact_service import (
     capture_git_diff,
+    diff_for_read,
     ensure_diff_artifact,
+    ensure_test_artifact,
     parse_test_output,
     refresh_execution_artifacts,
+    tests_for_read,
 )
 from loregarden.services.worktree_service import WorktreeService
 from sqlmodel import Session, select
@@ -818,7 +821,8 @@ def test_stored_vs_main_diff_is_recaptured_for_an_integration_parent(session, tm
 
 
 def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(session, tmp_path):
-    """R2 grouped twin: plant vs-main with sections; artifacts_grouped recaptures.
+    """R2 grouped twin: plant vs-main with sections; artifacts_grouped recaptures,
+    and returns the recapture without storing it.
 
     Covering only ensure_diff_artifact is not done. Must fail on the
     sections-only short-circuit in services.ticket_detail_view.artifacts_grouped.
@@ -885,13 +889,9 @@ def test_artifacts_grouped_recaptures_stored_vs_main_for_an_integration_parent(s
     assert "later_sibling.txt" not in paths
     assert "client/package.json" not in paths
     assert "untracked.txt" not in paths
+    # A read stores nothing: the plant stays until a run refreshes it.
     rows = _diff_rows(session, ticket)
-    assert len(rows) == 1
-    assert rows[0].title != "client/package.json"
-    assert rows[0].title in {"ticket.py", "server/foo.py"}
-    assert rows[0].title == str(result.get("file") or "git diff")
-    stored = json.loads(rows[0].content_json)
-    assert stored["range"] == graph.merge_base
+    assert [row.title for row in rows] == ["client/package.json"]
 
 
 def test_build_verify_context_parent_ahead_names_ticket_local_paths(session, tmp_path):
@@ -1383,3 +1383,61 @@ def test_a_failed_untracked_listing_is_logged_not_silent(tmp_path, caplog):
         assert artifact_service._untracked_paths(not_a_repo) == []
 
     assert any("git ls-files failed" in record.getMessage() for record in caplog.records)
+
+
+# --- reads store nothing ------------------------------------------------------
+# The ticket page read these through `ensure_*`, which stored what it captured:
+# a GET that wrote. The read variants return the same thing and store nothing.
+
+_TESTS = {"summary": "1 passed", "cmd": "pytest", "rows": [{"name": "test_a", "status": "pass"}]}
+
+
+def test_a_read_returns_the_diff_it_captures_and_stores_no_row(session, workspace, ticket, repo):
+    _active_tree(session, workspace, ticket, repo)
+    against = "a" * 40
+    with (
+        mock.patch.object(artifact_service, "live_diff_base", return_value=against),
+        mock.patch.object(artifact_service, "capture_git_diff", return_value=_CAPTURED) as capture,
+    ):
+        first = diff_for_read(session, ticket=ticket, workspace=workspace)
+        again = diff_for_read(session, ticket=ticket, workspace=workspace)
+    assert first == again == _CAPTURED
+    capture.assert_called_once()  # the second read reuses the capture, as it reused the row
+    _no_diff_row(session, ticket)
+
+
+def test_a_read_captures_again_once_the_base_moves(session, workspace, ticket, repo):
+    _active_tree(session, workspace, ticket, repo)
+    with mock.patch.object(artifact_service, "capture_git_diff", return_value=_CAPTURED) as capture:
+        for base in ("b" * 40, "c" * 40):
+            with mock.patch.object(artifact_service, "live_diff_base", return_value=base):
+                diff_for_read(session, ticket=ticket, workspace=workspace)
+    assert capture.call_count == 2
+
+
+def test_a_read_and_the_storing_call_agree(session, workspace, ticket, repo):
+    """`ensure_diff_artifact` stores what a read would have shown."""
+    _active_tree(session, workspace, ticket, repo)
+    with (
+        mock.patch.object(artifact_service, "live_diff_base", return_value="d" * 40),
+        mock.patch.object(artifact_service, "capture_git_diff", return_value=_CAPTURED),
+    ):
+        read = diff_for_read(session, ticket=ticket, workspace=workspace)
+        stored = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
+    assert read == stored
+    assert len(_diff_rows(session, ticket)) == 1
+
+
+def test_a_test_result_is_derived_for_a_read_and_stored_only_by_ensure(session, workspace, ticket):
+    make_run(session, workspace, ticket, "r-tests", agent_id="test_designer")
+    with mock.patch.object(artifact_service, "_build_test_artifact", return_value=_TESTS):
+        assert tests_for_read(session, ticket=ticket) == _TESTS
+        assert _test_rows(session, ticket) == []
+        assert ensure_test_artifact(session, ticket=ticket) == _TESTS
+    assert len(_test_rows(session, ticket)) == 1
+
+
+def _test_rows(session, ticket):
+    return session.exec(
+        select(Artifact).where(Artifact.ticket_id == ticket.id, Artifact.kind == ArtifactKind.TEST)
+    ).all()

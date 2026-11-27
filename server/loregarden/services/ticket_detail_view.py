@@ -28,10 +28,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services import artifact_service
 from loregarden.services.acceptance_criteria import load_checked, load_criteria
-from loregarden.services.artifact_service import (
-    ensure_diff_artifact,
-    ensure_test_artifact,
-)
+from loregarden.services.artifact_service import diff_for_read, tests_for_read
 from loregarden.services.base_delivery import delivery_of
 from loregarden.services.block_classification import block_message_for
 from loregarden.services.blocked_on import (
@@ -407,13 +404,14 @@ def _transient_retries(artifacts: Sequence[Artifact]) -> list[dict]:
 
 
 def _backfill(session: Session, ticket: Ticket, grouped: dict) -> None:
-    """Capture a missing or stale diff and test result, and say when a stage
-    is waiting on the operator."""
+    """Fill in a missing or stale diff and test result, and say when a stage
+    is waiting on the operator. Stores nothing: the run that changes the work
+    stores them (`refresh_execution_artifacts`)."""
     workspace = workspace_for(session, ticket.workspace_id)
     if workspace:
-        grouped["diff"] = ensure_diff_artifact(session, ticket=ticket, workspace=workspace)
+        grouped["diff"] = diff_for_read(session, ticket=ticket, workspace=workspace)
         if not grouped["tests"] or not _test_artifact_is_valid(grouped["tests"] or {}):
-            grouped["tests"] = ensure_test_artifact(session, ticket=ticket)
+            grouped["tests"] = tests_for_read(session, ticket=ticket)
     if not grouped.get("live") and ticket.workflow_stage_status == StageStatus.AWAITING:
         grouped["live"] = "Awaiting your approval in Triage or Inbox…"
 
@@ -474,15 +472,16 @@ def _prerequisite_refs(
 
 
 def ticket_detail(session: Session, ticket: Ticket) -> TicketDetail:
-    """The ticket page's payload.
+    """The ticket page's payload. A read: it writes nothing.
 
-    Not a pure read: `reconcile_ticket` repairs the ticket and its parent when
-    they disagree with the workflow, and `artifacts_grouped` backfills a missing
-    diff or test artifact. Both write only when something was missing or wrong.
+    It used to repair on the way, reconciling the ticket with its workflow and
+    storing a missing diff or test artifact. The stages and cursor it shows are
+    derived from the workflow without writing (`stage_views_for_read`), so the
+    repair changed nothing on screen: on live, 329 of 3,371 tickets would have
+    been rewritten by a load and none would have read differently. Parents are
+    repaired by the sweep (`reconcile_all_parents`).
     """
     orch = OrchestrationService(session)
-    orch.reconcile_ticket(ticket)
-    session.refresh(ticket)
     summary = ticket_summary(session, ticket)
     template = orch.get_template_for_ticket(ticket)
     transitions = normalize_transitions(resolve_ticket_transitions(session, ticket))
