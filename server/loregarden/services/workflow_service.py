@@ -10,7 +10,6 @@ from loregarden.core.workflow_loader import (
     get_template_stages_at_version,
     get_template_transitions_at_version,
     safe_load_yaml_file,
-    sync_workflow_templates,
 )
 from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.models.domain import (
@@ -260,12 +259,14 @@ class WorkflowService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    # Reads. The built-in templates are seeded from YAML when an entry point
+    # opens the database (`seed_database`), not here: seeding on read wrote rows
+    # from `GET /workflows/templates`, and re-created a built-in an operator had
+    # deleted every time anything listed them.
     def list_templates(self) -> list[WorkflowTemplate]:
-        sync_workflow_templates(self.session)
         return list(self.session.exec(select(WorkflowTemplate)).all())
 
     def get_template_by_slug(self, slug: str) -> WorkflowTemplate | None:
-        sync_workflow_templates(self.session)
         return self.session.exec(
             select(WorkflowTemplate).where(WorkflowTemplate.slug == slug)
         ).first()

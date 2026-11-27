@@ -16,7 +16,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.seed import seed_database
-from loregarden.services.skill_service import parse_skill_markdown
+from loregarden.services.skill_service import parse_skill_markdown, seed_builtin_skills
 from loregarden.services.studio_routing import resolve_classify_route
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SkillNotFoundError, get_skill, list_skills
@@ -67,7 +67,8 @@ def _implement_stage() -> WorkflowStageDef:
     )
 
 
-def test_the_skill_is_registered():
+def test_the_skill_is_registered(db_session):
+    seed_builtin_skills(db_session)  # what every entry point does on boot
     assert _SKILL in list_skills()
     assert (get_skill(_SKILL) or "").strip()
 
