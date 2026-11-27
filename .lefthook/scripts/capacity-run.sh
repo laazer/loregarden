@@ -27,11 +27,13 @@
 # suites ahead is hours, and an orderly line is never a reason to fail a push.
 # Two things are, and they end differently:
 #
-# The line stopped moving: nothing ahead has finished for
-# LOREGARDEN_CAPACITY_STALL_SECONDS (default 3600 — above the slowest pre-push
-# suite the ledger has seen), usually a holder that hung. The CLI exits 75 having
-# said who is holding, how many are ahead and the estimate. The ledger is fine,
-# so this is not retried — retrying would only rejoin at the back:
+# The line stopped moving: for LOREGARDEN_CAPACITY_STALL_SECONDS (default 3600)
+# nothing ahead has finished, and no holder ahead has been seen using CPU or
+# reporting progress. A holder that is working keeps the line alive for the first
+# 4 hours of its hold; one nothing measures (an older wrapper, the docker pool)
+# does not. Usually it is a holder that hung. The CLI exits 75 having said who is
+# holding, how many are ahead and the estimate. The ledger is fine, so this is not
+# retried — retrying would only rejoin at the back:
 #   - at a terminal, ask: [p] proceed without reserving, [r] queue again,
 #     anything else stops;
 #   - with no terminal (an agent), fail with exit 75.
@@ -203,8 +205,8 @@ while :; do
   fi
 
   if [ "$rc" -eq "$EXIT_QUEUE_STALLED" ]; then
-    warn "'$label' was still queued when the line stopped moving: nothing ahead finished"
-    warn "for ${stall}s (position, estimate and holder above). The ledger is working."
+    warn "'$label' was still queued when the line stopped moving: nothing ahead finished or"
+    warn "was seen working for ${stall}s (position, estimate and holder above). The ledger is fine."
     if at_terminal; then
       printf 'capacity-run: [p] proceed without reserving  [r] queue again  [other] stop: ' >&2
       answer=""
