@@ -54,6 +54,7 @@ from loregarden.services.run_output_files import (
     wrap_for_files,
 )
 from sqlmodel import Session, select
+from tests.tmux_reaper import NO_SERVER
 
 #: The stem the pure-string assertions use. Anything that SPAWNS takes its
 #: identity from `run_key` instead — a module-level one gives every tmux test in
@@ -390,10 +391,33 @@ def _wait_for_session_gone(session: str, timeout: float = 20.0) -> None:
     raise AssertionError(f"tmux session {session} never ended")
 
 
+def _kill_our_server(timeout: float = 20.0) -> None:
+    """Kill this worker's tmux server and wait until nothing answers on its socket.
+
+    `kill-server` returns once the server has the command, not once it has
+    exited. A `new-session` in that window reaches the dying server and fails
+    with "server exited unexpectedly" (exit 1), which is how CI saw it.
+    """
+    subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    deadline = time.monotonic() + timeout
+    while True:
+        probe = subprocess.run(
+            tmux_argv("list-sessions"), capture_output=True, text=True, check=False
+        )
+        if probe.returncode != 0 and NO_SERVER.search(probe.stderr):
+            return
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"tmux server {settings.agent_tmux_socket} still answering after"
+                f" kill-server: rc={probe.returncode} {probe.stderr.strip()}"
+            )
+        time.sleep(0.05)
+
+
 @has_tmux
 def test_the_tmux_server_outlives_the_last_agent_session(run_log_dir, run_key):
     # The socket is this worker's own (conftest), so a fresh server is ours to start.
-    subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    _kill_our_server()
 
     spawned = _spawn(run_key, AgentTransport.TMUX, "raise SystemExit(0)")
     assert _wait_for_rc(run_key) == "0"
@@ -407,13 +431,15 @@ def test_the_tmux_server_outlives_the_last_agent_session(run_log_dir, run_key):
 @has_tmux
 def test_a_server_another_client_started_is_switched_to_outlive_its_sessions(run_log_dir, run_key):
     """The setting travels with every spawn, not only with the one that starts the server."""
-    subprocess.run(tmux_argv("kill-server"), capture_output=True, check=False)
+    _kill_our_server()
     foreign = f"lg-foreign-{uuid4().hex[:8]}"
-    subprocess.run(
+    started = subprocess.run(
         tmux_argv("new-session", "-d", "-s", foreign, "sh", "-c", "sleep 300"),
         capture_output=True,
-        check=True,
+        text=True,
+        check=False,
     )
+    assert started.returncode == 0, f"tmux new-session: {started.stderr.strip()}"
     assert _exit_empty().stdout.strip() == "on", "precondition: tmux's default"
 
     spawned = _spawn(run_key, AgentTransport.TMUX, "raise SystemExit(0)")

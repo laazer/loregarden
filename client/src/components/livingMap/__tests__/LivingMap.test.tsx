@@ -8,7 +8,7 @@ import { LivingMap } from "../LivingMap";
 
 const mockGet = jest.fn();
 jest.mock("../../../api/livingMapApi", () => ({
-  livingMapApi: { get: (...args: unknown[]) => mockGet(...args) },
+  livingMapApi: { refresh: (...args: unknown[]) => mockGet(...args) },
 }));
 
 function item(overrides: Partial<MapItem>): MapItem {

@@ -96,7 +96,7 @@ instance_templates.py::create_workspace_template
 instance_templates.py::replace_workspace_template
 instance_templates.py::delete_workspace_template
 instance_templates.py::write_workspace_template_file
-living_map.py::get_living_map
+living_map.py::refresh_living_map
 machine_disk.py::add_root
 machine_disk.py::remove_root
 machine_disk.py::cleanup_preview

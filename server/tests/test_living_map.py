@@ -320,9 +320,9 @@ def test_an_unknown_chat_or_ticket_is_not_found(db_session):
 def test_the_api_serves_a_map_and_names_what_is_missing(client, db_session, chat):
     thread, _ = chat
 
-    ok = client.get(f"/api/living-map/chat/{thread.id}")
-    missing = client.get("/api/living-map/chat/no-such-chat")
-    bad_scope = client.get("/api/living-map/nowhere/x")
+    ok = client.post(f"/api/living-map/chat/{thread.id}")
+    missing = client.post("/api/living-map/chat/no-such-chat")
+    bad_scope = client.post("/api/living-map/nowhere/x")
 
     assert ok.status_code == 200
     assert [item["kind"] for item in ok.json()["items"]][:2] == ["topic", "topic"]

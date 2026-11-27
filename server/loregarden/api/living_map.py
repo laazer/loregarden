@@ -11,11 +11,14 @@ from sqlmodel import Session
 router = APIRouter(prefix="/living-map", tags=["living-map"])
 
 
-@router.get("/{scope}/{ref}")
-def get_living_map(
+@router.post("/{scope}/{ref}")
+def refresh_living_map(
     scope: MapScope, ref: str, session: Session = Depends(get_session)
 ) -> LivingMapView:
     """File what the records say now and return the map in vine order.
+
+    A POST, not a GET: filing writes the items it finds, and the map keeps
+    every item ever filed even after its record is gone.
 
     A plain `def`: filing reads and writes SQLite, which would block the event
     loop from an `async` handler.

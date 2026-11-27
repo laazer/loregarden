@@ -41,6 +41,9 @@ export interface LivingMap {
 }
 
 export const livingMapApi = {
-  get: (scope: MapScope, ref: string) =>
-    request<LivingMap>(`/api/living-map/${scope}/${encodeURIComponent(ref)}`),
+  /** Files what the records say now (a write) and returns the map. */
+  refresh: (scope: MapScope, ref: string) =>
+    request<LivingMap>(`/api/living-map/${scope}/${encodeURIComponent(ref)}`, {
+      method: "POST",
+    }),
 };
