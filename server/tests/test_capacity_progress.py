@@ -29,18 +29,20 @@ from loregarden.models.domain import (
     DockerLease,
 )
 from loregarden.models.domain.enums import utcnow
-from loregarden.services import docker_leases
+from loregarden.services import capacity_progress, docker_leases
 from loregarden.services.capacity_progress import (
     PROGRESS_ENV,
     LeaseProgress,
     ProgressSync,
     describe_progress,
     format_seconds,
+    record_progress,
 )
 from loregarden.services.capacity_run import CapacityRequest, acquire, run_holding
 from loregarden.services.docker_board import capacity_status
 from loregarden.services.docker_ledger import load_pool
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlmodel import Session, select
 from tests.repo_paths import REPO_ROOT
 
@@ -154,6 +156,57 @@ def test_a_malformed_report_is_said_and_the_lease_keeps_the_last_good_one(
     lease = session.get(DockerLease, claim.lease_id)
     assert lease.progress_step == "ruff check (1/5)"
     assert len([line for line in lines if "malformed progress" in line]) == 1
+
+
+def test_a_report_the_database_refused_is_said_and_copied_on_the_next_tick(
+    isolated_db, session, host, tmp_path
+) -> None:
+    claim = docker_leases.reserve(
+        session,
+        holder_label="p",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=512,
+        pool=CapacityPool.HOST,
+    )
+    progress = tmp_path / "progress.json"
+    progress.write_text(json.dumps({"step": "pytest (3/9)"}))
+    sessions = iter([OperationalError("UPDATE", {}, Exception("database is locked"))])
+
+    def open_session() -> Session:
+        refused = next(sessions, None)
+        if refused is not None:
+            raise refused
+        return Session(isolated_db)
+
+    lines: list[str] = []
+    sync = ProgressSync(open_session, claim.lease_id, progress, lines.append)
+    sync.sync()
+    assert any("database is locked" in line for line in lines)
+
+    sync.sync()  # the file has not changed; the copy it owes is made now
+    session.expire_all()
+    assert session.get(DockerLease, claim.lease_id).progress_step == "pytest (3/9)"
+
+
+def test_an_unchanged_report_is_copied_once(isolated_db, session, host, tmp_path) -> None:
+    claim = docker_leases.reserve(
+        session,
+        holder_label="p",
+        footprint=DockerFootprint.CUSTOM,
+        cpus=1.0,
+        memory_mb=512,
+        pool=CapacityPool.HOST,
+    )
+    progress = tmp_path / "progress.json"
+    progress.write_text(json.dumps({"step": "pytest (3/9)"}))
+    sync = ProgressSync(lambda: Session(isolated_db), claim.lease_id, progress, print)
+
+    with mock.patch.object(capacity_progress, "record_progress", wraps=record_progress) as copy:
+        sync.sync()
+        sync.sync()
+
+    assert copy.call_count == 1
 
 
 def test_no_report_yet_leaves_the_lease_without_progress(isolated_db, session, host, tmp_path):

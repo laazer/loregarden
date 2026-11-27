@@ -106,6 +106,7 @@ def test_a_landed_pr_closes_the_tickets_its_body_names(session, workspace, autho
     [event] = _state_events(session, named)
     assert event["actor"] == RESOLVED_BY_QUEUE
     assert (event["pr_number"], event["merge_commit"]) == (PR, entry.merge_commit)
+    assert f"PR #{PR}: closed lg-landed-7, lg-landed-8" in report.actions, "each named once"
     assert report.errors == []
 
 

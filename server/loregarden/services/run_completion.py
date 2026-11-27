@@ -705,9 +705,8 @@ def _advance_clean_exit(
     gate_approval: Approval | None = None
     stage_status = StageStatus.DONE
     stage_def = next((s for s in stages if s.key == run.stage_key), None)
-    if report is not None:
-        attest_assigned_actions(run, report_status=report.status)
-        orch.session.add(run)
+    attest_assigned_actions(run, report_status=report.status)
+    orch.session.add(run)
     if stage_def and is_terminal_stage(stage_def):
         # A terminal stage's DONE is `_finish_workflow`'s to write, and only
         # after the landing: `set_stage_status` on the terminal stage derives

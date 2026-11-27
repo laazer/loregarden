@@ -275,12 +275,16 @@ def test_succeeded_writing_stage_is_on_head_before_next_stage(session, repo: Pat
     )
     tree, run = _cut_tree(session, workspace, ticket, stage_key=_IMPLEMENT)
     _dirty(tree)
+    ticket.blocking_issues = "an earlier round's block"
+    session.add(ticket)
+    session.commit()
 
     finished = _complete(session, run, stdout=_report("pass"))
 
     session.refresh(ticket)
     session.refresh(finished)
     assert finished.status is RunStatus.SUCCEEDED
+    assert ticket.blocking_issues == ""
     assert _head_tracked(tree) == _EDIT
     assert uncommitted_at_landing(session, ticket, workspace) == ()
     assert git(tree, "status", "--porcelain").stdout == ""
@@ -321,6 +325,7 @@ def test_commit_failure_blocks_this_stage_not_the_next(session, repo: Path):
     assert ticket.workflow_stage_status is StageStatus.BLOCKED
     issues = blocking_text(session, ticket)
     assert "refused by the workspace gate" in issues
+    assert ticket.block_kind is not None
     assert _head_tracked(tree) == "VALUE = 1\n"
 
 
@@ -739,6 +744,8 @@ def test_missing_report_does_not_commit(session, repo: Path):
     assert _head_tracked(tree) == "VALUE = 1\n"
     assert (tree / _TRACKED).read_text() == _EDIT
     assert _stage_map(session, ticket)[_IMPLEMENT] is StageStatus.BLOCKED
+    assert ticket.state is TicketState.BLOCKED
+    assert ticket.block_kind is not None
 
 
 def test_failed_complete_run_does_not_commit(session, repo: Path):

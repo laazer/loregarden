@@ -66,7 +66,6 @@ class LandedTickets:
     """What landing one pull request did to the tickets it names."""
 
     closed: list[str] = field(default_factory=list)
-    already_closed: list[str] = field(default_factory=list)
     #: Named tickets that hold child work: their rollup closes them, not a PR.
     left_to_rollup: list[str] = field(default_factory=list)
     #: One line per named ticket left open, saying why.
@@ -98,8 +97,7 @@ def close_landed_tickets(
             result.problems.append(f"{ref}: {exc}")
             continue
         if ticket.state in RESOLVED_STATES:
-            result.already_closed.append(ticket.external_id)
-            continue
+            continue  # already closed: nothing to do, nothing wrong
         if has_owned_children(session, ticket.id):
             result.left_to_rollup.append(ticket.external_id)
             continue
