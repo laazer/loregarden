@@ -75,14 +75,6 @@ NOT_REACHABLE_IN_A_TEST: dict[str, str] = {
     ),
 }
 
-#: Routes that write on read, and why that is the design rather than a defect.
-WRITES_BY_DESIGN: dict[str, str] = {
-    "/api/living-map/{scope}/{ref}": (
-        "files the records it reads onto the map, which keeps every item ever"
-        " seen (services/living_map/store.py)"
-    ),
-}
-
 #: Read-only MCP tools whose writes are their declared effect.
 MCP_TOOLS_THAT_RECORD: dict[McpTool, str] = {
     McpTool.DOCKER_CAPACITY_STATUS: (
@@ -298,8 +290,6 @@ def world_fixture(prod_shape_session, isolated_db, reader, monkeypatch) -> World
             "artifact_id": artifact_id,
             "agent_id": "planner",
             "version": "1",
-            "scope": "ticket",
-            "ref": ticket.id,
             "view_id": api["view"]["id"],
             "review_id": api["review"]["review_id"],
             "node_id": api["graph"]["nodes"][0]["id"],
@@ -359,10 +349,8 @@ def test_every_get_route_reaches_its_data_and_writes_nothing(world, reader, isol
     for path, route in _get_routes():
         with _writes(isolated_db) as seen:
             response = reader.get(world.url(path), params=world.params(path, route))
-        if seen and path not in WRITES_BY_DESIGN:
+        if seen:
             wrote.append(f"{path}: {seen[:3]}")
-        if path in WRITES_BY_DESIGN and not seen:
-            stale.append(f"{path} no longer writes; drop it from WRITES_BY_DESIGN")
         reached = response.status_code < 400
         if not reached and path not in NOT_REACHABLE_IN_A_TEST:
             unreached.append(f"{path}: {response.status_code} {response.text[:160]}")
@@ -380,7 +368,6 @@ def test_every_get_route_reaches_its_data_and_writes_nothing(world, reader, isol
 def test_every_listed_route_is_mounted() -> None:
     mounted = {path for path, _ in _get_routes()}
     assert set(NOT_REACHABLE_IN_A_TEST) <= mounted
-    assert set(WRITES_BY_DESIGN) <= mounted
 
 
 def test_no_get_route_is_shadowed_by_an_earlier_one() -> None:

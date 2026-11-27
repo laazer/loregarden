@@ -63,7 +63,7 @@ const STATE_LABEL: Record<MapItem["state"], string> = {
 export function LivingMap({ scope, scopeRef }: { scope: MapScope; scopeRef: string }) {
   const map = useQuery({
     queryKey: ["living-map", scope, scopeRef],
-    queryFn: () => livingMapApi.get(scope, scopeRef),
+    queryFn: () => livingMapApi.refresh(scope, scopeRef),
     enabled: Boolean(scopeRef),
     refetchInterval: 15_000,
   });

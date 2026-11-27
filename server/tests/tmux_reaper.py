@@ -33,7 +33,7 @@ _OWNED_SOCKET = re.compile(rf"^{re.escape(TEST_SOCKET_PREFIX)}(\d+)(?:-.+)?$")
 #: file is safe to remove. Anything else is a live server that refused.
 #: ("error connecting … (File name too long)" is not one of them: that socket was
 #: never reached, so it may well be live.)
-_NO_SERVER = re.compile(r"no server running|\((?:No such file or directory|Connection refused)\)")
+NO_SERVER = re.compile(r"no server running|\((?:No such file or directory|Connection refused)\)")
 
 
 @dataclass
@@ -92,7 +92,7 @@ def reap_orphaned_test_servers(socket_dir: Path | None = None) -> ReapReport:
         if killed.returncode == 0:
             report.killed.append(entry.name)
             continue
-        if not _NO_SERVER.search(killed.stderr):
+        if not NO_SERVER.search(killed.stderr):
             report.failures.append(f"{entry.name}: {killed.stderr.strip()}")
             continue
         # No server answered: the socket is a file its dead server left behind.
