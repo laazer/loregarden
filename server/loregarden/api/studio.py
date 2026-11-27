@@ -269,6 +269,12 @@ def list_workflow_usage(session: Session = Depends(get_session)) -> list[Workflo
     return workflow_usage_stats(session)
 
 
+@router.get("/workflows/drift")
+def studio_workflow_drift_all(session: Session = Depends(get_session)) -> list[dict]:
+    """Declared before `/workflows/{slug}`, which would otherwise match `drift`."""
+    return [item.model_dump() for item in detect_all_drift(session)]
+
+
 @router.get("/workflows/{slug}")
 def get_studio_workflow(slug: str, session: Session = Depends(get_session)) -> dict:
     workflow = StudioService(session).get_workflow(slug)
@@ -306,11 +312,6 @@ def delete_studio_workflow(slug: str, session: Session = Depends(get_session)) -
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True}
-
-
-@router.get("/workflows/drift")
-def studio_workflow_drift_all(session: Session = Depends(get_session)) -> list[dict]:
-    return [item.model_dump() for item in detect_all_drift(session)]
 
 
 @router.get("/workflows/{slug}/drift")

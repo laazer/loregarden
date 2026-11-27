@@ -72,6 +72,7 @@ from loregarden.services.slot_claim_healing import (
     claim_orphaned_orchestrations,
     release_nested_slot_claims,
 )
+from loregarden.services.slot_pool import fitted_slot_numbers
 from loregarden.websocket_events import emit_execution_update
 from sqlmodel import Session, col, select
 
@@ -140,6 +141,10 @@ class QueueLaneService:
         self.dispatcher = dispatcher
 
     # ---- reading -------------------------------------------------------
+
+    def visible_lane_numbers(self) -> list[int]:
+        """The lanes as they stand once fitted, for a reader; fits nothing."""
+        return fitted_slot_numbers(self.session, self.max_concurrent)
 
     def lane_numbers(self) -> list[int]:
         self.slots.initialize_slots()

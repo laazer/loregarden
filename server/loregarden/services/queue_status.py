@@ -243,7 +243,7 @@ def _build_lanes(
     attention_by_slot = QueueHistoryService(session).lane_attention()
 
     lanes: list[dict[str, Any]] = []
-    for slot_number in lanes_service.lane_numbers():
+    for slot_number in lanes_service.visible_lane_numbers():
         attention, attention_total = attention_by_slot.get(slot_number, ([], 0))
         lanes.append(
             {

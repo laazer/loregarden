@@ -58,13 +58,14 @@ def get_skill(name: str, *, agent_context_dir: Path | None = None) -> str | None
 
 
 def list_skills() -> list[str]:
+    """The registered skill slugs. A read: an empty table answers empty.
+
+    Every entry point seeds the built-in skills when it opens the database
+    (`seed_database`), so an empty table here is one nobody seeded, and saying
+    so beats seeding it from `GET /agents/skills`.
+    """
     with db_session.Session(db_session.engine) as session:
-        service = SkillService(session)
-        slugs = service.list_skill_slugs()
-        if not slugs:
-            seed_builtin_skills(session)
-            slugs = service.list_skill_slugs()
-        return slugs
+        return SkillService(session).list_skill_slugs()
 
 
 def skill_prompt_block(skill_name: str, body: str) -> list[str]:

@@ -74,6 +74,21 @@ def fit_slot_pool(session: Session, size: int) -> None:
     )
 
 
+def fitted_slot_numbers(session: Session, size: int) -> list[int]:
+    """The slot numbers `fit_slot_pool(session, size)` would leave, without fitting.
+
+    For readers: lanes 1..size, plus any slot past the limit that still has
+    work in it, since the fit retires only idle ones. Fitting from a read wrote
+    the pool on every poll of the queue board.
+    """
+    busy_surplus = session.exec(
+        select(AgentSlot.slot_number)
+        .where(AgentSlot.slot_number > size)
+        .where(AgentSlot.is_available == False)  # noqa: E712
+    ).all()
+    return sorted({*range(1, size + 1), *busy_surplus})
+
+
 def _retire_surplus_slots(session: Session, size: int) -> None:
     """Delete idle slots numbered past the lane count. Commits if any went."""
     surplus = session.exec(

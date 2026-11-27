@@ -21,7 +21,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services.seed import seed_database
-from loregarden.services.skill_service import parse_skill_markdown
+from loregarden.services.skill_service import parse_skill_markdown, seed_builtin_skills
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import get_skill, list_skills
@@ -50,7 +50,8 @@ def _attach_plan(session: Session, ticket: Ticket, content: dict) -> Artifact:
     return artifact
 
 
-def test_the_plan_skill_is_registered_without_frontmatter():
+def test_the_plan_skill_is_registered_without_frontmatter(db_session):
+    seed_builtin_skills(db_session)  # what every entry point does on boot
     assert "plan" in list_skills()
     source = settings.agent_context_dir / "skills" / "plan" / "SKILL.md"
     parsed = parse_skill_markdown(source.read_text(encoding="utf-8"), slug="plan")

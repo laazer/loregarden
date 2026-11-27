@@ -24,7 +24,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.seed import seed_database
-from loregarden.services.skill_service import parse_skill_markdown
+from loregarden.services.skill_service import parse_skill_markdown, seed_builtin_skills
 from loregarden.services.workspace_paths import resolve_agent_context_dir
 from loregarden.skills.registry import SKILL_PROMPT_CAP, get_skill, list_skills
 from sqlalchemy import text
@@ -87,7 +87,8 @@ def _attach(session: Session, ticket: Ticket, run: AgentRun | None, content: dic
     session.commit()
 
 
-def test_every_lane_skill_is_registered_and_fits_the_prompt():
+def test_every_lane_skill_is_registered_and_fits_the_prompt(db_session):
+    seed_builtin_skills(db_session)  # what every entry point does on boot
     for skill in (*_LANES, SYNTHESIS_SKILL):
         assert skill in list_skills(), skill
         source = settings.agent_context_dir / "skills" / skill / "SKILL.md"
