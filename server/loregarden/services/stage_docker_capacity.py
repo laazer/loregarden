@@ -132,7 +132,7 @@ def docker_capacity_for_stage(
             release_lease(session, reservation.lease_id, reason=DockerLeaseEndReason.ABANDONED)
         raise DockerCapacityUnavailable(
             f"Stage {stage.key} needs {footprint.value} docker capacity and did not get it: "
-            f"nothing ahead in line finished for {budget:.0f}s — {reservation.message}"
+            f"the line stopped moving — {reservation.message}"
         )
 
     try:

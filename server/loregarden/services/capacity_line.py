@@ -11,11 +11,31 @@ lease and a stage's docker lease. On 2026-11-06 a survey pass's agent run waited
 its 30 minutes behind a moving line and was blocked the same way. The fixed-budget
 wait is gone now, so no new caller can pick it.
 
-So the limit here is on the line *not moving*, as `capacity_run` puts it for
-the pre-push wrapper: the clock restarts whenever a lease ahead of this one
-ends. Only a line where nothing ahead has finished for `stall_seconds` gives up,
-and that is a holder that may be hung, which is a person's to look at. Unlike
-there, a holder seen working does not restart this clock.
+So the limit here is on the line *not moving*, the same rule `capacity_run`
+applies for the pre-push wrapper: the clock restarts whenever a lease ahead of
+this one ends, or a holder ahead is seen working (`seconds_since_working`), as of
+when it was last seen. Only a line with neither for `stall_seconds` gives up, and
+that is a holder that may be hung, which is a person's to look at. Ends alone
+used to count here, so an agent run or gate behind a pre-push suite that worked
+past the window (30 minutes; 5 for a stage's docker lease) gave up its place
+while the suite was still running.
+
+What the rule reads, and what it leaves alone:
+
+- **Unmeasured is neither.** Only `capacity run` samples its command, so an agent
+  run, a gate, an orchestration's parent and every docker claim have no reading.
+  Such a holder does not restart the clock and does not shorten it either.
+- **One working holder is enough.** Its release is what the line waits for,
+  whatever a hung one beside it is doing.
+- **Activity counts for the first four hours of a hold**
+  (`WORKING_HOLD_COUNTS_SECONDS`), so a command spinning forever still lets the
+  line give up: a wait lasts at most four hours plus `stall_seconds` past the
+  last lease ahead that ended. Every caller already waited without a deadline
+  behind a line whose leases kept ending; this bounds the one case that adds,
+  a line whose holders keep working without ending.
+- **Every pool's holders count.** A docker claim is charged to the host pool too
+  (`CHARGED_POOLS`), so a host suite at work is capacity a docker stage waits
+  for, not a stranger's.
 
 Kept apart from `capacity_run`, whose queue machinery reaches `docker_reaper`
 and from there the orchestrator, so the gate path can import this without a
@@ -27,7 +47,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 from loregarden.models.domain import (
     DockerGrantState,
@@ -37,6 +57,7 @@ from loregarden.models.domain import (
     OrchestrationRun,
 )
 from loregarden.models.domain.enums import utcnow
+from loregarden.services.capacity_activity import describe_hang, seconds_since_working
 from loregarden.services.capacity_errors import CapacityWaitStopped
 from loregarden.services.capacity_passing import is_standing
 from loregarden.services.docker_leases import (
@@ -92,6 +113,14 @@ def _passed(row: DockerLease, waiter: DockerLease) -> bool:
     return is_standing(row) and as_utc(row.requested_at) > as_utc(waiter.requested_at)
 
 
+def _alive_since(
+    moved_at: float, holders: Iterable[DockerLease], clock: Callable[[], float]
+) -> float:
+    """`moved_at`, or later if a holder was seen working since: as of when it was."""
+    working = seconds_since_working(holders, now=utcnow())
+    return moved_at if working is None else max(moved_at, clock() - working)
+
+
 def wait_while_line_moves(
     session: Session,
     reservation: DockerReservation,
@@ -142,6 +171,7 @@ def wait_while_line_moves(
         if ahead - front.keys():
             moved_at = clock()
         ahead = set(front)
+        moved_at = _alive_since(moved_at, front.values(), clock)
         # Before the stall check: a waiter that polled is alive, even when its
         # first poll outlasted the whole budget and it is about to give up.
         if beat_at is None or clock() - beat_at >= HEARTBEAT_SECONDS:
@@ -152,14 +182,29 @@ def wait_while_line_moves(
         session.commit()  # end any read transaction before sleeping on it
         if clock() - moved_at >= stall_seconds:
             reservation.message = (
-                f"nothing ahead in the line finished for {clock() - moved_at:.0f}s; still "
-                f"holding: {', '.join(sorted(row.holder_label for row in front.values()))}"
+                f"nothing ahead in the line finished or was seen working for "
+                f"{clock() - moved_at:.0f}s; still holding: {_holders(front.values())}"
             )
             return reservation
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
 
 
-def occupying_lease_ids(session: Session, *, standing: set[str] | None = None) -> set[str]:
+def _holders(rows: Iterable[DockerLease]) -> str:
+    """Each holder's label, with a hung one saying so."""
+    now = utcnow()
+    return ", ".join(
+        sorted(
+            f"{row.holder_label} ({hang})"
+            if (hang := describe_hang(row, now=now))
+            else row.holder_label
+            for row in rows
+        )
+    )
+
+
+def occupying_leases(
+    session: Session, *, standing: set[str] | None = None
+) -> dict[str, DockerLease]:
     """Every lease holding capacity now. One leaving the set means capacity came back.
 
     `standing` limits which standing claims count, to the ones already held when
@@ -168,7 +213,9 @@ def occupying_lease_ids(session: Session, *, standing: set[str] | None = None) -
     """
     rows = session.exec(select(DockerLease).where(col(DockerLease.status).in_(OCCUPYING))).all()
     return {
-        row.id for row in rows if standing is None or row.id in standing or not is_standing(row)
+        row.id: row
+        for row in rows
+        if standing is None or row.id in standing or not is_standing(row)
     }
 
 
@@ -196,13 +243,15 @@ def retry_while_pool_moves(
     sized so that every lane's parent together is well under the ceiling
     (`GatesConfig.parent_capacity_footprint`), so the capacity it waits for is
     held by work that finishes. The same stall rule as `wait_while_line_moves`
-    bounds it: the clock restarts whenever a lease holding capacity ends, and
-    only a pool where nothing has finished for `stall_seconds` gives up,
-    returning the last refusal for the caller to report.
+    bounds it: the clock restarts whenever a lease holding capacity ends or one
+    is seen working, and only a pool with neither for `stall_seconds` gives up,
+    returning the last refusal for the caller to report. A standing claim taken
+    after the wait began counts for neither, its ending or its work.
     """
     moved_at = clock()
     beat_at: float | None = None
-    holding = at_start = occupying_lease_ids(session)
+    at_start = set(occupying_leases(session))
+    holding = at_start
     warned = False
     while True:
         reservation = attempt()
@@ -221,8 +270,8 @@ def retry_while_pool_moves(
         if stalled_for >= stall_seconds:
             if stall_seconds > 0:
                 reservation.message = (
-                    f"{reservation.message} Nothing holding capacity finished for "
-                    f"{stalled_for:.0f}s while this waited for room."
+                    f"{reservation.message} Nothing holding capacity finished or was seen "
+                    f"working for {stalled_for:.0f}s while this waited for room."
                 )
             return reservation
         if on_poll is not None and (beat_at is None or clock() - beat_at >= HEARTBEAT_SECONDS):
@@ -232,10 +281,11 @@ def retry_while_pool_moves(
         sleep(min(POLL_SECONDS, max(0.1, stall_seconds / 10)))
         reclaim_dead_holders(session)
         session.expire_all()
-        now_holding = occupying_lease_ids(session, standing=at_start)
-        if holding - now_holding:
+        held = occupying_leases(session, standing=at_start)
+        if holding - held.keys():
             moved_at = clock()
-        holding = now_holding
+        holding = set(held)
+        moved_at = _alive_since(moved_at, held.values(), clock)
 
 
 def renew_orchestration_lease(session: Session, orchestration_run_id: str) -> None:

@@ -100,8 +100,9 @@ RUNTIME_WEIGHTS: dict[CliAdapter, tuple[float, int] | None] = {
 
 class HostCapacityUnavailable(CapacityUnavailable):
     """A run could not get its host lease because the line stopped moving: nothing
-    ahead of it finished for `agent_run_capacity_wait_seconds`. Raised so the run
-    fails, naming who holds the line. A long wait in a moving line is not this."""
+    ahead of it finished, or was seen working, for `agent_run_capacity_wait_seconds`.
+    Raised so the run fails, naming who holds the line. A long wait in a moving
+    line is not this."""
 
 
 def runtime_for_run(session: Session, run: AgentRun) -> CliAdapter:
@@ -194,7 +195,7 @@ def _wait_in_line(
     stall = settings.agent_run_capacity_wait_seconds if wait_seconds is None else wait_seconds
     logger.warning(
         "Run %s is waiting in line for host capacity (giving up only if nothing "
-        "ahead finishes for %.0fs): %s",
+        "ahead finishes or is seen working for %.0fs): %s",
         run.id,
         stall,
         reservation.message,

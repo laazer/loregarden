@@ -15,7 +15,8 @@ at t=20. A line where nothing finishes still gives up, naming who holds it.
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from functools import partial
 from uuid import uuid4
 
@@ -24,6 +25,8 @@ from loregarden.models.domain import (
     CapacityPool,
     CliAdapter,
     DockerFootprint,
+    DockerGrantState,
+    DockerHolderKind,
     DockerLease,
     DockerLeaseEndReason,
     DockerLeaseStatus,
@@ -33,6 +36,7 @@ from loregarden.models.domain import (
     TicketState,
     WorkflowStageDef,
 )
+from loregarden.models.domain.enums import utcnow
 from loregarden.services import (
     capacity_line,
     docker_leases,
@@ -40,6 +44,8 @@ from loregarden.services import (
     run_capacity,
     stage_docker_capacity,
 )
+from loregarden.services.capacity_activity import WORKING_HOLD_COUNTS_SECONDS
+from loregarden.services.docker_leases import DockerReservation
 from loregarden.services.run_capacity import HostCapacityUnavailable, host_capacity_for_run
 from loregarden.services.stage_docker_capacity import (
     DockerCapacityUnavailable,
@@ -315,3 +321,320 @@ def test_a_long_wait_writes_its_heartbeat_once_a_minute_not_every_poll(session) 
 
     assert granted.granted
     assert beats == [0.0, 60.0, 120.0]
+
+
+# --- A holder seen working is the line moving ------------------------------------
+#
+# On 2026-11-25 a push lost its place after 3h50m behind two suites that were both
+# working, because only a lease *ending* restarted the clock. `capacity_run` reads
+# the holders' activity now, and so do these waits: an agent run or a gate behind a
+# pre-push suite that works past the window keeps its place.
+#
+# `WatchedLine` walks a fake clock in WATCH_STEP strides, and before the waiter reads
+# the line each holder's sampler stamps its lease as of the fake wall clock, as
+# `capacity_activity.CpuSync` does once a minute for a `capacity run` holder.
+
+WATCH_STALL = 60.0
+WATCH_STEP = 5.0
+
+#: How a holder's sampler stamps its lease, given the fake wall clock.
+Stamp = Callable[[DockerLease, datetime], None]
+
+
+class WatchedLine:
+    """A fake clock and wall clock, with each holder's sampler stamping as time passes."""
+
+    def __init__(self, session: Session, monkeypatch) -> None:
+        self.session = session
+        self.began = utcnow()
+        self.now = 0.0
+        self._stamps: dict[str, Stamp] = {}
+        self._ends: dict[str, float] = {}
+        self._actions: list[tuple[float, Callable[[], None]]] = []
+        monkeypatch.setattr(capacity_line, "utcnow", self.wall)
+
+    def wall(self) -> datetime:
+        return self.began + timedelta(seconds=self.now)
+
+    def clock(self) -> float:
+        return self.now
+
+    def hold(
+        self,
+        label: str,
+        stamp: Stamp,
+        *,
+        cpus: float,
+        ends: float | None = None,
+        pool: CapacityPool = CapacityPool.HOST,
+        holder_kind: DockerHolderKind = DockerHolderKind.AD_HOC,
+        takes_slot: bool = True,
+    ) -> DockerLease:
+        claim = docker_leases.reserve(
+            self.session,
+            holder_label=label,
+            footprint=DockerFootprint.CUSTOM,
+            cpus=cpus,
+            memory_mb=512,
+            pool=pool,
+            holder_kind=holder_kind,
+            takes_slot=takes_slot,
+        )
+        assert claim.granted, claim.message
+        self._stamps[claim.lease_id] = stamp
+        if ends is not None:
+            self._ends[claim.lease_id] = ends
+        self._sample()
+        return self.session.get(DockerLease, claim.lease_id)
+
+    def at(self, seconds: float, action: Callable[[], None]) -> None:
+        """Do `action` on the first sleep that reaches `seconds`."""
+        self._actions.append((seconds, action))
+
+    def _sample(self) -> None:
+        for lease_id, stamp in self._stamps.items():
+            lease = self.session.get(DockerLease, lease_id)
+            stamp(lease, self.wall())
+            self.session.add(lease)
+        self.session.commit()
+
+    def sleep(self, _seconds: float) -> None:
+        self.now += WATCH_STEP
+        assert self.now < 24 * 3600, "still waiting"
+        for lease_id in [held for held, ends in self._ends.items() if self.now >= ends]:
+            del self._ends[lease_id], self._stamps[lease_id]
+            docker_leases.release_lease(
+                self.session, lease_id, reason=DockerLeaseEndReason.RUN_COMPLETED
+            )
+        due = [action for when, action in self._actions if when <= self.now]
+        self._actions = [(when, action) for when, action in self._actions if when > self.now]
+        for action in due:
+            action()
+        self._sample()
+
+    def install(self, monkeypatch, module) -> None:
+        monkeypatch.setattr(
+            module,
+            "wait_while_line_moves",
+            partial(capacity_line.wait_while_line_moves, clock=self.clock, sleep=self.sleep),
+        )
+
+    def wait(self, waiter: DockerReservation):
+        return capacity_line.wait_while_line_moves(
+            self.session,
+            waiter,
+            stall_seconds=WATCH_STALL,
+            clock=self.clock,
+            sleep=self.sleep,
+        )
+
+    def assert_stalled_at(self, seconds: float) -> None:
+        assert seconds <= self.now < seconds + 2 * WATCH_STEP
+
+
+@pytest.fixture(name="watched")
+def watched_fixture(session, monkeypatch) -> WatchedLine:
+    _set_ceiling(session, CapacityPool.HOST, cpus=4, memory_mb=8192, leases=6)
+    _set_ceiling(session, CapacityPool.DOCKER, cpus=4, memory_mb=8192, leases=6)
+    return WatchedLine(session, monkeypatch)
+
+
+def _unmeasured(_lease: DockerLease, _wall: datetime) -> None:
+    """A holder no `capacity run` samples: an agent run, a gate, an older wrapper."""
+
+
+def _busy(lease: DockerLease, wall: datetime) -> None:
+    lease.cpu_sampled_at = lease.cpu_active_at = wall
+
+
+def _hung(watched: WatchedLine) -> Stamp:
+    """Sampled every pass, idle since 22 minutes before anyone queued behind it."""
+
+    def stamp(lease: DockerLease, wall: datetime) -> None:
+        lease.cpu_sampled_at = wall
+        lease.cpu_active_at = watched.began - timedelta(minutes=22)
+
+    return stamp
+
+
+def _sampled_until(watched: WatchedLine, seconds: float) -> Stamp:
+    """Works, and is watched working, until its sampler stops (a laptop asleep)."""
+
+    def stamp(lease: DockerLease, wall: datetime) -> None:
+        if wall <= watched.began + timedelta(seconds=seconds):
+            _busy(lease, wall)
+
+    return stamp
+
+
+def _waiter(
+    session: Session, label: str = "gates land-verify", cpus: float = 4
+) -> DockerReservation:
+    waiter = _reserve(session, CapacityPool.HOST, label=label, cpus=cpus)
+    assert not waiter.granted
+    return waiter
+
+
+def test_an_agent_run_keeps_its_place_behind_a_suite_working_past_the_window(
+    session, workspace, watched, monkeypatch
+) -> None:
+    """Nothing ahead ends for 150s against a 60s window; the suite is at work throughout."""
+    watched.install(monkeypatch, run_capacity)
+    watched.hold("pre-push server-tests", _busy, cpus=4, ends=150)
+    run = make_agent_run(session, workspace_id=workspace.id, stage_key="survey")
+
+    with host_capacity_for_run(session, run, wait_seconds=WATCH_STALL) as reservation:
+        assert reservation is not None and reservation.granted
+    assert watched.now >= 150 > 2 * WATCH_STALL
+
+
+def test_a_hung_holder_still_stalls_the_line_after_the_window_and_is_named(
+    session, watched
+) -> None:
+    watched.hold("deadlocked suite", _hung(watched), cpus=4)
+
+    stalled = watched.wait(_waiter(session))
+
+    assert not stalled.granted
+    watched.assert_stalled_at(WATCH_STALL)
+    assert "deadlocked suite (no CPU use or progress for" in stalled.message
+    assert "may be hung" in stalled.message
+
+
+def test_a_holder_nothing_measures_counts_as_neither_working_nor_idle(session, watched) -> None:
+    """No reading: it does not keep the line alive, and it does not cut the window short."""
+    watched.hold("agent run · stage implement", _unmeasured, cpus=4)
+
+    stalled = watched.wait(_waiter(session))
+
+    assert not stalled.granted
+    watched.assert_stalled_at(WATCH_STALL)
+    assert "may be hung" not in stalled.message
+
+
+def test_one_busy_holder_is_enough_and_the_hung_one_beside_it_is_named(session, watched) -> None:
+    watched.hold("deadlocked suite", _hung(watched), cpus=2)
+    watched.hold("working suite", _busy, cpus=2, ends=150)
+
+    stalled = watched.wait(_waiter(session))
+
+    # Past the window while the other worked, then the hung one's own window.
+    assert not stalled.granted
+    watched.assert_stalled_at(150 + WATCH_STALL)
+    assert "deadlocked suite (no CPU use" in stalled.message
+
+
+def test_a_sampler_that_stopped_is_no_longer_a_reading(session, watched) -> None:
+    """Its last word was "working"; once three samples are missed that is not known."""
+    stopped_at = 20.0
+    watched.hold("suite on a sleeping laptop", _sampled_until(watched, stopped_at), cpus=4)
+
+    stalled = watched.wait(_waiter(session))
+
+    assert not stalled.granted
+    # A sample stands for three missed minutes before it says nothing.
+    assert stopped_at + WATCH_STALL <= watched.now <= stopped_at + 180 + WATCH_STALL + WATCH_STEP
+
+
+def test_a_holder_working_for_over_four_hours_no_longer_keeps_the_line_alive(
+    session, watched
+) -> None:
+    """A loop spinning forever uses CPU forever; the wait is bounded by its hold's age."""
+    spinning = watched.hold("infinite loop", _busy, cpus=4)
+    spinning.granted_at = watched.began - timedelta(seconds=WORKING_HOLD_COUNTS_SECONDS)
+    session.add(spinning)
+    session.commit()
+
+    stalled = watched.wait(_waiter(session))
+
+    assert not stalled.granted
+    watched.assert_stalled_at(WATCH_STALL)
+
+
+def test_a_docker_stage_keeps_its_place_behind_a_host_suite_at_work(
+    session, workspace, watched, monkeypatch
+) -> None:
+    """A docker claim is charged to the host pool too, so a host suite at work holds
+    capacity the stage is waiting for: counting it is the rule, not a leak."""
+    watched.install(monkeypatch, stage_docker_capacity)
+    watched.hold("pre-push server-tests", _busy, cpus=4, ends=150)
+    run = make_agent_run(session, workspace_id=workspace.id, stage_key="e2e")
+    stage = WorkflowStageDef(
+        key="e2e",
+        name="E2E",
+        docker_footprint=DockerFootprint.CUSTOM,
+        docker_cpus=1.0,
+        docker_memory_mb=1024,
+    )
+
+    with docker_capacity_for_stage(session, run, stage, wait_seconds=WATCH_STALL) as reservation:
+        assert reservation is not None and reservation.granted
+    assert watched.now >= 150
+
+
+def test_a_docker_holder_is_unmeasured_whatever_its_stamps_say(session, watched) -> None:
+    """Its work runs in the daemon's containers, so the wrapper's own CPU is not evidence."""
+    watched.hold("compose stack", _busy, cpus=4, pool=CapacityPool.DOCKER)
+
+    stalled = watched.wait(_waiter(session))
+
+    assert not stalled.granted
+    watched.assert_stalled_at(WATCH_STALL)
+
+
+def _refused() -> DockerReservation:
+    return DockerReservation(state=DockerGrantState.REJECTED, message="full")
+
+
+def _retry_until(watched: WatchedLine, granted_at: float | None):
+    """A gate child's retry: refused until `granted_at`, if ever."""
+    return capacity_line.retry_while_pool_moves(
+        watched.session,
+        lambda: (
+            DockerReservation(state=DockerGrantState.GRANTED, lease_id="child")
+            if granted_at is not None and watched.now >= granted_at
+            else _refused()
+        ),
+        retryable=lambda _reservation: True,
+        waiting_for="gate child",
+        stall_seconds=WATCH_STALL,
+        clock=watched.clock,
+        sleep=watched.sleep,
+    )
+
+
+def test_a_gate_child_keeps_asking_while_a_holder_works_past_the_window(watched) -> None:
+    watched.hold("pre-push server-tests", _busy, cpus=4, ends=150)
+
+    assert _retry_until(watched, granted_at=150).granted
+    assert watched.now >= 150 > 2 * WATCH_STALL
+
+
+def test_a_gate_child_gives_up_a_window_after_its_holder_hangs(watched) -> None:
+    watched.hold("deadlocked suite", _hung(watched), cpus=4)
+
+    refused = _retry_until(watched, granted_at=None)
+
+    assert not refused.granted
+    watched.assert_stalled_at(WATCH_STALL)
+    assert "finished or was seen working" in refused.message
+
+
+def test_a_standing_claim_taken_after_the_retry_began_does_not_keep_it_alive(watched) -> None:
+    """It may pass the line, so neither its ending nor its work says the pool moves."""
+    watched.hold("deadlocked suite", _hung(watched), cpus=2)
+    watched.at(
+        WATCH_STEP,
+        lambda: watched.hold(
+            "agent run · stage implement",
+            _busy,
+            cpus=0.25,
+            holder_kind=DockerHolderKind.AGENT_RUN,
+            takes_slot=False,
+        ),
+    )
+
+    refused = _retry_until(watched, granted_at=None)
+
+    assert not refused.granted
+    watched.assert_stalled_at(WATCH_STALL)

@@ -219,7 +219,7 @@ def acquire_or_find_parent(
                 )
                 logger.warning(
                     "Run %s is waiting in line for its %g-cpu parent host lease (giving up "
-                    "only if nothing ahead finishes for %.0fs): %s",
+                    "only if nothing ahead finishes or is seen working for %.0fs): %s",
                     orch_run.run_code,
                     cpus,
                     budget,

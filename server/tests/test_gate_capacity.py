@@ -368,4 +368,4 @@ def test_a_gate_child_gives_up_only_when_nothing_holding_capacity_finishes(
     assert now[0] >= 5.0, "and gave up only two seconds after the last one ended"
     message = str(refusal.value)
     assert "exceeds_parent_grant" in message
-    assert "Nothing holding capacity finished for 2s" in message
+    assert "Nothing holding capacity finished or was seen working for 2s" in message
