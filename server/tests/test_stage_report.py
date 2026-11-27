@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+from loregarden.models.domain import BlockKind
 from loregarden.models.domain.provenance import Provenance
 from loregarden.models.domain.schemas import WorkflowStageDef
 from loregarden.models.domain.tables import AgentRun
@@ -687,3 +688,31 @@ def test_unusable_notes_cost_the_report_nothing_but_the_notes():
         _wrap(json.dumps({"status": "pass", "confidence": 0.8, "notes_for_next_stage": ["a"]}))
     )
     assert report is not None and report.status == "pass" and report.notes_for_next_stage == ""
+
+
+def _blocked(**fields) -> object:
+    report = parse_stage_report(_wrap(json.dumps({"status": "blocked", "confidence": 1, **fields})))
+    assert report is not None and report.status == "blocked", "the block keeps its status"
+    return report
+
+
+@pytest.mark.parametrize(
+    ("written", "kind", "as_written"),
+    [
+        ("Conflict ", BlockKind.CONFLICT, ""),
+        ("weather", None, "weather"),
+        # The gate's own word for a hold on inbox questions; no question waits.
+        ("answers", None, "answers"),
+    ],
+)
+def test_a_blocked_kind_is_read_or_kept_as_written(written, kind, as_written):
+    report = _blocked(blocked_kind=written, options=[" retry ", " "])
+
+    assert (report.blocked_kind, report.kind_as_written) == (kind, as_written)
+    assert report.options == ["retry"]
+
+
+def test_unreadable_block_fields_cost_the_block_nothing():
+    report = _blocked(blocked_kind=["conflict"], options="retry")
+
+    assert (report.blocked_kind, report.options, report.kind_as_written) == (None, [], "")

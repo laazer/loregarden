@@ -20,10 +20,15 @@ from lore_eden.instances import (
     InstanceView,
 )
 from loregarden.models.domain import Workspace
-from loregarden.services import review_capture
+from loregarden.services import review_capture, review_preview
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.review_capture import CaptureError, CapturePaths, capture_pages
-from loregarden.services.review_launcher import checkout_review_worktree, review_worktree_path
+from loregarden.services.review_launcher import (
+    LaunchError,
+    LaunchPhase,
+    checkout_review_worktree,
+    review_worktree_path,
+)
 from loregarden.services.review_preview import (
     PreviewError,
     PreviewInstance,
@@ -178,6 +183,50 @@ def test_start_moves_the_review_worktree_and_stops_what_ran_in_it(repo: Path):
     manager.stop.assert_called_once_with("stale")
     assert (Path(review) / "marker.txt").read_text() == "integration\n"
     assert manager.launch.call_args_list[0].args[0].params["worktree"] == review
+
+
+def test_start_stops_only_live_instances_running_in_the_review_worktree(repo: Path, tmp_path: Path):
+    workspace = _workspace(repo)
+    checkout_review_worktree(workspace, "main")
+    review = str(review_worktree_path(workspace))
+    manager = _manager(
+        _view("exited", InstanceKind.CLIENT, review, state=InstanceState.EXITED),
+        _view("elsewhere", InstanceKind.CLIENT, str(tmp_path / "other")),
+    )
+    manager.launch.side_effect = [mock.Mock(id="srv-1"), mock.Mock(id="cli-1")]
+
+    start_preview(workspace, "integration/root-1", manager=manager)
+
+    manager.stop.assert_not_called()
+
+
+def test_start_refuses_while_a_review_build_runs_in_the_review_worktree(repo: Path):
+    workspace = _workspace(repo)
+    checkout_review_worktree(workspace, "main")
+    review = str(review_worktree_path(workspace))
+    manager = _manager(_view("live", InstanceKind.CLIENT, review))
+    build = mock.Mock(phase=LaunchPhase.RUNNING, ref="main")
+
+    with (
+        mock.patch.object(review_preview.review_launcher, "status", return_value=build),
+        pytest.raises(PreviewError, match="review build of main is running"),
+    ):
+        start_preview(workspace, "integration/root-1", manager=manager)
+
+    manager.stop.assert_not_called()
+    assert (Path(review) / "marker.txt").read_text() == "main\n", "the checkout was not moved"
+
+
+def test_a_checkout_that_cannot_be_made_is_a_preview_error(repo: Path):
+    workspace = _workspace(repo)
+
+    with (
+        mock.patch.object(
+            review_preview, "checkout_review_worktree", side_effect=LaunchError("no such ref")
+        ),
+        pytest.raises(PreviewError, match="no such ref"),
+    ):
+        start_preview(workspace, "integration/root-1", manager=_manager())
 
 
 # ── Capture ──────────────────────────────────────────────────────────────

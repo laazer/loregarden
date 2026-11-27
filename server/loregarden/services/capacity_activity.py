@@ -161,15 +161,29 @@ def tree_cpu_seconds(table: dict[int, tuple[int, float]], root: int) -> dict[int
 
 
 def read_tree_cpu(root: int) -> dict[int, float]:
-    """This moment's CPU seconds per descendant of `root`. Raises when `ps` cannot say."""
-    result = subprocess.run(
+    """This moment's CPU seconds per descendant of `root`. Raises when `ps` cannot say.
+
+    Not counting the `ps` that answers: started from inside the tree it measures,
+    it is a new descendant at every sample, so all of its own CPU read as the
+    held command working. At a short interval that alone crossed the threshold.
+    """
+    with subprocess.Popen(
         ["ps", "-A", "-o", "pid=,ppid=,time="],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=_PS_TIMEOUT_SECONDS,
-        check=True,
-    )
-    return tree_cpu_seconds(parse_process_table(result.stdout), root)
+    ) as ps:
+        try:
+            out, err = ps.communicate(timeout=_PS_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            ps.kill()
+            ps.communicate()
+            raise
+    if ps.returncode != 0:
+        raise subprocess.CalledProcessError(ps.returncode, ps.args, out, err)
+    tree = tree_cpu_seconds(parse_process_table(out), root)
+    tree.pop(ps.pid, None)
+    return tree
 
 
 def record_cpu_sample(session: Session, lease_id: str, *, active: bool) -> bool:

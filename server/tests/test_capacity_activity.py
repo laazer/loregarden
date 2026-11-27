@@ -133,6 +133,11 @@ def test_a_busy_grandchild_is_seen_by_the_real_ps() -> None:
         parent.wait()
 
 
+def test_the_ps_that_reads_the_tree_is_not_part_of_it() -> None:
+    """It is started from inside the tree, so it would read as the command working."""
+    assert read_tree_cpu(os.getpid()) == {}
+
+
 class _Samples:
     """A scripted process tree and the clock it is read on."""
 
@@ -299,17 +304,32 @@ def test_a_waiter_is_told_first_which_holder_looks_hung(session, host) -> None:
     assert "hung" not in ahead[1]
 
 
-def test_a_held_command_is_sampled_and_a_sleeping_one_goes_idle(isolated_db, session, host) -> None:
-    """End to end over the real `ps`: `sleep` stays in one sample, then is idle."""
+def test_a_held_command_is_sampled_and_a_sleeping_one_goes_idle(
+    isolated_db, session, host, tmp_path
+) -> None:
+    """End to end over the real `ps`: `sleep` stays in one sample, then is idle.
+
+    Read only the held command. The sampler's root is this process, a pytest
+    worker, and whatever else is running under it during the hold (an earlier
+    test's thread and its subprocess) read as the command working: in two full
+    suites the last sample was active every time.
+    """
+    pid_file = tmp_path / "held.pid"
+
+    def only_the_command(root: int) -> dict[int, float]:
+        tree = read_tree_cpu(root)
+        held = int(pid_file.read_text()) if pid_file.exists() else None
+        return {pid: spent for pid, spent in tree.items() if pid == held}
+
     with mock.patch("loregarden.services.capacity_run.CpuSync") as sync:
         sync.side_effect = lambda factory, lease_id, report: CpuSync(
-            factory, lease_id, report, interval=0.5
+            factory, lease_id, report, interval=0.5, read=only_the_command
         )
         code = run_holding(
             lambda: Session(isolated_db),
             CapacityRequest(label="sleeper", cpus=1.0, memory_mb=512),
             # Five samples or so: the first counts as working, the rest see none.
-            ["sleep", "3"],
+            ["sh", "-c", f'echo $$ > "{pid_file}"; exec sleep 3'],
             report=lambda _line: None,
         )
     assert code == 0

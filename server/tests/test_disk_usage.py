@@ -12,6 +12,7 @@ import json
 import os
 import shutil
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -571,6 +572,25 @@ def test_a_corrupt_stored_scan_raises_rather_than_reading_as_never_scanned(scan_
     scan_file.write_text("{not json")
     with pytest.raises(ValueError):
         store.latest_result()
+
+
+def _stored(entries: int) -> store.ScanResult:
+    stamp = datetime(2026, 11, 26, tzinfo=timezone.utc)
+    return store.ScanResult(started_at=stamp, finished_at=stamp, roots=[], tree=[], entries=entries)
+
+
+def test_the_stored_scan_is_read_once_and_again_when_it_changes(scan_file) -> None:
+    assert store.latest_result() is None, "nothing stored is never scanned"
+    store._write_result(_stored(1))
+    first = store.latest_result()
+
+    with mock.patch.object(store.ScanResult, "model_validate_json") as reread:
+        assert store.latest_result() is first, "an unchanged file is served from memory"
+    reread.assert_not_called()
+
+    store._write_result(_stored(2))
+    os.utime(scan_file, (1, 1))  # a different mtime, however fast the two writes were
+    assert store.latest_result().entries == 2
 
 
 # --- MCP tool --------------------------------------------------------------------

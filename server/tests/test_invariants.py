@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import re
 from collections.abc import Sequence
 from datetime import date, datetime, timedelta, timezone
@@ -317,6 +318,45 @@ def test_an_expected_invariant_repairs_and_reports_nothing(db_session: Session, 
 
     assert (check.found, check.reentered, check.repaired) == (1, 0, 1)
     assert _findings(db_session) == []
+
+
+def test_a_ticketless_reentry_is_logged_because_a_finding_cannot_hold_it(
+    db_session: Session, caplog
+):
+    rows = _Rows([Violation(subject_id="row-7", ticket_id=None, entered_at=None, detail="probe")])
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.invariants"):
+        run_invariant(db_session, _invariant(InvariantReentry.DEFECT, rows=rows))
+
+    assert "row-7" in caplog.text
+    assert _findings(db_session) == [] and _escalations(db_session) == []
+
+
+def test_an_expected_report_only_invariant_files_findings_and_no_bug(
+    db_session: Session, probe_tickets
+):
+    """Only a person clears it, so it is reported every pass; the world entered
+    it legitimately, so nothing is escalated as a broken guard."""
+    _, new = probe_tickets
+    rows = _Rows([_violation(new, days_after_since=3)])
+    invariant = Invariant(
+        **{
+            **_invariant(InvariantReentry.EXPECTED, rows=rows).__dict__,
+            "repair": None,
+            "unrepaired_action": "Close it by hand.",
+        }
+    )
+
+    check = run_invariant(db_session, invariant)
+
+    unrepaired = db_session.exec(
+        select(Artifact).where(
+            col(Artifact.title).startswith(MonitorCondition.INVARIANT_UNREPAIRED.value)
+        )
+    ).all()
+    assert (check.found, check.repaired) == (1, 0)
+    assert [f.ticket_id for f in unrepaired] == [new.id]
+    assert _escalations(db_session) == []
 
 
 def test_a_block_written_around_settle_block_is_reported_as_a_missed_writer(
