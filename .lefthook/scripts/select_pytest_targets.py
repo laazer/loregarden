@@ -98,7 +98,7 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _LEFTHOOK_SCRIPTS = Path(__file__).resolve().parent
@@ -212,6 +212,41 @@ def _init_file(package: str) -> str:
 
 #: package -> name it re-exports -> the modules that may define it
 Exports = dict[str, dict[str, set[str]]]
+
+
+def is_test_file(name: str) -> bool:
+    """A module pytest collects tests from, rather than one a test imports."""
+    return name.startswith("test_") and name.endswith(".py")
+
+
+def helper_module(path: Path, test_root: Path) -> str:
+    """`server/tests/sub/x.py` -> `tests.sub.x`, the name its importers use."""
+    parts = path.relative_to(test_root).with_suffix("").parts
+    return ".".join((test_root.name, *parts))
+
+
+def helper_importers(graph: ImportGraph, helpers: frozenset[str]) -> dict[Path, int]:
+    """Test files importing a changed helper: 1 directly, one more per helper between.
+
+    Helpers import helpers (`history_helpers` builds on `factories`), so the
+    changed set grows by importer until nothing new joins it.
+    """
+    selected: dict[Path, int] = {}
+    reached = set(helpers)
+    frontier = set(helpers)
+    hops = 1
+    while frontier:
+        for test, names in graph.test_scripts.items():
+            if test not in selected and names & frontier:
+                selected[test] = hops
+        frontier = {
+            helper
+            for helper, names in graph.helper_imports.items()
+            if helper not in reached and names & frontier
+        }
+        reached |= frontier
+        hops += 1
+    return selected
 
 
 def _defined_names(tree: ast.Module) -> set[str]:
@@ -473,6 +508,8 @@ class ImportGraph:
     #: module or test file -> what could name a script (see `_PathNames.scripts`)
     module_scripts: dict[str, frozenset[str]]
     test_scripts: dict[Path, frozenset[str]]
+    #: test helper (`tests.repo_paths`) -> the modules it imports, by name
+    helper_imports: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
@@ -513,6 +550,12 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
         if names.source:
             source_tests.add(py)
 
+    helper_imports = {
+        helper_module(py, test_root): _path_names(_parse(py)).scripts
+        for py in sorted(test_root.rglob("*.py"))
+        if not is_test_file(py.name)
+    }
+
     return ImportGraph(
         module_edges=module_edges,
         test_edges=test_edges,
@@ -523,6 +566,7 @@ def build_graph(package_root: Path, test_root: Path) -> ImportGraph:
         test_markdown=test_markdown,
         module_scripts=module_scripts,
         test_scripts=test_scripts,
+        helper_imports=helper_imports,
     )
 
 
@@ -588,6 +632,21 @@ class ChangeSet:
     #: changed files tests reach only by name: hook and repo scripts
     #: (`NARROWABLE_SCRIPT_DIRS`) and markdown outside `agent_context/` (`is_named_doc`)
     script_files: frozenset[str] = frozenset()
+    #: changed test helpers (`tests.repo_paths`): run their importers, not them
+    test_helpers: frozenset[str] = frozenset()
+
+
+def _classify_test_path(repo: Path, rel: str, tests: set[Path], helpers: set[str]) -> None:
+    """A test file runs itself; a helper runs what imports it.
+
+    pytest collects nothing from a helper and fails the run (exit 5), and what
+    a helper can break is every test importing it, deleted or not. A deleted
+    test file cannot be run; its absence is not a gap.
+    """
+    if not is_test_file(Path(rel).name):
+        helpers.add(helper_module(repo / rel, repo / "server" / "tests"))
+    elif (repo / rel).exists():
+        tests.add(repo / rel)
 
 
 def classify(repo: Path, paths: list[str]) -> ChangeSet:
@@ -597,6 +656,7 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
     client = False
     context_files: set[str] = set()
     script_files: set[str] = set()
+    test_helpers: set[str] = set()
     for rel in paths:
         if rel.startswith(f"{CLIENT_DIR}/"):
             client = True
@@ -612,9 +672,7 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
         elif not rel.startswith("server/") or not rel.endswith(".py"):
             continue
         elif rel.startswith("server/tests/"):
-            # A deleted test file cannot be run; its absence is not a gap.
-            if (repo / rel).exists():
-                tests.add(repo / rel)
+            _classify_test_path(repo, rel, tests, test_helpers)
         elif name := module_name(repo / rel, package_root):
             modules.add(name)
             if rel.endswith("/__init__.py"):
@@ -625,6 +683,7 @@ def classify(repo: Path, paths: list[str]) -> ChangeSet:
         client=client,
         context_files=frozenset(context_files),
         script_files=frozenset(script_files),
+        test_helpers=frozenset(test_helpers),
     )
 
 
@@ -658,7 +717,13 @@ def select_direct(repo: Path, paths: list[str]) -> list[Path]:
 
 
 def _needs_graph(changes: ChangeSet) -> bool:
-    return bool(changes.modules or changes.client or changes.context_files or changes.script_files)
+    return bool(
+        changes.modules
+        or changes.client
+        or changes.context_files
+        or changes.script_files
+        or changes.test_helpers
+    )
 
 
 def _select(
@@ -667,6 +732,8 @@ def _select(
     """Each selected test file and its distance from the change: 0 is changed itself."""
     selected = dict.fromkeys(_other_readers(repo, changes, graph), NEAREST_HOPS)
     selected |= module_hops(graph, changes.modules, limit)
+    for test, hops in helper_importers(graph, changes.test_helpers).items():
+        selected[test] = min(hops, selected.get(test, hops))
     return selected | dict.fromkeys(changes.tests, 0)
 
 

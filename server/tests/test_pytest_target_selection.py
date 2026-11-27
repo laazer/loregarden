@@ -170,6 +170,42 @@ def test_deleted_test_file_is_not_selected(fake_repo: Path):
 
 
 @pytest.fixture
+def helper_repo(fake_repo: Path) -> Path:
+    """Two helpers, one built on the other, each with a test importing it."""
+    tests = fake_repo / "server" / "tests"
+    (tests / "base_helpers.py").write_text("BASE = 1\n", encoding="utf-8")
+    (tests / "built_helpers.py").write_text(
+        "from tests.base_helpers import BASE\n\nBUILT = BASE\n", encoding="utf-8"
+    )
+    (tests / "test_base.py").write_text(
+        "from tests.base_helpers import BASE\n\ndef test_b():\n    assert BASE\n",
+        encoding="utf-8",
+    )
+    (tests / "test_built.py").write_text(
+        "from tests.built_helpers import BUILT\n\ndef test_c():\n    assert BUILT\n",
+        encoding="utf-8",
+    )
+    return fake_repo
+
+
+def test_a_changed_helper_runs_its_importers_not_itself(helper_repo: Path):
+    """pytest collects nothing from a helper and exits 5: listing one failed the push."""
+    selected = selector.select(helper_repo, ["server/tests/built_helpers.py"])
+    assert _names(selected) == {"test_built.py"}
+
+
+def test_a_helper_reaches_tests_through_the_helpers_importing_it(helper_repo: Path):
+    ranked = selector.run_first(helper_repo, ["server/tests/base_helpers.py"])
+    assert [p.name for p in ranked] == ["test_base.py", "test_built.py"]
+
+
+def test_a_deleted_helper_still_runs_what_imported_it(helper_repo: Path):
+    (helper_repo / "server" / "tests" / "built_helpers.py").unlink()
+    selected = selector.select(helper_repo, ["server/tests/built_helpers.py"])
+    assert _names(selected) == {"test_built.py"}
+
+
+@pytest.fixture
 def chain_repo(tmp_path: Path) -> Path:
     """base <- one <- two <- three, each with a test; `far` is reached only from three."""
     pkg = tmp_path / "server" / "loregarden"

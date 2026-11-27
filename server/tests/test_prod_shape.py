@@ -18,6 +18,7 @@ from loregarden.testing.prod_shape import CALIBRATION, build_prod_shape
 from loregarden.testing.prod_shape_activity import ACTIVITY_CALIBRATION
 from loregarden.testing.prod_shape_activity import WINDOW as ACTIVITY_WINDOW
 from loregarden.testing.prod_shape_findings import INVARIANT_FINDINGS
+from loregarden.testing.prod_shape_initiatives import INITIATIVE_CALIBRATION
 from loregarden.testing.prod_shape_tree import TREE_CALIBRATION
 from sqlmodel import Session, select
 from tests.prod_shape_templates import (
@@ -138,19 +139,36 @@ def test_memory_proposals_match_production(prod_shape, client):
     assert 20 <= kinds.count("generic_title") <= 30
 
 
-def test_one_initiative_claims_a_cross_workspace_theme(prod_shape, client):
-    [initiative] = client.get("/api/initiatives").json()
-    assert prod_shape.initiative_milestones == 10
-    assert initiative["external_id"].startswith("init-")
-    # The ten themed milestones, plus one open feature it tracks by membership.
-    assert initiative["progress"] == {"resolved": 1, "total": 11}
-    [member] = [m for m in initiative["milestones"] if m["member"]]
-    assert member["work_item_type"] == "feature" and member["home_milestone"]
-    assert initiative["workspaces"] == ["blobert", "loregarden", "loremaker"]
-    # The children are mixed, so the rollup — not the factory default — set this.
-    assert initiative["state"] == "in_progress"
-    # Most milestones stay unclaimed: that is still the shape that dominates.
-    assert len(client.get("/api/initiatives/attachable-milestones").json()) >= 65
+def test_initiatives_own_and_track_like_production(prod_shape, client):
+    """Live, 2026-11-26: six initiatives, 28 milestones owned and 132 tickets
+    tracked by membership, one initiative owning nothing. The scenario once
+    carried a lone initiative, so the page that stacked six cards into five
+    screens rendered fine over it."""
+    initiatives = client.get("/api/initiatives").json()
+    shapes = INITIATIVE_CALIBRATION.initiatives
+    unclaimed = len(client.get("/api/initiatives/attachable-milestones").json())
+
+    assert len(initiatives) == len(shapes) == 6
+    assert all(i["external_id"].startswith("init-") for i in initiatives)
+    rows = [m for i in initiatives for m in i["milestones"]]
+    members = [m for m in rows if m["member"]]
+    owned = [m for m in rows if not m["member"]]
+    # Every member live counts, each a feature or bug that keeps its own milestone.
+    assert len(members) == prod_shape.initiatives.members == 132
+    assert all(m["work_item_type"] in ("feature", "bug") and m["home_milestone"] for m in members)
+    assert len({m["id"] for m in members}) == len(members)
+    # Owned milestones as far as the scenario's themes supply them (live: 28).
+    assert len(owned) == prod_shape.initiatives.owned
+    assert 20 <= len(owned) <= sum(shape.owned for shape in shapes)
+    # One initiative owns nothing and tracks a long list, a quarter of it done.
+    [tracker] = [
+        i for i in initiatives if i["milestones"] and all(m["member"] for m in i["milestones"])
+    ]
+    assert tracker["progress"] == {"resolved": 23, "total": 97}
+    # The rollup, not the factory default, set the states, and they differ.
+    assert {"blocked", "in_progress"} <= {i["state"] for i in initiatives}
+    # Most milestones stay unclaimed (live: 80 of 108).
+    assert unclaimed / (unclaimed + len(owned)) > 0.65
 
 
 def test_activity_digest_matches_the_live_two_weeks(isolated_db, bare_prod_shape):
@@ -180,7 +198,10 @@ def test_the_tree_nests_parks_and_holds_like_production(isolated_db, bare_prod_s
         stored = len(session.exec(select(Ticket)).all())
     # Member links are copies of a ticket listed under the initiative tracking it.
     nodes = [(n, d) for n, d in _walk(_tree(isolated_db), depth=1) if not n["member_link"]]
-    blocked_on = Counter(node["blocked_on"] for node, _depth in nodes)
+    # An initiative is blocked through its rollup, not held by a prerequisite.
+    blocked_on = Counter(
+        node["blocked_on"] for node, _depth in nodes if node["work_item_type"] != "initiative"
+    )
     awaiting = sum(node["workflow_stage_status"] == "awaiting" for node, _depth in nodes)
 
     assert len(nodes) == stored

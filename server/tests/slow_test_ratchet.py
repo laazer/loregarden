@@ -153,7 +153,6 @@ INHERITED: frozenset[str] = frozenset(
         "tests/test_prod_shape.py::test_counts_match_the_calibration",  # 10.03s
         "tests/test_prod_shape.py::test_memory_has_no_recorded_links_but_real_groups",  # 7.20s
         "tests/test_prod_shape.py::test_memory_proposals_match_production",  # 8.11s
-        "tests/test_prod_shape.py::test_one_initiative_claims_a_cross_workspace_theme",  # 7.15s
         "tests/test_prod_shape.py::test_the_monitor_sees_mostly_finished_tickets",  # 7.39s
         "tests/test_prod_shape.py::test_the_tree_nests_parks_and_holds_like_production",  # 6.54s
         "tests/test_prod_shape_fixtures.py::test_fixture_matches_the_api[attachable-milestones.json]",  # 7.70s
