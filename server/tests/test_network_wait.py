@@ -8,6 +8,7 @@ blocked until a person requeued them.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from loregarden.config import settings
 from loregarden.models.domain import (
     BlockKind,
     OrchestrationDriver,
@@ -59,6 +60,7 @@ def test_an_outage_parks_the_stage_without_spending_a_retry(db_session: Session,
     assert ticket.workflow_stage_status is StageStatus.BLOCKED
     assert ticket.state is TicketState.BLOCKED
     assert ticket.block_kind is BlockKind.HARNESS
+    assert ticket.blocking_issues, "the stage says what it is waiting for"
     assert count_transient_retries(db_session, ticket.id, "testing") == 0
     assert [m.ticket_id for m in pending_network_waits(db_session)] == [ticket.id]
 
@@ -73,6 +75,27 @@ def test_when_this_machine_can_reach_the_provider_the_retry_runs_as_before(
     assert ticket.workflow_stage_status is StageStatus.PENDING
     assert count_transient_retries(db_session, ticket.id, "testing") == 1
     assert pending_network_waits(db_session) == []
+
+
+def test_with_network_waits_off_an_outage_spends_a_retry(db_session: Session, offline):
+    ticket = _ticket_on_stage(db_session)
+
+    with patch.object(settings, "network_probe_host", ""):
+        _die(db_session, ticket, stdout=ENOTFOUND_STDOUT)
+
+    assert count_transient_retries(db_session, ticket.id, "testing") == 1
+    assert pending_network_waits(db_session) == []
+
+
+def test_a_failure_that_is_not_a_network_one_is_not_parked_while_offline(
+    db_session: Session, offline
+):
+    ticket = _ticket_on_stage(db_session)
+
+    _die(db_session, ticket, stdout="Error: 3 tests failed in tests/test_x.py")
+
+    assert pending_network_waits(db_session) == []
+    assert ticket.block_kind is not BlockKind.HARNESS
 
 
 def _previous_run(db_session: Session, ticket, *, auto_approve: bool) -> None:

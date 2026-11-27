@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 from loregarden.main import app, lifespan
 from loregarden.models.domain import (
@@ -16,6 +16,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_recovery import (
     InterruptionResume,
+    admit_resumes,
     resume_interrupted_orchestrations,
     schedule_interrupted_resumes,
 )
@@ -307,3 +308,21 @@ def test_a_cancelled_orchestration_is_never_resumed(isolated_db):
         session.commit()
 
         assert resume_interrupted_orchestrations(session) == []
+
+
+def test_a_resume_parked_in_a_full_lane_is_handled_but_not_started(isolated_db):
+    """The lane starts it when capacity frees; claiming a run now would start it twice."""
+    with Session(isolated_db) as session:
+        seed_database(session)
+        ticket = _ticket(session)
+        runs_before = len(session.exec(select(OrchestrationRun)).all())
+        plan = InterruptionResume(ticket.id, False, None)
+
+        with patch(
+            "loregarden.services.orchestration_recovery.QueueAdmissionService.reserve_orchestration",
+            return_value=Mock(admitted=False, slot_number=2),
+        ):
+            requests, handled = admit_resumes(session, [(ticket, plan)])
+
+        assert (requests, handled) == ([], [ticket.id])
+        assert len(session.exec(select(OrchestrationRun)).all()) == runs_before

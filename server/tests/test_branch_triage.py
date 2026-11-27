@@ -24,6 +24,8 @@ from loregarden.services.branch_triage_run_service import (
     fail_interrupted_branch_triage_turns,
 )
 from loregarden.services.branch_triage_service import (
+    REF_FIELD_SEP,
+    _branch_refs_batch,
     branch_activity,
     branch_triage_snapshot,
     commit_snapshot,
@@ -182,6 +184,43 @@ def test_branch_triage_matches_the_batched_scan_when_for_each_ref_is_unavailable
     per_branch = branch_triage_snapshot(triage_session, triage_workspace)
 
     assert per_branch == batched
+
+
+def test_one_git_call_reads_every_branch_against_the_base(triage_repo):
+    refs = _branch_refs_batch(triage_repo, "main", set())
+
+    assert refs is not None, "a git with ahead-behind answers in one call"
+    assert {name: (ref.ahead, ref.behind) for name, ref in refs.items()} == {
+        "main": (0, 0),
+        "loregarden/orphan": (1, 0),
+    }
+    assert refs["loregarden/orphan"].last_commit["message"] == "orphan work"
+
+
+def test_a_base_git_cannot_count_against_falls_back(triage_repo):
+    assert _branch_refs_batch(triage_repo, "no-such-base", set()) is None
+
+
+def _for_each_ref_printing(*lines: str):
+    out = "\n".join(REF_FIELD_SEP.join(fields) for fields in lines) + "\n"
+    return patch(
+        "loregarden.services.branch_triage_service._git",
+        return_value=subprocess.CompletedProcess([], 0, stdout=out, stderr=""),
+    )
+
+
+def test_a_line_that_is_not_a_branch_is_skipped(tmp_path):
+    with _for_each_ref_printing(("not a branch line",), ("main", "d", "", "2 3", "s")):
+        refs = _branch_refs_batch(tmp_path, "main", set())
+    assert refs is not None and {n: (r.ahead, r.behind) for n, r in refs.items()} == {
+        "main": (2, 3)
+    }
+
+
+@pytest.mark.parametrize("counts", ["", "1", "x 2", "1 2 3"])
+def test_counts_git_did_not_give_fall_back(tmp_path, counts):
+    with _for_each_ref_printing(("main", "d", "", counts, "s")):
+        assert _branch_refs_batch(tmp_path, "main", set()) is None
 
 
 def test_delete_unmerged_branch_requires_force(

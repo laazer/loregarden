@@ -196,6 +196,32 @@ def test_a_chat_fallback_onto_any_dirt_is_refused(session, workspace, repo):
         resolve_chat_execution_root(session, _run(session, workspace, None), chat, workspace)
 
 
+@pytest.mark.parametrize("dirty", [False, True])
+def test_a_chat_tree_that_cannot_be_cut_falls_back_only_onto_a_clean_checkout(
+    session, workspace, repo, dirty
+):
+    chat = BaxterChatSession(workspace_id=workspace.id, title="t")
+    session.add(chat)
+    session.commit()
+    if dirty:
+        (repo / "operator.txt").write_text("wip\n")
+
+    with mock.patch(
+        "loregarden.services.chat_worktree.WorktreeService.get_or_create_for_chat_session",
+        return_value=None,
+    ):
+        if dirty:
+            with pytest.raises(DirtyPrimaryCheckoutError):
+                resolve_chat_execution_root(
+                    session, _run(session, workspace, None), chat, workspace
+                )
+        else:
+            root = resolve_chat_execution_root(
+                session, _run(session, workspace, None), chat, workspace
+            )
+            assert root.resolve() == repo.resolve()
+
+
 # --- REQ-3: changing the primary -------------------------------------------
 
 

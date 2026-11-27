@@ -267,6 +267,13 @@ def test_the_tool_refuses_what_the_check_would_refuse(session, tree):
     assert latest_ux_answers(session, c1) == UxAnswers(**ANSWERS)
 
 
+@pytest.mark.parametrize("field", ["question", "action", "real_data"])
+def test_an_answer_over_two_lines_is_refused(field):
+    """The PR section reads each field to its line end, so a second line would be lost."""
+    with pytest.raises(ValidationError, match="one line"):
+        UxAnswers(**{**ANSWERS, field: ANSWERS[field] + "\nand 3 more rows"})
+
+
 # --- the record agrees with the check --------------------------------------------
 
 CASES = [

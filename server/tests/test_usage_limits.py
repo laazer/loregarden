@@ -133,6 +133,13 @@ def test_hint_names_provider_reset_and_the_purchase_link():
     assert "not a failure of the work" in hint
 
 
+def test_hint_carries_the_providers_own_words():
+    limit = detect_usage_limit(CODEX_MESSAGE)
+    assert limit is not None and limit.quote
+
+    assert limit.quote in format_usage_limit_hint(limit)
+
+
 def test_chat_turn_reports_the_limit_instead_of_the_raw_dump():
     dump = "OpenAI Codex v0.146.1\n--------\n" + ("x" * 2000) + "\n" + CODEX_MESSAGE
     msg = format_agent_unavailable("Baxter", RuntimeError(dump))

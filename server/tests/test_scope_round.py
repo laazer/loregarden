@@ -302,6 +302,25 @@ def test_the_spec_records_what_it_rules_out_and_every_reader_sees_it(db_session,
     assert read["out_of_scope"] == ruled_out
 
 
+def test_an_opened_round_is_committed_for_the_driver_that_reads_it_next(db_session, source):
+    _file(db_session, _run(db_session, source, "architecture_reviewer", "r1"), "F", parent=source)
+    _, stages = _stages(db_session, source)
+
+    open_round_or_defer(db_session, source, stages[-1])
+
+    with Session(db_session.get_bind()) as other:
+        instance, stages = _stages(other, other.get(Ticket, source.id))
+        assert next_executable_stage(stages, parse_stage_map(instance, stages)) == "spec"
+
+
+def test_a_ticket_with_no_workflow_is_refused_by_name(db_session, source):
+    bare = make_workspace_ticket(db_session, "sr-bare")
+    _, stages = _stages(db_session, source)
+
+    with pytest.raises(ValueError, match="sr-bare has no workflow instance"):
+        open_round_or_defer(db_session, bare, stages[-1])
+
+
 def test_findings_a_spec_will_not_decide_are_deferred_not_blocked(db_session, source):
     """The second identical round defers the findings and the ticket goes on; no person is asked."""
     finding = _file(

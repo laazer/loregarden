@@ -8,6 +8,7 @@ are not all answered for.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 import pytest
 from loregarden.models.domain import (
@@ -16,6 +17,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.models.domain.criterion_tables import PersonJudgment
 from loregarden.services.acceptance_criteria import serialize_criteria
 from loregarden.services.criterion_ledger import (
     GapKind,
@@ -117,6 +119,73 @@ def test_a_delegation_needs_a_target_that_carries_the_text(db_session, ticket):
     db_session.commit()
     assert CRITERIA[2] not in unsettled(db_session, ticket)
     assert delegation_gaps(db_session, ticket) == []
+
+
+@pytest.mark.parametrize(
+    ("target_of", "reason", "refusal"),
+    [
+        (lambda ticket, carrier: ticket, "r", "its own ticket"),
+        (lambda ticket, carrier: carrier, "  ", "reason is required"),
+    ],
+)
+def test_a_delegation_to_itself_or_without_a_reason_is_refused(
+    db_session, ticket, target_of, reason, refusal
+):
+    carrier = _sibling(db_session, "cl-carrier", [CRITERIA[2]])
+    with pytest.raises(ValueError, match=refusal):
+        record_delegation(
+            db_session,
+            ticket,
+            CRITERIA[2],
+            target=target_of(ticket, carrier),
+            settled_by="operator",
+            reason=reason,
+        )
+    assert CRITERIA[2] in unsettled(db_session, ticket)
+
+
+def test_a_closed_target_is_refused_but_a_done_one_is_not(db_session, ticket):
+    carrier = _sibling(db_session, "cl-carrier", [CRITERIA[2]])
+    carrier.state = TicketState.WONT_DO
+    with pytest.raises(ValueError, match="is closed wont_do"):
+        record_delegation(
+            db_session, ticket, CRITERIA[2], target=carrier, settled_by="operator", reason="r"
+        )
+    carrier.state = TicketState.DONE
+    record_delegation(
+        db_session, ticket, CRITERIA[2], target=carrier, settled_by="operator", reason="r"
+    )
+
+
+def test_a_delegation_replaces_the_proof_it_settled_with_before(db_session, ticket):
+    own = Artifact(ticket_id=ticket.id, kind=ARTIFACT_KIND, evidence_kind="real_surface")
+    db_session.add(own)
+    db_session.commit()
+    _met(db_session, ticket, CRITERIA[2], evidence_artifact_id=own.id)
+    before = settlements_of(db_session, ticket)[CRITERIA[2]]
+    before.judges = next(iter(PersonJudgment))
+    before.person_ask = "Does it feel right?"
+    before.settled_at = datetime(2026, 1, 1)
+    db_session.add(before)
+    db_session.commit()
+    carrier = _sibling(db_session, "cl-carrier", [CRITERIA[2]])
+
+    row = record_delegation(
+        db_session,
+        ticket,
+        CRITERIA[2],
+        target=carrier,
+        settled_by="operator",
+        reason="  the carrier owns the layout  ",
+    )
+    db_session.commit()
+
+    assert row is settlements_of(db_session, ticket)[CRITERIA[2]]
+    assert row.disposition is CriterionDisposition.DELEGATED
+    assert (row.tests_json, row.evidence_artifact_id, row.commit_sha) == ("[]", None, "")
+    assert (row.judges, row.person_ask) == (None, "")
+    assert (row.settled_by, row.reason) == ("operator", "the carrier owns the layout")
+    assert row.settled_at > datetime(2026, 1, 1)
 
 
 def test_a_delegate_that_drops_or_loses_the_criterion_reopens_the_gap(db_session, ticket):
