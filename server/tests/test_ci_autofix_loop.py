@@ -12,6 +12,7 @@ history rail.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from unittest import mock
 
@@ -35,6 +36,7 @@ from loregarden.services import (
     git_automation,
     github_pr_listing,
 )
+from loregarden.services import ci_service as ci_service_module
 from loregarden.services import publish_tree as publish_tree_module
 from loregarden.services.ci_checks import OpenPullRequest, rollup
 from loregarden.services.ci_poll_scheduler import poll_workspace
@@ -270,6 +272,54 @@ def test_a_failing_pr_reopens_the_done_ticket_for_a_repair_turn(
     (plan,) = schedule.call_args.args[0]
     assert plan.stop_at_stage_key == "done"
     assert plan.timeout_seconds == settings.ci_auto_fix_timeout
+
+
+def test_a_fix_that_cannot_be_dispatched_is_recorded_refused(
+    session, workspace, repo, done_ticket, isolated_db, caplog
+):
+    branch = done_ticket.branch
+    refused = ci_autofix_dispatch.CIFixDispatch(False, "nothing could run it")
+    with (
+        mock.patch.object(ci_service_module, "dispatch_ci_fix", return_value=refused),
+        caplog.at_level(logging.WARNING, logger=ci_service_module.logger.name),
+    ):
+        _, outcome = _observe(
+            session, done_ticket, workspace, _pr(branch, _tip(repo, branch), FAILING)
+        )
+
+    assert outcome is not None
+    assert (outcome.refusal, outcome.detail) == (
+        AutoFixRefusal.DISPATCH_FAILED,
+        "nothing could run it",
+    )
+    assert any(r.levelno >= logging.WARNING for r in caplog.records), "a refused dispatch is logged"
+    with Session(isolated_db) as fresh:
+        (attempt,) = CIService(fresh).attempts(done_ticket.id)
+        assert attempt.status is AutoFixStatus.REFUSED
+        assert attempt.result_summary == "nothing could run it"
+        assert attempt.completed_at is not None
+
+
+def test_a_dispatched_attempt_is_committed_running(
+    session, workspace, repo, done_ticket, isolated_db
+):
+    branch = done_ticket.branch
+    _observe(session, done_ticket, workspace, _pr(branch, _tip(repo, branch), FAILING))
+
+    with Session(isolated_db) as fresh:
+        (attempt,) = CIService(fresh).attempts(done_ticket.id)
+        assert attempt.status is AutoFixStatus.RUNNING
+
+
+def test_a_pr_on_the_tickets_own_branch_syncs_nothing(session, workspace, repo, done_ticket):
+    branch = done_ticket.branch
+    with mock.patch.object(ci_service_module, "take_integration_branch") as take:
+        _, outcome = _observe(
+            session, done_ticket, workspace, _pr(branch, _tip(repo, branch), FAILING)
+        )
+
+    assert outcome is not None and outcome.dispatched, outcome
+    take.assert_not_called()
 
 
 def test_the_same_commit_is_one_result_and_one_attempt(session, workspace, repo, done_ticket):

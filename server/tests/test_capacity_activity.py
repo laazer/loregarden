@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import errno
+import itertools
 import os
 import subprocess
 import sys
@@ -307,35 +309,71 @@ def test_a_waiter_is_told_first_which_holder_looks_hung(session, host) -> None:
 def test_a_held_command_is_sampled_and_a_sleeping_one_goes_idle(
     isolated_db, session, host, tmp_path
 ) -> None:
-    """End to end over the real `ps`: `sleep` stays in one sample, then is idle.
+    """End to end over the real `ps`: the held command is seen, then reads idle.
 
     Read only the held command. The sampler's root is this process, a pytest
     worker, and whatever else is running under it during the hold (an earlier
     test's thread and its subprocess) read as the command working: in two full
     suites the last sample was active every time.
+
+    Nothing here depends on wall-clock scheduling. A sampler thread starved for
+    more than three intervals rightly reads the gap as "nobody was watching" and
+    counts it as working, and under a loaded full suite a 3s `sleep` hit that:
+    the last sample landed 5s after the grant, active. So the clock ticks one
+    interval per sample, and the command blocks on a FIFO that is released only
+    once the sampler has seen it three times, however long that takes.
     """
     pid_file = tmp_path / "held.pid"
+    release = tmp_path / "release"
+    os.mkfifo(release)
+    seen = 0
 
     def only_the_command(root: int) -> dict[int, float]:
+        nonlocal seen
         tree = read_tree_cpu(root)
         held = int(pid_file.read_text()) if pid_file.exists() else None
-        return {pid: spent for pid, spent in tree.items() if pid == held}
+        found = {pid: spent for pid, spent in tree.items() if pid == held}
+        seen += bool(found)
+        if seen >= 3:
+            _release(release)
+        return found
 
+    ticks = itertools.count(step=0.5)
     with mock.patch("loregarden.services.capacity_run.CpuSync") as sync:
         sync.side_effect = lambda factory, lease_id, report: CpuSync(
-            factory, lease_id, report, interval=0.5, read=only_the_command
+            factory,
+            lease_id,
+            report,
+            interval=0.5,
+            read=only_the_command,
+            clock=lambda: next(ticks),
         )
         code = run_holding(
             lambda: Session(isolated_db),
             CapacityRequest(label="sleeper", cpus=1.0, memory_mb=512),
-            # Five samples or so: the first counts as working, the rest see none.
-            ["sh", "-c", f'echo $$ > "{pid_file}"; exec sleep 3'],
+            # `head` blocks, using no CPU, until the FIFO gets a byte.
+            ["sh", "-c", f'echo $$ > "{pid_file}"; exec head -c 1 "{release}"'],
             report=lambda _line: None,
         )
     assert code == 0
+    assert seen >= 3
     (lease,) = session.exec(select(DockerLease)).all()
     assert lease.cpu_sampled_at is not None
     assert lease.cpu_active_at < lease.cpu_sampled_at
+
+
+def _release(fifo) -> None:
+    """Hand the FIFO's reader one byte, if it has opened it yet."""
+    try:
+        fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno != errno.ENXIO:
+            raise
+        return  # no reader yet; the next sample tries again
+    try:
+        os.write(fd, b"x")
+    finally:
+        os.close(fd)
 
 
 def test_the_migration_adds_the_columns_and_reruns_cleanly(tmp_path) -> None:

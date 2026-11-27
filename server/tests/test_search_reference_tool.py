@@ -32,6 +32,7 @@ from loregarden.services.devdocs import (
     MAX_LIMIT,
     _entry_url,
     _rank_entries,
+    _suggestions_for,
     search_reference,
 )
 from sqlmodel import Session, select
@@ -135,6 +136,15 @@ def test_an_omitted_docset_is_refused_with_suggestions_for_the_query(session):
 
     assert payload.error_kind == DevDocsError.DOCSET_REQUIRED
     assert "angular" in {s.slug for s in payload.suggestions}
+
+
+def test_suggestions_stop_at_their_limit():
+    entries = [{"slug": f"lib~{n}", "name": "Lib"} for n in range(10)]
+    assert [s.slug for s in _suggestions_for(entries, "lib", limit=3)] == [
+        "lib~0",
+        "lib~1",
+        "lib~2",
+    ]
 
 
 def test_a_slug_beats_a_name_that_looks_like_one(session):

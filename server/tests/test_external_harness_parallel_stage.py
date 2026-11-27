@@ -15,6 +15,7 @@ so the two drivers cannot drift apart.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from unittest import mock
 from uuid import uuid4
@@ -23,9 +24,11 @@ import pytest
 from loregarden.models.domain import (
     AgentRun,
     Artifact,
+    BlockKind,
     ExternalHarness,
     OrchestratorDecision,
     ParallelAgentSpec,
+    ReworkStopReason,
     RunStatus,
     StageStatus,
     Ticket,
@@ -37,6 +40,8 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import builtin_orchestrator, external_harness, parallel_stage
+from loregarden.services.block_settlement import BlockSettlement
+from loregarden.services.criterion_split import SplitResult
 from loregarden.services.external_harness import (
     begin_external_stage,
     finish_external_stage,
@@ -44,6 +49,8 @@ from loregarden.services.external_harness import (
 )
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.orchestration import OrchestrationService
+from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
+from loregarden.services.stage_report import parse_stage_report
 from loregarden.services.workflow_state import initial_stages_json
 from sqlmodel import Session, select
 from tests.history_helpers import decision_kinds
@@ -485,3 +492,136 @@ def test_a_single_agent_checkout_records_the_commit_it_started_on_and_keeps_it(
     assert again.runs[0].agent_run_id == run.id
     db_session.refresh(run)
     assert run.start_head_sha == started_on
+
+
+# --- routing a rejected stage (shared by both drivers) ------------------------------
+
+
+def _rejecting(agent_id: str, *, to: str, confidence: float) -> parallel_stage.ParallelMemberResult:
+    report = parse_stage_report(_report("needs_rework", reroute_to_stage=to))
+    assert report is not None
+    report = dataclasses.replace(report, confidence=confidence)
+    return parallel_stage.ParallelMemberResult(
+        agent_id, failure=f"{agent_id} rejected", report=report
+    )
+
+
+def _transient(agent_id: str) -> parallel_stage.ParallelMemberResult:
+    return parallel_stage.ParallelMemberResult(agent_id, failure="usage limit", transient=True)
+
+
+def _reconcile(db_session: Session, ticket: Ticket, results):
+    orch_run = start_external_orchestration(db_session, ticket, harness=ExternalHarness.CLAUDE_CODE)
+    return parallel_stage.reconcile_parallel_stage(
+        db_session, ticket, orch_run, PLAN_STAGE, results
+    )
+
+
+def _settled(*, armed: bool) -> BlockSettlement:
+    return BlockSettlement(kind=BlockKind.HARNESS, repair_armed=armed, reason="test settlement")
+
+
+def test_the_most_confident_rejection_picks_the_stage(db_session: Session, ticket: Ticket):
+    charge = parallel_stage.record_reroute_exhausts_budget
+    with mock.patch.object(parallel_stage, "record_reroute_exhausts_budget", wraps=charge) as spent:
+        ok, _ = _reconcile(
+            db_session,
+            ticket,
+            [
+                _rejecting("planner", to="implement", confidence=0.3),
+                _rejecting("reviewer", to="scope", confidence=0.95),
+            ],
+        )
+
+    assert ok is True
+    assert spent.call_args.kwargs["target_stage"] == "scope", "the round is charged to it"
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == "scope"
+
+
+def test_a_transient_failure_with_a_repair_turn_is_settled_without_a_block(
+    db_session: Session, ticket: Ticket
+):
+    with mock.patch.object(parallel_stage, "settle_block", return_value=_settled(armed=True)):
+        ok, message = _reconcile(db_session, ticket, [_transient("planner")])
+
+    assert (ok, message) == (True, "usage limit")
+    db_session.refresh(ticket)
+    assert ticket.state is not TicketState.BLOCKED
+
+
+def test_a_transient_failure_with_no_repair_turn_blocks_the_ticket(
+    db_session: Session, ticket: Ticket
+):
+    with mock.patch.object(parallel_stage, "settle_block", return_value=_settled(armed=False)):
+        ok, message = _reconcile(db_session, ticket, [_transient("planner")])
+
+    assert (ok, message) == (False, "usage limit")
+    db_session.refresh(ticket)
+    assert ticket.state is TicketState.BLOCKED
+    assert ticket.workflow_stage_key == PLAN_STAGE, "a transient failure reroutes nothing"
+
+
+@pytest.mark.parametrize("stop", [ReworkStopReason.BUDGET, ReworkStopReason.STUCK])
+def test_a_spent_rework_loop_pauses_for_a_person(db_session: Session, ticket: Ticket, stop):
+    with (
+        mock.patch.object(parallel_stage, "record_reroute_exhausts_budget", return_value=stop),
+        mock.patch.object(
+            parallel_stage, "split_instead_of_pausing", return_value=SplitResult(split=False)
+        ),
+        mock.patch.object(OrchestrationCallbackService, "pause_for_rework_decision") as pause,
+    ):
+        ok, message = _reconcile(
+            db_session, ticket, [_rejecting("planner", to="scope", confidence=0.9)]
+        )
+
+    assert (ok, message) == (False, "planner rejected")
+    assert pause.call_args.kwargs["target_stage"] == "scope"
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == PLAN_STAGE, "the pause reroutes nothing"
+
+
+def test_a_spent_loop_that_splits_the_ticket_neither_pauses_nor_reroutes(
+    db_session: Session, ticket: Ticket
+):
+    with (
+        mock.patch.object(
+            parallel_stage, "record_reroute_exhausts_budget", return_value=ReworkStopReason.BUDGET
+        ),
+        mock.patch.object(
+            parallel_stage, "split_instead_of_pausing", return_value=SplitResult(split=True)
+        ),
+        mock.patch.object(OrchestrationCallbackService, "pause_for_rework_decision") as pause,
+    ):
+        result = _reconcile(db_session, ticket, [_rejecting("planner", to="scope", confidence=0.9)])
+
+    assert result == (True, "")
+    pause.assert_not_called()
+    db_session.refresh(ticket)
+    assert ticket.workflow_stage_key == PLAN_STAGE
+
+
+@pytest.mark.parametrize("armed", [True, False])
+def test_a_rejection_with_nowhere_upstream_blocks_the_stage_and_offers_its_repair(
+    db_session: Session, ticket: Ticket, armed
+):
+    with (
+        mock.patch.object(parallel_stage, "apply_stage_route", side_effect=ValueError("first")),
+        mock.patch.object(parallel_stage, "settle_block", return_value=_settled(armed=armed)),
+    ):
+        ok, message = _reconcile(
+            db_session, ticket, [_rejecting("planner", to="scope", confidence=0.9)]
+        )
+
+    assert (ok, message) == (armed, "planner rejected")
+    assert _stage_status(db_session, ticket) is StageStatus.BLOCKED
+
+
+def test_a_prerequisite_that_could_not_be_linked_is_named_in_the_rework(
+    db_session: Session, ticket: Ticket
+):
+    with mock.patch.object(parallel_stage, "_link_reported_waits", return_value="lg-missing-9"):
+        _, message = _reconcile(
+            db_session, ticket, [_rejecting("planner", to="scope", confidence=0.9)]
+        )
+    assert "lg-missing-9" in message

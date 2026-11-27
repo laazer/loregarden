@@ -1,11 +1,16 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
+from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
+from loregarden.models.domain.schemas import TicketStudioSessionCreate
 from loregarden.services.ticket_studio_service import (
+    TicketStudioService,
     clarifying_questions_resolved,
     format_studio_reply_for_display,
     parse_scope_payload,
 )
+from loregarden.testing.factories import make_ticket, make_workspace
 
 SCOPE_STUB = """Here is the scoped breakdown:
 
@@ -840,3 +845,82 @@ def test_grilled_answers_survive_past_the_history_window(client: TestClient):
     assert "## Settled decisions" in prompt
     assert "Operators running unattended milestones" in prompt.split("## Conversation")[0]
     assert "## Settled decisions" not in recent
+
+
+def test_create_session_refuses_a_blank_title_and_stores_trimmed_text(db_session):
+    service = TicketStudioService(db_session)
+    with pytest.raises(ValueError):
+        service.create_session(TicketStudioSessionCreate(workspace_slug="loregarden", title="   "))
+
+    created = service.create_session(
+        TicketStudioSessionCreate(
+            workspace_slug="loregarden", title="  Scope it  ", brief="  why  "
+        )
+    )
+    assert (created.title, created.brief) == ("Scope it", "why")
+    assert created.is_preview is False
+    assert created.draft == []
+
+
+def test_create_session_refuses_an_unknown_workspace(db_session):
+    with pytest.raises(UnknownWorkspaceSlug):
+        TicketStudioService(db_session).create_session(
+            TicketStudioSessionCreate(workspace_slug="no-such-workspace", title="Scope it")
+        )
+
+
+def test_create_session_takes_a_parent_only_from_its_own_workspace(db_session):
+    home = make_workspace(db_session, slug="loregarden")
+    other = make_workspace(db_session, slug="elsewhere")
+    foreign = make_ticket(db_session, workspace_id=other.id, title="Foreign milestone")
+    own = make_ticket(db_session, workspace_id=home.id, title="Own milestone")
+    service = TicketStudioService(db_session)
+
+    for parent_id in (foreign.id, "no-such-ticket"):
+        with pytest.raises(ValueError):
+            service.create_session(
+                TicketStudioSessionCreate(
+                    workspace_slug="loregarden", title="Scope it", parent_ticket_id=parent_id
+                )
+            )
+
+    created = service.create_session(
+        TicketStudioSessionCreate(
+            workspace_slug="loregarden", title="Scope it", parent_ticket_id=own.id
+        )
+    )
+    assert created.parent_ticket_id == own.id
+
+
+def test_create_session_preview_flag_alone_makes_a_preview(db_session):
+    created = TicketStudioService(db_session).create_session(
+        TicketStudioSessionCreate(workspace_slug="loregarden", title="Scope it", is_preview=True)
+    )
+    assert created.is_preview is True
+    assert created.draft == []
+
+
+def test_create_session_turns_imported_tickets_into_a_selected_preview_draft(db_session):
+    imported = [
+        {
+            "external_id": "imp-a",
+            "title": "First",
+            "acceptance_criteria": ["a works"],
+            "priority": 1,
+        },
+        {"title": "Second"},
+    ]
+    created = TicketStudioService(db_session).create_session(
+        TicketStudioSessionCreate(
+            workspace_slug="loregarden", title="Scope it", imported_tickets=imported
+        )
+    )
+
+    assert created.is_preview is True
+    assert created.imported_tickets == imported
+    by_ref = {item.ref: item for item in created.draft}
+    assert {"imp-a", "imported-1"} <= set(by_ref)
+    assert all(item.selected for item in created.draft)
+    first = by_ref["imp-a"]
+    assert (first.title, first.acceptance_criteria, first.priority) == ("First", ["a works"], 1)
+    assert by_ref["imported-1"].title == "Second"
