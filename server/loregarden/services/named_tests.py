@@ -117,7 +117,13 @@ def _run_batches(batches: list[_Batch], root: Path, result: NamedTestRun) -> Nam
     pytest's, to an empty directory, so nothing cached in the checkout is read.
     """
     with tempfile.TemporaryDirectory(prefix="lg-named-tests-pyc-") as pycache:
-        return _run_batches_in(batches, root, result, {"PYTHONPYCACHEPREFIX": pycache})
+        # Pin the subprocess's repo root to `root`: the server's own ambient
+        # LOREGARDEN_REPO_ROOT (set by whoever launched it) would otherwise be
+        # inherited and win over cwd in server/tests/repo_paths.find_repo_root,
+        # pointing the rerun at the primary checkout's fixtures instead of this
+        # worktree's.
+        env = {"PYTHONPYCACHEPREFIX": pycache, "LOREGARDEN_REPO_ROOT": str(root)}
+        return _run_batches_in(batches, root, result, env)
 
 
 def _run_batches_in(
