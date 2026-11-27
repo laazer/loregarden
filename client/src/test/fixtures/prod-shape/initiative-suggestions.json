@@ -4,9 +4,9 @@
  "sprint": {
   "basis": "workspace_throughput",
   "capacity": 4830,
-  "committed": 1,
+  "committed": 137,
   "days": 14,
-  "planned": 459
+  "planned": 274
  },
  "suggestions": [
   {
@@ -135,107 +135,6 @@
    "empties": [],
    "items": [
     {
-     "cost": 11,
-     "external_id": "lg-m4-4",
-     "from_milestone": "",
-     "id": "df55b90d-a2be-573a-930e-e61a792f19d1",
-     "state": "in_progress",
-     "title": "M04 \u2014 Route the queue board's stalled lane",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 8,
-     "external_id": "lg-m32-32",
-     "from_milestone": "",
-     "id": "2ed27a8c-2a6f-5e30-8293-942d1e800843",
-     "state": "in_progress",
-     "title": "M32 \u2014 Route the queue board's stalled lane",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 6,
-     "external_id": "lg-m34-34",
-     "from_milestone": "",
-     "id": "6ca78352-1990-532d-b0d9-5f8ccaa5a6e8",
-     "state": "in_progress",
-     "title": "M34 \u2014 Route the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 9,
-     "external_id": "lg-m36-36",
-     "from_milestone": "",
-     "id": "a81c26c5-000b-5b4a-b633-5326b88db529",
-     "state": "backlog",
-     "title": "M36 \u2014 Route worktree isolation for chat turns",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 7,
-     "external_id": "lg-m43-43",
-     "from_milestone": "",
-     "id": "5ddbd212-d172-522b-a2bb-d34b42f50e0d",
-     "state": "backlog",
-     "title": "M43 \u2014 Route the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 8,
-     "external_id": "lg-m45-45",
-     "from_milestone": "",
-     "id": "39aa6b34-1f3c-5e0b-b4b2-c6686597d163",
-     "state": "backlog",
-     "title": "M45 \u2014 Route the queue board's stalled lane",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 9,
-     "external_id": "lg-m46-46",
-     "from_milestone": "",
-     "id": "f4d66354-ec15-598e-beb1-9ce3908ab73c",
-     "state": "backlog",
-     "title": "M46 \u2014 Route memory recall ranking",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 7,
-     "external_id": "lg-m49-49",
-     "from_milestone": "",
-     "id": "c91272f3-e826-53f2-aee4-24169ac6400d",
-     "state": "backlog",
-     "title": "M49 \u2014 Route the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 6,
-     "external_id": "blob-m8-8",
-     "from_milestone": "",
-     "id": "3628e800-a9d0-5bfb-8f33-e2b0cfa9211e",
-     "state": "backlog",
-     "title": "M08 \u2014 Route worktree isolation for chat turns",
-     "work_item_type": "milestone",
-     "workspace_slug": "blobert"
-    }
-   ],
-   "key": "theme:route",
-   "kind": "theme",
-   "rationale": "9 open milestones mention \u201croute\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
-   "target_date": null,
-   "title": "Route the"
-  },
-  {
-   "description": "",
-   "empties": [],
-   "items": [
-    {
      "cost": 9,
      "external_id": "lg-m9-9",
      "from_milestone": "",
@@ -321,6 +220,97 @@
    "rationale": "8 open milestones mention \u201csync\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
    "target_date": null,
    "title": "Way sync"
+  },
+  {
+   "description": "",
+   "empties": [],
+   "items": [
+    {
+     "cost": 11,
+     "external_id": "lg-m4-4",
+     "from_milestone": "",
+     "id": "df55b90d-a2be-573a-930e-e61a792f19d1",
+     "state": "in_progress",
+     "title": "M04 \u2014 Route the queue board's stalled lane",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 8,
+     "external_id": "lg-m32-32",
+     "from_milestone": "",
+     "id": "2ed27a8c-2a6f-5e30-8293-942d1e800843",
+     "state": "in_progress",
+     "title": "M32 \u2014 Route the queue board's stalled lane",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 6,
+     "external_id": "lg-m34-34",
+     "from_milestone": "",
+     "id": "6ca78352-1990-532d-b0d9-5f8ccaa5a6e8",
+     "state": "in_progress",
+     "title": "M34 \u2014 Route the run log's live tail",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 9,
+     "external_id": "lg-m36-36",
+     "from_milestone": "",
+     "id": "a81c26c5-000b-5b4a-b633-5326b88db529",
+     "state": "backlog",
+     "title": "M36 \u2014 Route worktree isolation for chat turns",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 7,
+     "external_id": "lg-m43-43",
+     "from_milestone": "",
+     "id": "5ddbd212-d172-522b-a2bb-d34b42f50e0d",
+     "state": "backlog",
+     "title": "M43 \u2014 Route the run log's live tail",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 8,
+     "external_id": "lg-m45-45",
+     "from_milestone": "",
+     "id": "39aa6b34-1f3c-5e0b-b4b2-c6686597d163",
+     "state": "backlog",
+     "title": "M45 \u2014 Route the queue board's stalled lane",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 7,
+     "external_id": "lg-m49-49",
+     "from_milestone": "",
+     "id": "c91272f3-e826-53f2-aee4-24169ac6400d",
+     "state": "backlog",
+     "title": "M49 \u2014 Route the run log's live tail",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 6,
+     "external_id": "blob-m8-8",
+     "from_milestone": "",
+     "id": "3628e800-a9d0-5bfb-8f33-e2b0cfa9211e",
+     "state": "backlog",
+     "title": "M08 \u2014 Route worktree isolation for chat turns",
+     "work_item_type": "milestone",
+     "workspace_slug": "blobert"
+    }
+   ],
+   "key": "theme:route",
+   "kind": "theme",
+   "rationale": "8 open milestones mention \u201croute\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
+   "target_date": null,
+   "title": "Route the"
   },
   {
    "description": "",
@@ -440,108 +430,6 @@
    "items": [
     {
      "cost": 8,
-     "external_id": "lg-m1-1",
-     "from_milestone": "",
-     "id": "cc241d9a-4dde-585c-8211-6162d1cc835a",
-     "state": "in_progress",
-     "title": "M01 \u2014 Fix the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 10,
-     "external_id": "lg-m16-16",
-     "from_milestone": "",
-     "id": "e9a3ee2c-f9d8-52b3-a282-75b1a85ab3ea",
-     "state": "in_progress",
-     "title": "M16 \u2014 Add the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 9,
-     "external_id": "lg-m23-23",
-     "from_milestone": "",
-     "id": "d9388773-4c0e-5be0-b102-6359f631239b",
-     "state": "backlog",
-     "title": "M23 \u2014 Make the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 5,
-     "external_id": "blob-m7-7",
-     "from_milestone": "",
-     "id": "788d4fdc-f612-5c30-af8c-cf32253c09d1",
-     "state": "backlog",
-     "title": "M07 \u2014 Add the run log's live tail",
-     "work_item_type": "milestone",
-     "workspace_slug": "blobert"
-    }
-   ],
-   "key": "theme:tail",
-   "kind": "theme",
-   "rationale": "4 open milestones mention \u201ctail\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
-   "target_date": null,
-   "title": "Live tail"
-  },
-  {
-   "description": "",
-   "empties": [],
-   "items": [
-    {
-     "cost": 8,
-     "external_id": "lg-m3-3",
-     "from_milestone": "",
-     "id": "c5aa36d9-c7a9-5ef9-9abc-95bf75238779",
-     "state": "backlog",
-     "title": "M03 \u2014 Surface the rework ledger's loop cap",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 7,
-     "external_id": "lg-m7-7",
-     "from_milestone": "",
-     "id": "c2b44d86-261d-537e-8f17-f5e08c66d56b",
-     "state": "in_progress",
-     "title": "M07 \u2014 Surface memory recall ranking",
-     "work_item_type": "milestone",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 4,
-     "external_id": "blob-m1-1",
-     "from_milestone": "",
-     "id": "6a9ca7b5-3673-55a9-9824-b41bebb4747a",
-     "state": "in_progress",
-     "title": "M01 \u2014 Surface memory recall ranking",
-     "work_item_type": "milestone",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 2,
-     "external_id": "lmkr-m6-6",
-     "from_milestone": "",
-     "id": "2ed882fb-d88f-5b94-887d-8b685b4db15d",
-     "state": "in_progress",
-     "title": "M06 \u2014 Surface docker capacity leases",
-     "work_item_type": "milestone",
-     "workspace_slug": "loremaker"
-    }
-   ],
-   "key": "theme:surface",
-   "kind": "theme",
-   "rationale": "4 open milestones mention \u201csurface\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
-   "target_date": null,
-   "title": "Surface work"
-  },
-  {
-   "description": "",
-   "empties": [],
-   "items": [
-    {
-     "cost": 8,
      "external_id": "lg-m31-31",
      "from_milestone": "",
      "id": "b1ecdb6d-75de-5b3e-8765-35ebe3bcab16",
@@ -588,71 +476,102 @@
    "title": "Board stalled"
   },
   {
+   "description": "",
+   "empties": [],
+   "items": [
+    {
+     "cost": 12,
+     "external_id": "lg-m15-15",
+     "from_milestone": "",
+     "id": "91787e0b-a7b9-5d5a-a82c-e0a0b9aec022",
+     "state": "blocked",
+     "title": "M15 \u2014 Make initiative progress rollup",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 10,
+     "external_id": "lg-m26-26",
+     "from_milestone": "",
+     "id": "39102f82-68e3-5511-b13b-cef9d34d46b7",
+     "state": "backlog",
+     "title": "M26 \u2014 Split initiative progress rollup",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 7,
+     "external_id": "lor-m2-2",
+     "from_milestone": "",
+     "id": "2ce7f878-0015-5d08-bb89-36fe79fc3d05",
+     "state": "backlog",
+     "title": "M02 \u2014 Fix initiative progress rollup",
+     "work_item_type": "milestone",
+     "workspace_slug": "lore-eden"
+    }
+   ],
+   "key": "theme:rollup",
+   "kind": "theme",
+   "rationale": "3 open milestones mention \u201crollup\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
+   "target_date": null,
+   "title": "Progress rollup"
+  },
+  {
+   "description": "",
+   "empties": [],
+   "items": [
+    {
+     "cost": 8,
+     "external_id": "lg-m3-3",
+     "from_milestone": "",
+     "id": "c5aa36d9-c7a9-5ef9-9abc-95bf75238779",
+     "state": "backlog",
+     "title": "M03 \u2014 Surface the rework ledger's loop cap",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 11,
+     "external_id": "lg-m30-30",
+     "from_milestone": "",
+     "id": "16ed366e-99af-5d00-a76a-96170911cc30",
+     "state": "backlog",
+     "title": "M30 \u2014 Cache the rework ledger's loop cap",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    },
+    {
+     "cost": 8,
+     "external_id": "lg-m42-42",
+     "from_milestone": "",
+     "id": "c6244a4a-518d-5622-8a52-182867de8b55",
+     "state": "backlog",
+     "title": "M42 \u2014 Cache the rework ledger's loop cap",
+     "work_item_type": "milestone",
+     "workspace_slug": "loregarden"
+    }
+   ],
+   "key": "theme:rework",
+   "kind": "theme",
+   "rationale": "3 open milestones mention \u201crework\u201d. A keyword match \u2014 check they serve one goal, or ask the agent to regroup.",
+   "target_date": null,
+   "title": "The rework"
+  },
+  {
    "description": "A 14-day sprint, 2026-09-28 to 2026-10-12.",
    "empties": [
-    "blob-m1-1",
     "blob-m10-10",
     "blob-m11-11",
     "blob-m4-4",
     "blob-m5-5",
-    "blob-m6-6",
     "blob-m7-7",
     "blob-m9-9",
-    "lg-m1-1",
-    "lg-m10-10",
-    "lg-m12-12",
-    "lg-m13-13",
-    "lg-m14-14",
-    "lg-m16-16",
-    "lg-m17-17",
-    "lg-m18-18",
-    "lg-m19-19",
-    "lg-m21-21",
-    "lg-m23-23",
-    "lg-m25-25",
-    "lg-m26-26",
-    "lg-m27-27",
-    "lg-m28-28",
-    "lg-m3-3",
-    "lg-m30-30",
-    "lg-m31-31",
-    "lg-m32-32",
-    "lg-m33-33",
-    "lg-m34-34",
-    "lg-m35-35",
-    "lg-m36-36",
-    "lg-m37-37",
-    "lg-m38-38",
-    "lg-m39-39",
-    "lg-m42-42",
-    "lg-m43-43",
-    "lg-m45-45",
-    "lg-m47-47",
-    "lg-m48-48",
-    "lg-m49-49",
-    "lg-m52-52",
-    "lg-m53-53",
-    "lg-m54-54",
-    "lg-m6-6",
-    "lg-m7-7",
-    "lg-m9-9",
     "lmkr-m2-2",
-    "lmkr-m6-6",
     "lor-m1-1",
     "lor-m2-2",
     "lor-m4-4"
    ],
    "items": [
-    {
-     "cost": 1,
-     "external_id": "lg-m13-66",
-     "from_milestone": "lg-m13-13",
-     "id": "d05f7ebe-ffc1-5434-a71a-c60fb6f42a3a",
-     "state": "in_progress",
-     "title": "Retry stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
     {
      "cost": 2,
      "external_id": "lg-m41-256",
@@ -692,16 +611,6 @@
      "title": "Cache branch cleanup after a squash merge",
      "work_item_type": "feature",
      "workspace_slug": "lore-eden"
-    },
-    {
-     "cost": 3,
-     "external_id": "lg-m26-133",
-     "from_milestone": "lg-m26-26",
-     "id": "22c9e0fd-e1bd-5e29-ae0f-1e161f5f3467",
-     "state": "in_progress",
-     "title": "Add worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
     },
     {
      "cost": 1,
@@ -754,346 +663,6 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 2,
-     "external_id": "lg-m6-59",
-     "from_milestone": "lg-m6-6",
-     "id": "88bc464a-abc6-5ad1-b54a-2b964b986fe9",
-     "state": "backlog",
-     "title": "Stop stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-60",
-     "from_milestone": "lg-m7-7",
-     "id": "6a70109b-0e08-561a-bbee-3b363a9aa99f",
-     "state": "backlog",
-     "title": "Retry GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-69",
-     "from_milestone": "lg-m16-16",
-     "id": "40f40e94-aa10-5c6e-ae49-0cd24ec88505",
-     "state": "backlog",
-     "title": "Make docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m19-72",
-     "from_milestone": "lg-m19-19",
-     "id": "2cc3ec3a-4bea-5681-9238-80172acfee0c",
-     "state": "backlog",
-     "title": "Fix worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m31-84",
-     "from_milestone": "lg-m31-31",
-     "id": "221bc95f-b11b-5f11-8d9c-42f654dc97ac",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m32-85",
-     "from_milestone": "lg-m32-32",
-     "id": "5728fcc9-a37e-527d-b089-e5bcccbe06d7",
-     "state": "backlog",
-     "title": "Add memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m34-87",
-     "from_milestone": "lg-m34-34",
-     "id": "32aa772b-0bf6-591a-abf7-77352ed2132a",
-     "state": "backlog",
-     "title": "Retry branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-88",
-     "from_milestone": "lg-m35-35",
-     "id": "60b0aa8c-5400-572e-8aac-832b730d4ba0",
-     "state": "backlog",
-     "title": "Show the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m41-94",
-     "from_milestone": "lg-m41-41",
-     "id": "f40196ce-93b1-52aa-90df-5ac6f1ebc24d",
-     "state": "backlog",
-     "title": "Split the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m53-106",
-     "from_milestone": "lg-m53-53",
-     "id": "538ceab8-0653-5a2c-af1c-c4f57dc756d6",
-     "state": "backlog",
-     "title": "Make the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m1-108",
-     "from_milestone": "lg-m1-1",
-     "id": "5ee3a9e2-5d78-5a27-8a15-c81e74dfeb6d",
-     "state": "backlog",
-     "title": "Split the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m4-111",
-     "from_milestone": "lg-m4-4",
-     "id": "56533cb2-0ec9-55e7-b69b-d436a84158b3",
-     "state": "backlog",
-     "title": "Route branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m6-113",
-     "from_milestone": "lg-m6-6",
-     "id": "dfdc3898-e879-5b2e-aa0d-0e36f0f87163",
-     "state": "backlog",
-     "title": "Stop the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-114",
-     "from_milestone": "lg-m7-7",
-     "id": "59bd335b-3ab5-5ca1-a236-8af0a795fbff",
-     "state": "backlog",
-     "title": "Fix stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m13-120",
-     "from_milestone": "lg-m13-13",
-     "id": "b95cbf2d-798f-557f-8e0e-3067196d455e",
-     "state": "backlog",
-     "title": "Stop stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-123",
-     "from_milestone": "lg-m16-16",
-     "id": "a03f5ca0-18cc-5ebd-8a21-5b4a72a454ac",
-     "state": "backlog",
-     "title": "Stop stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m19-126",
-     "from_milestone": "lg-m19-19",
-     "id": "39dc7996-be54-5bb6-8133-87fb125916a1",
-     "state": "backlog",
-     "title": "Add memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m31-138",
-     "from_milestone": "lg-m31-31",
-     "id": "156cb9f1-eb51-59f2-b7cb-c558c16278e5",
-     "state": "backlog",
-     "title": "Make the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m34-141",
-     "from_milestone": "lg-m34-34",
-     "id": "7115dde9-4a1b-569b-9ebd-260b9fd0b324",
-     "state": "backlog",
-     "title": "Retry GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-142",
-     "from_milestone": "lg-m35-35",
-     "id": "f3c526a3-b984-56bf-a2e0-7762fd4c3a0a",
-     "state": "backlog",
-     "title": "Retry worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m41-148",
-     "from_milestone": "lg-m41-41",
-     "id": "7df30346-9876-598e-9a98-df0bbf036226",
-     "state": "backlog",
-     "title": "Split the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m53-160",
-     "from_milestone": "lg-m53-53",
-     "id": "82ef63c7-4413-5fec-83ce-9c8727e2b41e",
-     "state": "backlog",
-     "title": "Split docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m54-161",
-     "from_milestone": "lg-m54-54",
-     "id": "37fa3713-e894-55f0-ac7c-ee10cc5920f0",
-     "state": "backlog",
-     "title": "Retry the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m4-165",
-     "from_milestone": "lg-m4-4",
-     "id": "882295d5-deb6-54f6-8483-ce2b637dc42e",
-     "state": "backlog",
-     "title": "Surface stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m6-167",
-     "from_milestone": "lg-m6-6",
-     "id": "393a73e4-dc5d-5671-92d3-7bcf419065e6",
-     "state": "backlog",
-     "title": "Fix memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m13-174",
-     "from_milestone": "lg-m13-13",
-     "id": "a2b4d3f8-215f-52f5-94b8-8ef70305d2a1",
-     "state": "backlog",
-     "title": "Show stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-177",
-     "from_milestone": "lg-m16-16",
-     "id": "1b79b2c9-4f77-5e68-82ab-a2f37fbb6fd8",
-     "state": "backlog",
-     "title": "Route the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m19-180",
-     "from_milestone": "lg-m19-19",
-     "id": "35777652-f2d7-5fa3-8d34-20e70b76c4bb",
-     "state": "backlog",
-     "title": "Split initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m31-192",
-     "from_milestone": "lg-m31-31",
-     "id": "72ea208f-8476-52a9-8397-ab91c8f4f708",
-     "state": "backlog",
-     "title": "Fix GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m34-195",
-     "from_milestone": "lg-m34-34",
-     "id": "a23178a1-e550-5765-81cf-c7512490703b",
-     "state": "backlog",
-     "title": "Cache memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-196",
-     "from_milestone": "lg-m35-35",
-     "id": "5c381e60-dbce-5045-8e5c-ccc307921e5c",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m41-202",
-     "from_milestone": "lg-m41-41",
-     "id": "df1a1a29-f339-51b1-9db3-840949e1d53f",
-     "state": "backlog",
-     "title": "Stop memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m54-215",
-     "from_milestone": "lg-m54-54",
-     "id": "f4d3d36b-5ad0-50ca-8404-5fdf02a91203",
-     "state": "backlog",
-     "title": "Show GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m1-216",
-     "from_milestone": "lg-m1-1",
-     "id": "63349435-8107-5285-b3e1-c0b8f1ec90b2",
-     "state": "backlog",
-     "title": "Split worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 1,
      "external_id": "lg-m4-219",
      "from_milestone": "lg-m4-4",
@@ -1105,41 +674,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m6-221",
-     "from_milestone": "lg-m6-6",
-     "id": "47c956bb-3002-5570-ad21-fbea96b4b1eb",
-     "state": "backlog",
-     "title": "Retry docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m7-222",
-     "from_milestone": "lg-m7-7",
-     "id": "cd0cae63-aaa1-5a1e-b948-d301d85ba75b",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m13-228",
      "from_milestone": "lg-m13-13",
      "id": "af84fa89-2505-50dc-a8d9-2bd3b1414e5d",
      "state": "backlog",
      "title": "Cache GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-231",
-     "from_milestone": "lg-m16-16",
-     "id": "f322a873-00d5-5e5d-a2e7-f7d47a4eb042",
-     "state": "backlog",
-     "title": "Fix GitHub issue two-way sync",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1165,16 +704,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m35-250",
-     "from_milestone": "lg-m35-35",
-     "id": "cb0808c5-1321-514c-a807-1ac205da9c04",
-     "state": "backlog",
-     "title": "Fix the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m53-268",
      "from_milestone": "lg-m53-53",
      "id": "ebceebca-5b33-5c0d-b131-f5db648aeba3",
@@ -1194,42 +723,12 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 2,
-     "external_id": "lg-m1-270",
-     "from_milestone": "lg-m1-1",
-     "id": "ba36f476-1d42-57b6-91c2-eadc02b6471d",
-     "state": "backlog",
-     "title": "Show stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 3,
      "external_id": "lg-m4-273",
      "from_milestone": "lg-m4-4",
      "id": "46806a70-c1f6-57b9-a317-6c630a070904",
      "state": "backlog",
      "title": "Split GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m6-275",
-     "from_milestone": "lg-m6-6",
-     "id": "2398f008-dec1-5507-8cd6-d6e01ec7a0d5",
-     "state": "backlog",
-     "title": "Add gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-276",
-     "from_milestone": "lg-m7-7",
-     "id": "9d1bc9e3-b51d-5e77-8bc3-b2d75f8accfc",
-     "state": "backlog",
-     "title": "Route worktree isolation for chat turns",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1245,31 +744,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m16-285",
-     "from_milestone": "lg-m16-16",
-     "id": "e79e4129-cb3c-566e-9b7a-dab8b89a8158",
-     "state": "backlog",
-     "title": "Stop the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m19-288",
      "from_milestone": "lg-m19-19",
      "id": "44d8c566-76d2-5028-86bb-596157fcd476",
      "state": "backlog",
      "title": "Retry stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-304",
-     "from_milestone": "lg-m35-35",
-     "id": "c82acf66-cd97-550a-b893-96597e662030",
-     "state": "backlog",
-     "title": "Cache docker capacity leases",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1304,16 +783,6 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 2,
-     "external_id": "lg-m1-324",
-     "from_milestone": "lg-m1-1",
-     "id": "245aab90-7354-517f-9a14-bc2691ae8a0b",
-     "state": "backlog",
-     "title": "Show the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 1,
      "external_id": "lg-m4-327",
      "from_milestone": "lg-m4-4",
@@ -1324,52 +793,12 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 1,
-     "external_id": "lg-m6-329",
-     "from_milestone": "lg-m6-6",
-     "id": "c243c97d-c591-5c31-a7e8-1259ed90ad79",
-     "state": "backlog",
-     "title": "Surface branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-330",
-     "from_milestone": "lg-m7-7",
-     "id": "e24378be-77a9-5d8d-a7c1-db0e501580d4",
-     "state": "backlog",
-     "title": "Surface the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-339",
-     "from_milestone": "lg-m16-16",
-     "id": "98e5dfc0-008b-550c-8202-f346ed81fdb5",
-     "state": "backlog",
-     "title": "Stop the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 2,
      "external_id": "lg-m32-355",
      "from_milestone": "lg-m32-32",
      "id": "4379de29-5bf5-5b64-a4a0-9f356469f74c",
      "state": "backlog",
      "title": "Make the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-358",
-     "from_milestone": "lg-m35-35",
-     "id": "ce8212db-451d-5d05-871b-994ae510b913",
-     "state": "backlog",
-     "title": "Surface the queue board's stalled lane",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1395,31 +824,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m1-378",
-     "from_milestone": "lg-m1-1",
-     "id": "e4fdce19-b39c-5565-8a44-d7323c529afb",
-     "state": "backlog",
-     "title": "Add worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m13-390",
      "from_milestone": "lg-m13-13",
      "id": "2e2d9a8b-a24d-5b98-a0d1-77766de9339d",
      "state": "backlog",
      "title": "Surface GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m16-393",
-     "from_milestone": "lg-m16-16",
-     "id": "c8d23203-413c-5f6e-aef1-ec1837b3a9d1",
-     "state": "backlog",
-     "title": "Show stage timeout budgets",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1450,16 +859,6 @@
      "id": "ad0518ee-9560-5a47-99d5-0c138f0d77d3",
      "state": "backlog",
      "title": "Split the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m35-412",
-     "from_milestone": "lg-m35-35",
-     "id": "d3040db9-09cb-568c-b14c-3179a269fb00",
-     "state": "backlog",
-     "title": "Fix memory recall ranking",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1500,26 +899,6 @@
      "id": "56f42550-e8a0-578e-8015-c94ee61c3b4a",
      "state": "backlog",
      "title": "Route the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m6-437",
-     "from_milestone": "lg-m6-6",
-     "id": "a91ba0f9-ff26-5e06-8cc7-afc24b62069c",
-     "state": "backlog",
-     "title": "Stop memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m7-438",
-     "from_milestone": "lg-m7-7",
-     "id": "76d241b9-5264-5958-a131-04938b3653a6",
-     "state": "backlog",
-     "title": "Stop stage timeout budgets",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -1575,51 +954,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m35-466",
-     "from_milestone": "lg-m35-35",
-     "id": "753c39df-b85f-5610-9f1e-b5f71da26479",
-     "state": "backlog",
-     "title": "Route initiative progress rollup",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m1-486",
-     "from_milestone": "lg-m1-1",
-     "id": "2c9ca3a5-5f76-5b55-a995-97cfd41e3666",
-     "state": "backlog",
-     "title": "Retry stage timeout budgets",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m4-489",
      "from_milestone": "lg-m4-4",
      "id": "2bfcd57b-19d5-5db9-b5d0-2834c6fc158c",
      "state": "backlog",
      "title": "Cache the rework ledger's loop cap",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-501",
-     "from_milestone": "lg-m16-16",
-     "id": "38b24f6b-0fcb-5b0a-9c5e-64cbac4d5787",
-     "state": "backlog",
-     "title": "Stop the run log's live tail",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m6-545",
-     "from_milestone": "lg-m6-6",
-     "id": "8d8064c2-e6a7-5c26-98c8-d98d442132db",
-     "state": "backlog",
-     "title": "Split GitHub issue two-way sync",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -1635,31 +974,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m35-574",
-     "from_milestone": "lg-m35-35",
-     "id": "03bb7db2-dad6-5dbc-bef2-9c328d1a5d4b",
-     "state": "backlog",
-     "title": "Stop the approval inbox for parked stages",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m54-593",
      "from_milestone": "lg-m54-54",
      "id": "75dd3bcd-1720-5a18-8801-0940451f8cc0",
      "state": "backlog",
      "title": "Surface GitHub issue two-way sync",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m16-609",
-     "from_milestone": "lg-m16-16",
-     "id": "43a6517f-a4d3-57b6-ab69-483ac9c47f94",
-     "state": "backlog",
-     "title": "Route the approval inbox for parked stages",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -1704,16 +1023,6 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 2,
-     "external_id": "blob-m1-22",
-     "from_milestone": "blob-m1-1",
-     "id": "d4babfbc-6c95-5c8c-a8fc-a955554c7050",
-     "state": "backlog",
-     "title": "Fix the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
      "cost": 1,
      "external_id": "blob-m5-26",
      "from_milestone": "blob-m5-5",
@@ -1735,31 +1044,11 @@
     },
     {
      "cost": 1,
-     "external_id": "blob-m1-33",
-     "from_milestone": "blob-m1-1",
-     "id": "af3a4115-c17c-5afb-a072-9e97e47acac5",
-     "state": "backlog",
-     "title": "Split the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
      "external_id": "blob-m5-37",
      "from_milestone": "blob-m5-5",
      "id": "15846842-9c43-58a9-96e4-7a4766908b5b",
      "state": "backlog",
      "title": "Surface stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m1-44",
-     "from_milestone": "blob-m1-1",
-     "id": "8e49cd4d-8cff-5755-a560-329035b59ee1",
-     "state": "backlog",
-     "title": "Retry memory recall ranking",
      "work_item_type": "feature",
      "workspace_slug": "blobert"
     },
@@ -1842,636 +1131,6 @@
      "title": "Stop memory recall ranking",
      "work_item_type": "bug",
      "workspace_slug": "lore-eden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lmkr-m6-17",
-     "from_milestone": "lmkr-m6-6",
-     "id": "d6c31971-b38c-5216-b899-7b67ef2442fc",
-     "state": "backlog",
-     "title": "Make worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loremaker"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m9-62",
-     "from_milestone": "lg-m9-9",
-     "id": "f3153076-60f6-5957-99f2-4f90d580d629",
-     "state": "backlog",
-     "title": "Stop worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m10-63",
-     "from_milestone": "lg-m10-10",
-     "id": "05be8e7d-0eec-5955-9f4f-37be04f115a5",
-     "state": "backlog",
-     "title": "Surface the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m12-65",
-     "from_milestone": "lg-m12-12",
-     "id": "262e3a0a-b675-52d9-895b-53f506a39750",
-     "state": "backlog",
-     "title": "Stop worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m14-67",
-     "from_milestone": "lg-m14-14",
-     "id": "133f7d64-c10e-5c5b-b50b-11aa4162113e",
-     "state": "backlog",
-     "title": "Surface worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m15-68",
-     "from_milestone": "lg-m15-15",
-     "id": "801d6e59-9cb6-5285-adfd-bef205660be4",
-     "state": "backlog",
-     "title": "Retry memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m17-70",
-     "from_milestone": "lg-m17-17",
-     "id": "821b09db-9ae2-5c63-8c2f-6ca417a8bf6c",
-     "state": "backlog",
-     "title": "Fix GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m23-76",
-     "from_milestone": "lg-m23-23",
-     "id": "06f87cb5-cd81-5570-a415-33e9abf2bf14",
-     "state": "backlog",
-     "title": "Show memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m25-78",
-     "from_milestone": "lg-m25-25",
-     "id": "2d7f2b14-b93b-52bd-8ec3-aad8e4d5a518",
-     "state": "backlog",
-     "title": "Route the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m27-80",
-     "from_milestone": "lg-m27-27",
-     "id": "82a91017-1238-5e30-8545-dd1142d33676",
-     "state": "backlog",
-     "title": "Split memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 3,
-     "external_id": "lg-m30-83",
-     "from_milestone": "lg-m30-30",
-     "id": "66cc36d5-9da8-50ec-8bfa-439b61cac757",
-     "state": "backlog",
-     "title": "Retry worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m33-86",
-     "from_milestone": "lg-m33-33",
-     "id": "8bf88d75-9ed6-52c1-974c-d6855cc85380",
-     "state": "backlog",
-     "title": "Surface stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m36-89",
-     "from_milestone": "lg-m36-36",
-     "id": "d906d518-ad44-504b-9586-03cf907c1e89",
-     "state": "backlog",
-     "title": "Make the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m38-91",
-     "from_milestone": "lg-m38-38",
-     "id": "cc5f3729-36f6-547d-85d6-dd0823e60294",
-     "state": "backlog",
-     "title": "Add GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m42-95",
-     "from_milestone": "lg-m42-42",
-     "id": "da6f586a-470c-5ab7-9213-7d407ac949ef",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m43-96",
-     "from_milestone": "lg-m43-43",
-     "id": "97c36b1a-a819-5059-b948-5b1afcd2f72f",
-     "state": "backlog",
-     "title": "Show docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m45-98",
-     "from_milestone": "lg-m45-45",
-     "id": "d9a67bfc-2ec1-58e2-9344-c0441df0977b",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-99",
-     "from_milestone": "lg-m46-46",
-     "id": "d2eaf1b9-560a-574d-87ee-3cbe8e11f377",
-     "state": "backlog",
-     "title": "Stop the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m47-100",
-     "from_milestone": "lg-m47-47",
-     "id": "c87c719c-7bc3-5ea8-9aad-75c07ad1944c",
-     "state": "backlog",
-     "title": "Fix the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m48-101",
-     "from_milestone": "lg-m48-48",
-     "id": "57a43ec1-4777-5459-a664-ef02feb86665",
-     "state": "backlog",
-     "title": "Show the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m52-105",
-     "from_milestone": "lg-m52-52",
-     "id": "0c6b7382-77e1-5e2f-a0a3-fa777a4fec4a",
-     "state": "backlog",
-     "title": "Retry worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m3-110",
-     "from_milestone": "lg-m3-3",
-     "id": "bd0ace29-e3a6-505f-a433-bd5b5c96410a",
-     "state": "backlog",
-     "title": "Split memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m9-116",
-     "from_milestone": "lg-m9-9",
-     "id": "3f8a56e7-7694-5249-a253-bedb20556fcc",
-     "state": "backlog",
-     "title": "Route branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m10-117",
-     "from_milestone": "lg-m10-10",
-     "id": "f2052494-e0df-59cd-9154-2bcdc3123938",
-     "state": "backlog",
-     "title": "Route the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m14-121",
-     "from_milestone": "lg-m14-14",
-     "id": "c1e4a181-bbdb-5a9a-bcd1-15ce3d0e9684",
-     "state": "backlog",
-     "title": "Split docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m17-124",
-     "from_milestone": "lg-m17-17",
-     "id": "052188b0-fee7-501c-89db-7073c8981701",
-     "state": "backlog",
-     "title": "Route gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m18-125",
-     "from_milestone": "lg-m18-18",
-     "id": "0004f4d8-0ffc-5b90-bb94-8ee276324b2d",
-     "state": "backlog",
-     "title": "Route memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m21-128",
-     "from_milestone": "lg-m21-21",
-     "id": "8dccf859-e143-566e-b2df-d2ee69247521",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m23-130",
-     "from_milestone": "lg-m23-23",
-     "id": "45abb628-41a0-530e-9fe3-171476981612",
-     "state": "backlog",
-     "title": "Stop gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m25-132",
-     "from_milestone": "lg-m25-25",
-     "id": "41d55739-f657-5e69-8af1-2ac871929f80",
-     "state": "backlog",
-     "title": "Add the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m27-134",
-     "from_milestone": "lg-m27-27",
-     "id": "ab5c8230-0839-5cfc-9d7a-de9c9f8d1767",
-     "state": "backlog",
-     "title": "Split branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m28-135",
-     "from_milestone": "lg-m28-28",
-     "id": "608b7d42-8c68-5dab-ba0c-36c50f6249d0",
-     "state": "backlog",
-     "title": "Make the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m30-137",
-     "from_milestone": "lg-m30-30",
-     "id": "450de5a4-044c-5c36-b54c-1e849faa5a5b",
-     "state": "backlog",
-     "title": "Stop the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 3,
-     "external_id": "lg-m33-140",
-     "from_milestone": "lg-m33-33",
-     "id": "e2bc1413-76cd-5a61-95fd-9a90d7262bad",
-     "state": "backlog",
-     "title": "Show gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m36-143",
-     "from_milestone": "lg-m36-36",
-     "id": "b31570ba-ea71-5d79-a2d4-003d24f2453d",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m38-145",
-     "from_milestone": "lg-m38-38",
-     "id": "a742392a-b8c3-57fb-91b4-35cd18bf022f",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m39-146",
-     "from_milestone": "lg-m39-39",
-     "id": "00f32c53-826d-52c0-9dbb-c1834bd4e89f",
-     "state": "backlog",
-     "title": "Split memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m42-149",
-     "from_milestone": "lg-m42-42",
-     "id": "ff8430b3-ffb0-5216-aeb9-619766985cb9",
-     "state": "backlog",
-     "title": "Route memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m43-150",
-     "from_milestone": "lg-m43-43",
-     "id": "3c1700de-da14-5082-b9df-a015d73d764e",
-     "state": "backlog",
-     "title": "Add worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m45-152",
-     "from_milestone": "lg-m45-45",
-     "id": "38dfadce-d478-5e18-bcb2-aebd84d1d762",
-     "state": "backlog",
-     "title": "Surface the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-153",
-     "from_milestone": "lg-m46-46",
-     "id": "0f1fdbec-33e5-5134-875a-8d2ca2ad4861",
-     "state": "backlog",
-     "title": "Split stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m52-159",
-     "from_milestone": "lg-m52-52",
-     "id": "7233eb55-122e-56e6-9439-c3cd36eb6135",
-     "state": "backlog",
-     "title": "Cache the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m14-175",
-     "from_milestone": "lg-m14-14",
-     "id": "45aad52a-0f40-560b-baad-07b16e4abbc9",
-     "state": "backlog",
-     "title": "Show the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m15-176",
-     "from_milestone": "lg-m15-15",
-     "id": "17e04c79-049a-5f61-bb1d-060c040bf5f7",
-     "state": "backlog",
-     "title": "Cache GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m17-178",
-     "from_milestone": "lg-m17-17",
-     "id": "897dc273-f0ea-51df-9a59-bfb581ee91ad",
-     "state": "backlog",
-     "title": "Retry the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m18-179",
-     "from_milestone": "lg-m18-18",
-     "id": "78be34ce-f6b6-52c6-8f33-d721afe3291a",
-     "state": "backlog",
-     "title": "Fix the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m21-182",
-     "from_milestone": "lg-m21-21",
-     "id": "630c818a-7639-5a79-bf99-b0bd77e376e3",
-     "state": "backlog",
-     "title": "Stop GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m25-186",
-     "from_milestone": "lg-m25-25",
-     "id": "61adeff2-32a9-5c9e-bc56-22e02e9df4b0",
-     "state": "backlog",
-     "title": "Show memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m26-187",
-     "from_milestone": "lg-m26-26",
-     "id": "91a96c54-def3-56cb-be42-e0f230fee383",
-     "state": "backlog",
-     "title": "Route initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m27-188",
-     "from_milestone": "lg-m27-27",
-     "id": "37b06363-1b77-5251-8a48-7341c619a200",
-     "state": "backlog",
-     "title": "Split initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m28-189",
-     "from_milestone": "lg-m28-28",
-     "id": "c46bc187-09cd-5b47-b939-4469c0596940",
-     "state": "backlog",
-     "title": "Route the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m30-191",
-     "from_milestone": "lg-m30-30",
-     "id": "ef6a2220-ab64-57ca-9cff-1c1ac183d5e4",
-     "state": "backlog",
-     "title": "Surface initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m33-194",
-     "from_milestone": "lg-m33-33",
-     "id": "1bd78ce1-2c1d-524c-bf2f-78dc46db57c8",
-     "state": "backlog",
-     "title": "Show memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m36-197",
-     "from_milestone": "lg-m36-36",
-     "id": "9e613bdd-34bf-5f19-8bc7-949c74fbb3fe",
-     "state": "backlog",
-     "title": "Surface GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m37-198",
-     "from_milestone": "lg-m37-37",
-     "id": "e66798b7-6d26-5229-a9bd-9cda372d36e4",
-     "state": "backlog",
-     "title": "Route the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m38-199",
-     "from_milestone": "lg-m38-38",
-     "id": "702380fc-e6d8-5ce1-8b0c-917837f840b5",
-     "state": "backlog",
-     "title": "Split GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m39-200",
-     "from_milestone": "lg-m39-39",
-     "id": "beffc3b2-335b-5926-babf-61db61303eb7",
-     "state": "backlog",
-     "title": "Stop the queue board's stalled lane",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m42-203",
-     "from_milestone": "lg-m42-42",
-     "id": "d84598db-3cd9-5009-bd75-38d3efe2d627",
-     "state": "backlog",
-     "title": "Surface worktree isolation for chat turns",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m43-204",
-     "from_milestone": "lg-m43-43",
-     "id": "e8534274-fd9f-5840-afe7-389433eb7b37",
-     "state": "backlog",
-     "title": "Retry the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-207",
-     "from_milestone": "lg-m46-46",
-     "id": "7b908e33-7697-58f7-ab59-5eca50f59535",
-     "state": "backlog",
-     "title": "Add initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m47-208",
-     "from_milestone": "lg-m47-47",
-     "id": "dbadfcb9-5302-5278-b122-8d4e2bf3132c",
-     "state": "backlog",
-     "title": "Route GitHub issue two-way sync",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m49-210",
-     "from_milestone": "lg-m49-49",
-     "id": "2a9c21c6-80a7-5f0a-865a-99b8a162f20b",
-     "state": "backlog",
-     "title": "Retry the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 3,
-     "external_id": "lg-m52-213",
-     "from_milestone": "lg-m52-52",
-     "id": "9be434e7-7d58-50ce-85c0-4d4a6f2b9e79",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
     },
     {
      "cost": 1,
@@ -2634,16 +1293,6 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 2,
-     "external_id": "lg-m39-254",
-     "from_milestone": "lg-m39-39",
-     "id": "0a55fcbd-ae43-5034-92bc-d0141c0f3e62",
-     "state": "backlog",
-     "title": "Cache branch cleanup after a squash merge",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 1,
      "external_id": "lg-m42-257",
      "from_milestone": "lg-m42-42",
@@ -2670,16 +1319,6 @@
      "id": "cac96818-1638-5c2e-b42c-70be2db0b3b5",
      "state": "backlog",
      "title": "Retry the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-261",
-     "from_milestone": "lg-m46-46",
-     "id": "9eb71991-9500-5887-87d7-76bb82c077e8",
-     "state": "backlog",
-     "title": "Show GitHub issue two-way sync",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -2760,16 +1399,6 @@
      "id": "e8aab1f5-2b9e-5db8-820b-ef2af736ba13",
      "state": "backlog",
      "title": "Surface initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m17-286",
-     "from_milestone": "lg-m17-17",
-     "id": "bd4aa3ed-4e05-55f2-9230-89295751e403",
-     "state": "backlog",
-     "title": "Retry gate outcomes on stage transitions",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -2885,31 +1514,11 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m39-308",
-     "from_milestone": "lg-m39-39",
-     "id": "c00ff4b7-e4ea-55ce-9d7c-480c2261c885",
-     "state": "backlog",
-     "title": "Make gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m43-312",
      "from_milestone": "lg-m43-43",
      "id": "118295be-758f-5dad-9924-6d611a2cbc94",
      "state": "backlog",
      "title": "Surface initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-315",
-     "from_milestone": "lg-m46-46",
-     "id": "9a18c4f3-1901-5d6b-b7ea-ea6aeaee945c",
-     "state": "backlog",
-     "title": "Cache gate outcomes on stage transitions",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -3094,16 +1703,6 @@
      "workspace_slug": "loregarden"
     },
     {
-     "cost": 2,
-     "external_id": "lg-m39-362",
-     "from_milestone": "lg-m39-39",
-     "id": "4ea80cbb-3544-5683-bbce-bc2df14d2cd4",
-     "state": "backlog",
-     "title": "Surface docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
      "cost": 1,
      "external_id": "lg-m42-365",
      "from_milestone": "lg-m42-42",
@@ -3130,16 +1729,6 @@
      "id": "0d683977-bfdd-59ab-9182-cb116c6ca4d7",
      "state": "backlog",
      "title": "Make memory recall ranking",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 3,
-     "external_id": "lg-m46-369",
-     "from_milestone": "lg-m46-46",
-     "id": "9a849058-440b-5f21-ae54-3e8881352da4",
-     "state": "backlog",
-     "title": "Show the approval inbox for parked stages",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -3220,16 +1809,6 @@
      "id": "11f9a008-df58-51ef-af39-ab97342ced0b",
      "state": "backlog",
      "title": "Route gate outcomes on stage transitions",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 2,
-     "external_id": "lg-m17-394",
-     "from_milestone": "lg-m17-17",
-     "id": "7b0ebabb-e1d7-5e35-aa0f-5214856fdd4f",
-     "state": "backlog",
-     "title": "Make initiative progress rollup",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -3335,16 +1914,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m39-416",
-     "from_milestone": "lg-m39-39",
-     "id": "09fc711a-6437-56af-8e16-06120683e3ba",
-     "state": "backlog",
-     "title": "Surface initiative progress rollup",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m42-419",
      "from_milestone": "lg-m42-42",
      "id": "97bf37d3-31ce-5d60-830c-bd165c9aeeaa",
@@ -3360,16 +1929,6 @@
      "id": "aecdf209-1c03-5a71-b2ab-5acbc9318f30",
      "state": "backlog",
      "title": "Route stage timeout budgets",
-     "work_item_type": "feature",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m46-423",
-     "from_milestone": "lg-m46-46",
-     "id": "52eb39df-128c-575f-892b-0cfae99359fc",
-     "state": "backlog",
-     "title": "Show docker capacity leases",
      "work_item_type": "feature",
      "workspace_slug": "loregarden"
     },
@@ -3485,16 +2044,6 @@
     },
     {
      "cost": 1,
-     "external_id": "lg-m39-470",
-     "from_milestone": "lg-m39-39",
-     "id": "1c8a5310-59c1-5cfd-8cf1-86a2b789d4a5",
-     "state": "backlog",
-     "title": "Add the run log's live tail",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
      "external_id": "lg-m48-479",
      "from_milestone": "lg-m48-48",
      "id": "9f08e6c9-7a42-51cb-a872-7f4c131fd0e2",
@@ -3530,16 +2079,6 @@
      "id": "7334daa8-9d3d-548c-a827-340746e2b706",
      "state": "backlog",
      "title": "Make worktree isolation for chat turns",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m17-502",
-     "from_milestone": "lg-m17-17",
-     "id": "ad6de2e6-4d5e-5470-9e5d-537166bc72cb",
-     "state": "backlog",
-     "title": "Retry GitHub issue two-way sync",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -3640,16 +2179,6 @@
      "id": "50c79c6f-b9d3-5cd3-8f3d-ce52cab2af38",
      "state": "backlog",
      "title": "Cache worktree isolation for chat turns",
-     "work_item_type": "bug",
-     "workspace_slug": "loregarden"
-    },
-    {
-     "cost": 1,
-     "external_id": "lg-m39-578",
-     "from_milestone": "lg-m39-39",
-     "id": "e8c6186a-5b52-5af5-83ca-d75dc5f4b72c",
-     "state": "backlog",
-     "title": "Make GitHub issue two-way sync",
      "work_item_type": "bug",
      "workspace_slug": "loregarden"
     },
@@ -3784,16 +2313,6 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 2,
-     "external_id": "blob-m6-27",
-     "from_milestone": "blob-m6-6",
-     "id": "e02c3793-0086-5f2c-b652-c8fea71ca859",
-     "state": "backlog",
-     "title": "Show the approval inbox for parked stages",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
      "cost": 1,
      "external_id": "blob-m7-28",
      "from_milestone": "blob-m7-7",
@@ -3844,16 +2363,6 @@
      "workspace_slug": "blobert"
     },
     {
-     "cost": 2,
-     "external_id": "blob-m6-38",
-     "from_milestone": "blob-m6-6",
-     "id": "55813651-3d1d-5c53-9e31-42724bbba471",
-     "state": "backlog",
-     "title": "Cache docker capacity leases",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
      "cost": 1,
      "external_id": "blob-m7-39",
      "from_milestone": "blob-m7-7",
@@ -3870,16 +2379,6 @@
      "id": "35264dee-5df1-5fb1-be63-aa5c4ab00ba8",
      "state": "backlog",
      "title": "Add the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m6-49",
-     "from_milestone": "blob-m6-6",
-     "id": "96de7831-0577-5325-aa29-596a2ed50cce",
-     "state": "backlog",
-     "title": "Stop gate outcomes on stage transitions",
      "work_item_type": "feature",
      "workspace_slug": "blobert"
     },
@@ -3935,16 +2434,6 @@
     },
     {
      "cost": 1,
-     "external_id": "blob-m6-60",
-     "from_milestone": "blob-m6-6",
-     "id": "24af0807-5be5-5782-b193-08a12ce13667",
-     "state": "backlog",
-     "title": "Cache the rework ledger's loop cap",
-     "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
      "external_id": "blob-m7-61",
      "from_milestone": "blob-m7-7",
      "id": "1495bb25-6160-55a0-babe-5ae0ac2cf72a",
@@ -3961,16 +2450,6 @@
      "state": "backlog",
      "title": "Fix gate outcomes on stage transitions",
      "work_item_type": "feature",
-     "workspace_slug": "blobert"
-    },
-    {
-     "cost": 1,
-     "external_id": "blob-m6-71",
-     "from_milestone": "blob-m6-6",
-     "id": "5a23fb79-7f5b-5e56-aa2c-23bcc32ef2f2",
-     "state": "backlog",
-     "title": "Cache the rework ledger's loop cap",
-     "work_item_type": "bug",
      "workspace_slug": "blobert"
     },
     {
@@ -4263,104 +2742,24 @@
  ],
  "ungrouped": [
   {
-   "cost": 10,
-   "external_id": "lg-m6-6",
-   "from_milestone": "",
-   "id": "171baf2b-05cf-57f2-8380-63ccf5fec6d2",
-   "state": "in_progress",
-   "title": "M06 \u2014 Split memory recall ranking",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 12,
-   "external_id": "lg-m15-15",
-   "from_milestone": "",
-   "id": "91787e0b-a7b9-5d5a-a82c-e0a0b9aec022",
-   "state": "blocked",
-   "title": "M15 \u2014 Make initiative progress rollup",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 7,
-   "external_id": "lg-m17-17",
-   "from_milestone": "",
-   "id": "f875a16b-d92a-537e-b619-48b5febc8348",
-   "state": "backlog",
-   "title": "M17 \u2014 Cache docker capacity leases",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 10,
-   "external_id": "lg-m26-26",
-   "from_milestone": "",
-   "id": "39102f82-68e3-5511-b13b-cef9d34d46b7",
-   "state": "backlog",
-   "title": "M26 \u2014 Split initiative progress rollup",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 11,
-   "external_id": "lg-m30-30",
-   "from_milestone": "",
-   "id": "16ed366e-99af-5d00-a76a-96170911cc30",
-   "state": "backlog",
-   "title": "M30 \u2014 Cache the rework ledger's loop cap",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
    "cost": 9,
-   "external_id": "lg-m35-35",
+   "external_id": "lg-m23-23",
    "from_milestone": "",
-   "id": "bbd3ea41-948a-58a8-a429-0d415e5d10c2",
-   "state": "in_progress",
-   "title": "M35 \u2014 Add docker capacity leases",
+   "id": "d9388773-4c0e-5be0-b102-6359f631239b",
+   "state": "backlog",
+   "title": "M23 \u2014 Make the run log's live tail",
    "work_item_type": "milestone",
    "workspace_slug": "loregarden"
   },
   {
-   "cost": 11,
-   "external_id": "lg-m39-39",
+   "cost": 5,
+   "external_id": "blob-m7-7",
    "from_milestone": "",
-   "id": "f954bfa8-9335-5d46-bd18-3efc5f05c060",
+   "id": "788d4fdc-f612-5c30-af8c-cf32253c09d1",
    "state": "backlog",
-   "title": "M39 \u2014 Fix memory recall ranking",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 8,
-   "external_id": "lg-m42-42",
-   "from_milestone": "",
-   "id": "c6244a4a-518d-5622-8a52-182867de8b55",
-   "state": "backlog",
-   "title": "M42 \u2014 Cache the rework ledger's loop cap",
-   "work_item_type": "milestone",
-   "workspace_slug": "loregarden"
-  },
-  {
-   "cost": 7,
-   "external_id": "blob-m6-6",
-   "from_milestone": "",
-   "id": "42d1ed09-48de-5454-a683-7594eca9b81f",
-   "state": "backlog",
-   "title": "M06 \u2014 Make docker capacity leases",
+   "title": "M07 \u2014 Add the run log's live tail",
    "work_item_type": "milestone",
    "workspace_slug": "blobert"
-  },
-  {
-   "cost": 7,
-   "external_id": "lor-m2-2",
-   "from_milestone": "",
-   "id": "2ce7f878-0015-5d08-bb89-36fe79fc3d05",
-   "state": "backlog",
-   "title": "M02 \u2014 Fix initiative progress rollup",
-   "work_item_type": "milestone",
-   "workspace_slug": "lore-eden"
   }
  ],
  "warnings": []

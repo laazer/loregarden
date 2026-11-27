@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -115,14 +115,23 @@ describe("Memory map at production volume", () => {
   });
 });
 
-it("Initiatives shows its one initiative and what is left to group, without a wall", async () => {
-  mockApi.initiatives.mockResolvedValue(initiatives as unknown as InitiativeView[]);
+it("Initiatives lists every initiative in one table and opens one card, without a wall", async () => {
+  const data = initiatives as unknown as InitiativeView[];
+  mockApi.initiatives.mockResolvedValue(data);
   mockApi.attachableMilestones.mockResolvedValue(attachable as unknown as InitiativeMilestone[]);
   const { container } = render(withProviders(<InitiativesPage />));
 
-  await screen.findByRole("heading", { name: "Trustworthy gate outcomes on every stage transition" });
+  const table = await screen.findByRole("table", { name: /Initiatives/ });
   await screen.findByRole("heading", { name: /milestones without an initiative/i });
 
+  expect(data.length).toBeGreaterThan(1);
+  expect(within(table).getAllByRole("row")).toHaveLength(data.length + 1);
+  // One card, the top row's: the rest wait behind their rows instead of stacking.
+  expect(screen.getAllByRole("article")).toHaveLength(1);
+  const [first] = within(table).getAllByRole("button");
+  expect(first).toHaveAttribute("aria-expanded", "true");
+  // Blocked work sorts first.
+  expect(within(table).getAllByRole("row")[1]).toHaveTextContent("Blocked");
   expect(findUsabilityProblems(container)).toEqual([]);
 });
 

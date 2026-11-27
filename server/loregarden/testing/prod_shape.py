@@ -30,7 +30,6 @@ from loregarden.models.domain import (
     AutoFixStatus,
     CIRunResult,
     CIStatus,
-    InitiativeMember,
     MonitorArtifactKind,
     RunStatus,
     StageBudgetArtifactKind,
@@ -44,8 +43,6 @@ from loregarden.services.artifact_records import (
 )
 from loregarden.services.memory_store import MemoryGraphStore
 from loregarden.services.publish_ref import INTEGRATION_PREFIX
-from loregarden.services.ticket_ids import assign_initiative_external_id
-from loregarden.services.ticket_rollup import reconcile_parent
 from loregarden.testing.factories import (
     NO_REPO,
     make_agent_run,
@@ -56,6 +53,7 @@ from loregarden.testing.factories import (
 from loregarden.testing.prod_shape_activity import add_activity
 from loregarden.testing.prod_shape_findings import add_invariant_findings
 from loregarden.testing.prod_shape_handoffs import handoff_doc
+from loregarden.testing.prod_shape_initiatives import InitiativesSummary, add_initiatives
 from loregarden.testing.prod_shape_merge_queue import (
     MERGE_QUEUE_WORKSPACE,
     add_merge_queue_shape,
@@ -182,13 +180,6 @@ CALIBRATION = Calibration(
     largest_description_chars=159_960,
 )
 
-#: Live had no initiatives at calibration, with every milestone unclaimed. The
-#: scenario carries one anyway, so the Initiatives page's populated state is seen
-#: at real volume: it claims the milestones of one theme that spans three
-#: workspaces, and leaves the other 65 unclaimed — still the shape that dominates.
-INITIATIVE_THEME = "gate outcomes on stage transitions"
-INITIATIVE_TITLE = "Trustworthy gate outcomes on every stage transition"
-
 _RNG_SEED = 20260928
 _EPOCH = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
@@ -246,8 +237,7 @@ _TAGS = [
 class ProdShapeSummary(BaseModel):
     tickets: int
     milestones: int
-    #: Milestones the scenario's one initiative claims.
-    initiative_milestones: int
+    initiatives: InitiativesSummary
     findings: int
     findings_on_finished: int
     long_documents: int
@@ -450,7 +440,7 @@ def build_prod_shape(
     rng = random.Random(_RNG_SEED)
     all_tickets = []
     milestones = 0
-    themed: list[str] = []
+    all_milestones: list[tuple[str, str]] = []
     for slug, ws in CALIBRATION.workspaces.items():
         workspace = make_workspace(session, slug=slug, repo_path=NO_REPO)
         prefix = ws.prefix
@@ -467,8 +457,7 @@ def build_prod_shape(
                 state=state,
             )
             ms_ids.append(ms.id)
-            if INITIATIVE_THEME in ms.title.lower():
-                themed.append(ms.id)
+            all_milestones.append((ms.id, ms.title))
         milestones += len(ms_ids)
 
         rest = ws.tickets - ws.milestones
@@ -493,7 +482,7 @@ def build_prod_shape(
                 all_tickets.append((slug, ticket.id, ticket.external_id, state, parent))
 
     all_tickets += _add_criteria_cap_shape(session, all_tickets)
-    _add_initiative(session, themed, all_tickets)
+    initiatives = add_initiatives(session, all_milestones, all_tickets, prod_shape_id)
     findings = _add_findings(session, all_tickets, rng)
     documents = _add_documents(session, all_tickets, rng)
     # Its own stream, so adding the history did not reshuffle every row drawn after it.
@@ -538,7 +527,7 @@ def build_prod_shape(
     return ProdShapeSummary(
         tickets=len(all_tickets) + milestones,
         milestones=milestones,
-        initiative_milestones=len(themed),
+        initiatives=initiatives,
         findings=findings,
         findings_on_finished=CALIBRATION.findings_on_finished,
         long_documents=documents,
@@ -585,52 +574,6 @@ def _add_landings(session: Session, tickets: list) -> int:
         session.add(ticket)
     session.commit()
     return min(wanted, len(done))
-
-
-def _add_initiative(session: Session, milestone_ids: list[str], tickets: list) -> None:
-    """One initiative over `milestone_ids`, spelled and rolled up by the real services.
-
-    It also tracks one open feature by membership, from a milestone it does not
-    own — the case membership exists for: the feature keeps its milestone.
-    """
-    initiative_id = prod_shape_id("initiative", 0)
-    is_new = session.get(Ticket, initiative_id) is None
-    initiative = make_ticket(
-        session,
-        workspace_id=None,
-        ticket_id=initiative_id,
-        title=INITIATIVE_TITLE,
-        work_item_type=WorkItemType.INITIATIVE,
-        description=(
-            "Every workspace's stage transitions report the gate outcome they actually got, "
-            "so a ticket never advances on a check that did not run."
-        ),
-    )
-    if is_new:
-        assign_initiative_external_id(session, initiative)
-    for milestone_id in milestone_ids:
-        milestone = session.get(Ticket, milestone_id)
-        milestone.parent_ticket_id = initiative.id
-        session.add(milestone)
-    owned = set(milestone_ids)
-    for _slug, ticket_id, _ext, state, parent in tickets:
-        ticket = session.get(Ticket, ticket_id)
-        if (
-            parent not in owned
-            and ticket.work_item_type == WorkItemType.FEATURE
-            and state not in (TicketState.DONE, TicketState.WONT_DO)
-        ):
-            if session.get(InitiativeMember, (initiative.id, ticket_id)) is None:
-                session.add(
-                    InitiativeMember(
-                        initiative_id=initiative.id, ticket_id=ticket_id, added_by="prod-shape"
-                    )
-                )
-            break
-    session.flush()
-    reconcile_parent(session, initiative)
-    session.add(initiative)
-    session.commit()
 
 
 def _add_findings(session: Session, tickets: list, rng: random.Random) -> int:
