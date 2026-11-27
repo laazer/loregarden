@@ -238,9 +238,10 @@ class Settings(BaseSettings):
     # poll. Capped hard: the call runs inside an agent's turn and spends the
     # run's wall-clock budget.
     docker_lease_inline_wait_max_seconds: float = 10.0
-    # A stage that declared a footprint waits this long for capacity before its
-    # run fails. The orchestrator is a background thread, so it may block where
-    # an MCP handler may not.
+    # A stage that declared a footprint waits in line while it moves; when nothing
+    # ahead has finished or been seen working for this long its run fails
+    # (services/capacity_line.py). The orchestrator is a background thread, so it
+    # may block where an MCP handler may not.
     docker_stage_wait_seconds: float = 300.0
     # Wait estimation and poll back-pressure. The estimate is what makes the
     # poll interval honest — a fixed interval wastes calls on a long wait and
@@ -277,14 +278,16 @@ class Settings(BaseSettings):
     host_load_max_age_seconds: float = 15.0
     # Every agent run holds a small host lease for its lifetime (see
     # services/run_capacity.py). A run waits in line while it moves; when nothing
-    # ahead has finished for this long it fails naming who holds the line
-    # (services/capacity_line.py). It once failed after this long however fast the
-    # line moved, which blocked a survey pass behind an orderly queue of suites.
+    # ahead has finished or been seen working for this long it fails naming who
+    # holds the line (services/capacity_line.py). It once failed after this long
+    # however fast the line moved, which blocked a survey pass behind an orderly
+    # queue of suites.
     agent_run_capacity_enabled: bool = True
     agent_run_capacity_wait_seconds: float = 1800.0
     # A transition's gate commands keep their place in line while it moves; when
-    # nothing ahead has finished for this long the gate reports UNAVAILABLE naming
-    # who holds the line — never passes unexamined (services/capacity_line.py).
+    # nothing ahead has finished or been seen working for this long the gate
+    # reports UNAVAILABLE naming who holds the line — never passes unexamined
+    # (services/capacity_line.py).
     gate_capacity_wait_seconds: float = 1800.0
 
     @field_validator("repo_root")

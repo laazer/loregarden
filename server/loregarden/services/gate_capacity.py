@@ -162,7 +162,7 @@ def acquire_gate_capacity(
     if reservation.state is DockerGrantState.QUEUED:
         logger.warning(
             "Gates %s for %s are waiting in line for host capacity (giving up only if "
-            "nothing ahead finishes for %.0fs): %s",
+            "nothing ahead finishes or is seen working for %.0fs): %s",
             transition,
             label,
             stall,
