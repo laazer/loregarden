@@ -10,6 +10,7 @@ artifact at all.
 from __future__ import annotations
 
 import json
+from unittest import mock
 
 import pytest
 from loregarden.mcp.tool_ids import (
@@ -19,8 +20,8 @@ from loregarden.mcp.tool_ids import (
     McpTool,
 )
 from loregarden.mcp.tools import execute_tool, normalize_tool_arguments
-from loregarden.models.domain import Artifact, Ticket, WorkItemType
-from loregarden.services.ticket_documents import MAX_DOCUMENT_CHARS
+from loregarden.models.domain import Artifact, EventType, Ticket, WorkItemType
+from loregarden.services.ticket_documents import MAX_DOCUMENT_CHARS, write_document
 from loregarden.services.ticket_service import TicketService
 from sqlmodel import select
 
@@ -237,6 +238,29 @@ def test_write_refuses_what_it_cannot_file(db_session, title, body, message):
     assert (
         db_session.exec(select(Artifact).where(Artifact.ticket_id == tree["task"].id)).all() == []
     )
+
+
+@pytest.mark.parametrize(
+    ("title", "body", "message"),
+    [("   ", "body", "title"), ("Title", " \n ", "body")],
+    ids=["blank-title", "blank-body"],
+)
+def test_the_writer_itself_refuses_a_blank_title_or_body(db_session, title, body, message):
+    """The survey's ticket writer calls it directly, past the tool's own checks."""
+    task = _tree(db_session)["task"]
+    with pytest.raises(ValueError, match=message):
+        write_document(db_session, task, title=title, body=body)
+    assert db_session.exec(select(Artifact).where(Artifact.ticket_id == task.id)).all() == []
+
+
+def test_a_written_document_is_announced_to_the_artifacts_panel(db_session):
+    task = _tree(db_session)["task"]
+    with mock.patch("loregarden.services.ticket_documents.event_bus.publish") as publish:
+        written = write_document(db_session, task, title="Notes", body="b")
+
+    publish.assert_called_once()
+    assert publish.call_args.args[1] is EventType.ARTIFACT_CREATED
+    assert publish.call_args.kwargs["artifact_id"] == written.artifact.id
 
 
 def test_unknown_ids_are_errors_not_empty_answers(db_session):

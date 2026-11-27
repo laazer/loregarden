@@ -64,6 +64,41 @@ def test_a_server_can_be_renamed_to_itself(db_session: Session):
     assert updated.url == "https://b/"
 
 
+def test_an_update_writes_every_field_it_names_trimmed(db_session: Session):
+    server = create_server(db_session, _http(description="old"))
+    stamped = server.updated_at
+
+    update_server(
+        db_session,
+        server.id,
+        McpServerUpdate(
+            name=" gitlab ",
+            description="Merge requests",
+            transport=" stdio ",
+            command=" npx gitlab-mcp ",
+            auth_env_var=" GITLAB_TOKEN ",
+            args=["--read-only"],
+        ),
+    )
+
+    with Session(db_session.get_bind()) as fresh:
+        stored = fresh.get(McpServer, server.id)
+        assert (stored.name, stored.description, stored.transport) == (
+            "gitlab",
+            "Merge requests",
+            "stdio",
+        )
+        assert (stored.command, stored.auth_env_var) == ("npx gitlab-mcp", "GITLAB_TOKEN")
+        assert json.loads(stored.args_json) == ["--read-only"]
+        assert stored.updated_at > stamped
+
+
+def test_an_update_that_leaves_the_server_unusable_is_refused(db_session: Session):
+    server = create_server(db_session, _http())
+    with pytest.raises(McpRegistryError, match="needs a command"):
+        update_server(db_session, server.id, McpServerUpdate(transport="stdio"))
+
+
 def test_deleting_removes_it(db_session: Session):
     server = create_server(db_session, _http())
     delete_server(db_session, server.id)

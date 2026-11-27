@@ -1,8 +1,11 @@
 """Ranking for the composer's `@` reference picker."""
 
+from unittest import mock
+
 import pytest
 from loregarden.config import settings
 from loregarden.models.domain import Workspace
+from loregarden.services import path_search
 from loregarden.services.path_search import search_workspace_paths
 
 
@@ -17,6 +20,8 @@ def search_repo(tmp_path, monkeypatch):
     (repo / "node_modules" / "junk").mkdir(parents=True)
     (repo / "node_modules" / "junk" / "AppActionBar.tsx").write_text("x", encoding="utf-8")
     (repo / ".hidden").write_text("x", encoding="utf-8")
+    (repo / ".cache").mkdir()
+    (repo / ".cache" / "hidden_inside.txt").write_text("x", encoding="utf-8")
     (repo / "README.md").write_text("x", encoding="utf-8")
     monkeypatch.setattr("loregarden.config.settings.repo_root", repo.resolve())
     monkeypatch.setattr(settings, "browse_root", str(tmp_path))
@@ -42,7 +47,28 @@ def test_subsequence_match_finds_nested_file(search_workspace):
 def test_blocked_and_hidden_paths_are_never_offered(search_workspace):
     paths = {entry["repo_path"] for entry in search_workspace_paths(search_workspace, "a")}
     assert not any(path.startswith("node_modules") for path in paths)
-    assert ".hidden" not in paths
+    # A query each hidden name matches, so leaving them out is the filter's doing.
+    hidden = {entry["repo_path"] for entry in search_workspace_paths(search_workspace, "hidden")}
+    assert hidden == set()
+
+
+def test_the_walk_stops_once_it_has_scanned_its_cap(search_workspace, search_repo):
+    real_walk = path_search.os.walk
+    visited: list[str] = []
+
+    def counting_walk(root):
+        for step in real_walk(root):
+            visited.append(step[0])
+            yield step
+
+    with (
+        mock.patch.object(path_search, "MAX_SCANNED_ENTRIES", 2),
+        mock.patch.object(path_search.os, "walk", counting_walk),
+    ):
+        results = search_workspace_paths(search_workspace, "x", limit=50)
+
+    assert visited == [str(search_repo.resolve())], "the top level alone fills the cap"
+    assert len(results) <= 2
 
 
 def test_directories_are_matchable(search_workspace):

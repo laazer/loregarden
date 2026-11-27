@@ -21,7 +21,7 @@ from loregarden.services.git_merge_noco import read_branch_tips
 from loregarden.services.integration_branch_moves import mover
 from loregarden.services.invariant_registry import LANDINGS_SURVIVE_THEIR_BRANCH
 from loregarden.services.land_ticket import land_ticket
-from loregarden.services.landing_survival import LandingsWouldBeLost
+from loregarden.services.landing_survival import LandingsWouldBeLost, landings_dropped
 from loregarden.services.landing_survival_checks import landings_lost_from_their_branch
 from loregarden.services.pull_request_merge import _delete_local_branch
 from loregarden.services.settled_refs import settled_tips
@@ -152,6 +152,19 @@ def test_a_landing_after_the_publish_keeps_the_branch(session, workspace, repo):
         delete_branch(session, workspace, branch, force=True)
     assert second.external_id in str(refused.value)
     assert child.external_id not in str(refused.value)
+
+
+def test_moving_to_a_tip_that_still_holds_the_landing_loses_nothing(session, workspace, repo):
+    ms, child, branch = landed_tree(session, workspace, repo)
+    ahead = commit_on(repo, branch, "later.txt", "later\n")
+
+    assert landings_dropped(session, workspace, branch, new_tip=ahead) == []
+    assert [t.id for t in landings_dropped(session, workspace, branch)] == [child.id]
+
+
+def test_a_branch_that_does_not_exist_holds_nothing(session, workspace, repo):
+    landed_tree(session, workspace, repo)
+    assert landings_dropped(session, workspace, "integration/no-such-tree") == []
 
 
 def test_the_reset_keeps_the_tip_it_leaves(session, workspace, repo):

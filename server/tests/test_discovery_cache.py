@@ -624,6 +624,30 @@ def test_the_probed_target_is_carried_across_every_status():
     assert failed.target == "http://127.0.0.1:1234/v1"
 
 
+def test_a_refresh_that_raises_keeps_naming_the_thing_it_probed():
+    """The empty-state copy names the target; a probe that blew up still had one."""
+    cache = _cache(success_ttl_seconds=0.0, join_timeout_seconds=QUICK_JOIN)
+    _fill(cache, "k", _ok("a", target="/opt/homebrew/bin/codex"))
+
+    def exploding_probe() -> ProbeOutcome[str]:
+        raise RuntimeError("the socket went away")
+
+    cache.get("k", exploding_probe)
+    join_probes(timeout=5.0)
+    after = cache.get("k", exploding_probe)
+
+    assert after.status == DiscoveryStatus.UNAVAILABLE
+    assert after.target == "/opt/homebrew/bin/codex"
+
+
+def test_a_probe_that_returns_a_non_outcome_is_logged(caplog):
+    with caplog.at_level(logging.WARNING, logger="loregarden.services.discovery_cache"):
+        answer = _cache().get("k", lambda: ["half-migrated", "list"])  # type: ignore[arg-type,return-value]
+
+    assert answer.status == DiscoveryStatus.UNAVAILABLE
+    assert [r.levelno >= logging.WARNING for r in caplog.records] == [True]
+
+
 def test_a_detail_is_only_set_on_the_unavailable_status():
     """The one rule the UI copy depends on: a non-empty detail means "it failed"."""
     patient = _cache()
