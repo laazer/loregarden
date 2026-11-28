@@ -1,0 +1,26 @@
+{
+  "side": "server",
+  "predicted_before_the_run_at": "2026-11-17T21:00:00Z",
+  "predictions": [
+    {
+      "mutant": "loregarden.services.example_pilot.x_classify__mutmut_1",
+      "bucket": "killed",
+      "why": "(a) a covering assertion pins the rounding this mutant changes"
+    },
+    {
+      "mutant": "loregarden.services.example_pilot.x_classify__mutmut_2",
+      "bucket": "survived",
+      "why": "(b) only a log argument changes; nothing asserts on it"
+    },
+    {
+      "mutant": "loregarden.services.example_pilot.x_threshold__mutmut_1",
+      "bucket": "skipped",
+      "why": "(c) its only covering test skips without a database, so the skip must read as a survival"
+    },
+    {
+      "mutant": "loregarden.services.example_pilot.x_threshold__mutmut_2",
+      "bucket": "import fatal",
+      "why": "(d) breaks import; server/tests/conftest.py imports at module scope, so collection dies"
+    }
+  ]
+}

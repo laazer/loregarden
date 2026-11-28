@@ -119,21 +119,133 @@ markers = [
 timeout = 120
 timeout_method = "signal"
 
+# Mutation-testing PILOT (lg-build-verification-2639). Scoped to ONE module on
+# purpose: this measures what a mutation gate would cost, it is not a gate.
+# Nothing in lefthook.yml or the orchestration profiles runs it — `task
+# mutation:server` does, under the capacity ledger.
+#
+# Changed-lines mutation testing (`task mutation`, .lefthook/scripts/mutation_changed_lines.py)
+# shares this table's `source_paths` and `process_isolation` and overrides the
+# per-run fields (`only_mutate`, `pytest_add_cli_args_test_selection`,
+# `pytest_add_cli_args`, `also_copy`, `mutate_only_covered_lines`) in-process
+# in `.lefthook/scripts/mutmut_driver.py`, while `run-server.sh` runs the bare
+# `mutmut` CLI directly and reads this table as-is.
+#
+# mutmut reads this from the CWD, so it must be run from `server/`
+# (configuration.py:_config_reader), and it mutates a COPY at `server/mutants/`
+# (runners/harness.py, change_cwd("mutants")) — never the working tree.
 [tool.mutmut]
-# Changed-lines mutation testing: `task mutation -- [--base REF]`
-# (.lefthook/scripts/mutation_changed_lines.py). Never run over the whole
-# package — one 644-line module yields ~920 mutants and the package is ~216k
-# lines. The driver (.lefthook/scripts/mutmut_driver.py) sets two fields per run
-# on top of this: `only_mutate` (the changed files) and
-# `pytest_add_cli_args_test_selection` (the tests select_pytest_targets.py
-# picks). mutmut copies loregarden/ and tests/ into server/mutants/ and runs
-# there, inside the checkout, so git works and tests find the repo root through
-# tests/repo_paths.py.
+# WHAT IS MUTATED is `only_mutate`: the ONE pilot module. A second path there
+# is a second pilot.
+#
+# WHAT IS COPIED is `source_paths`, and it must be the whole importable
+# package. mutmut's `copy_src_dir` copies exactly what source_paths names into
+# server/mutants/, and `setup_source_paths` then puts mutants/ on sys.path and
+# REMOVES the real source directory, so that the tests cannot reach unmutated
+# code. Naming a single FILE here therefore produced a sandbox holding 1 of
+# loregarden's 934 modules, and the run died in mutmut's baseline at
+# `ModuleNotFoundError: No module named 'loregarden.config'` while importing
+# server/tests/conftest.py — before any mutant was tested, so no .meta, no
+# kill matrix and no score.
+#
+# The scoping that AC-1 asks for lives in `only_mutate`, which is the key
+# mutmut provides for it: `walk_mutatable_files` keeps only paths matching it
+# (configuration.py should_mutate), so the copy is the whole package and the
+# mutation is the one file.
 source_paths = ["loregarden"]
-# The suite's own per-test ceiling (120s, [tool.pytest.ini_options]) and
-# mutmut's CPU-time limit already bound a hang; no extra pytest args needed.
-pytest_add_cli_args = ["-p", "no:cacheprovider"]
-mutate_only_covered_lines = false
+only_mutate = ["loregarden/services/integration_merge_budget.py"]
+
+# The module's own directly-covering tests, measured and recorded in the
+# `Mutation pilot — module selection` artifact. mutmut appends these as the
+# pytest test selection (configuration.py:155).
+#
+# EVERY FILE HERE MUST PASS FROM server/mutants/, not just from server/.
+# mutmut copies the tree and runs pytest with cwd=mutants, so a test that
+# resolves a path from its own __file__ resolves it one directory deeper and
+# reads something that is not there. That failure lands in mutmut's BASELINE
+# run, before a single mutant is tested, so there is no .meta and no kill
+# matrix at all — the whole campaign produces nothing. Check a change to this
+# list with `bash scripts/mutation/run-server.sh --check-selection`, which
+# runs exactly these files from the sandbox and names any that cannot.
+#
+# tests/test_queue_slot_claims.py is DELIBERATELY ABSENT. It covers
+# queue_lanes.py, and 38 of its 47 tests pass in the sandbox, but 9 do not:
+# it sets REPO_ROOT = Path(__file__).resolve().parents[2] (line 32), which
+# from server/mutants/tests/ is server/ rather than the repo root, so its
+# source-reading assertions open server/server/loregarden/services/*.py and
+# raise FileNotFoundError. Measured: 9 failed, 38 passed from the sandbox,
+# against 81 passed for the other five files.
+#
+# Dropping it is not free and the review list must say so: those 9 tests
+# assert on SOURCE TEXT — that a constant is defined once, that a predicate
+# is not duplicated, that no caller writes the grace window out by hand.
+# Mutation testing cannot evaluate a test like that in the first place,
+# because mutmut's operators change behaviour and these assertions read
+# characters. They belong to the class this pilot already names: tests that
+# guard something no operator can reach. Their absence from the kill matrix
+# is a stated limit of the measurement, not evidence about them.
+pytest_add_cli_args_test_selection = [
+    "tests/test_integration_merge_budget.py",
+]
+
+pytest_add_cli_args = [
+    "-p",
+    "no:cacheprovider",
+    # The AC-6 kill matrix. mutmut's own test-level data is COVERAGE — a map
+    # of tests by mangled function name — and never kills; substituting it
+    # omits exactly the tests that touch the code and assert nothing. A test
+    # scans for that map's name here, so it is described rather than spelled.
+    "-p",
+    "mutmut_killers",
+    # REQUIRED FOR CORRECTNESS, not for speed, and not a slow default to
+    # delete. mutmut forces `-x` at runners/harness.py:140 and appends this
+    # list after it (line 128). `-x` is store_const const=1 dest=maxfail, and
+    # `--maxfail=0` writes the same dest, so the later value wins. Keeping
+    # `-x` would record only the first killer of each mutant, so a test that
+    # really killed something is listed as having killed nothing — a false
+    # "delete this test", the most expensive output this pilot can produce.
+    # It is also the dominant cost term; AC-12 carries it as the fixed cost of
+    # having a kill matrix at all.
+    "--maxfail=0",
+]
+
+# The plugin must be IN the sandbox as well as loaded: pytest runs with
+# cwd=mutants, so a `-p mutmut_killers` with no copied module fails the run.
+#
+# It MUST be a bare top-level filename, and it must exist relative to THIS
+# directory when mutmut runs. Three constraints in mutmut 3.8.1 force that,
+# all read at source in utils/file_utils.py:
+#
+#   1. `copy_also_copy_files` resolves each entry against mutmut's CWD, which
+#      is server/ (where this file is). The repo's scripts/ is at the REPO
+#      root, so "scripts/mutation/mutmut_killers.py" named a path that does
+#      not exist from here.
+#   2. That function's miss is `if not path.exists(): continue` — a SILENT
+#      skip. Nothing warned; the run died later at `-p mutmut_killers` with
+#      "No module named 'mutmut_killers'", which names the symptom and not
+#      the cause.
+#   3. It copies with `shutil.copy2` and never mkdirs the destination parent,
+#      so even a nested path that DID exist raises FileNotFoundError on
+#      'mutants/scripts/...'. And `setup_source_paths` puts only mutants/
+#      (plus mutants/src, mutants/source) on sys.path, so `-p mutmut_killers`
+#      can resolve nothing but a TOP-LEVEL module in the sandbox.
+#
+# So run-server.sh stages scripts/mutation/mutmut_killers.py to
+# server/mutmut_killers.py before the run and removes it after, and this key
+# names that staged copy. run-server.sh also asserts the file reached
+# mutants/ before trusting the run, because a silent skip here produces a
+# review list that is empty rather than an error anybody sees.
+also_copy = ["mutmut_killers.py"]
+
+# This suite reaches deep call stacks through the orchestrator; 8 keeps the
+# trampoline's bookkeeping bounded without cutting the pilot module's own
+# frames out of the picture.
+max_stack_depth = 8
+
+# Do not pay for mutants no test can reach. They land in `no tests`, which is
+# a category the reducer already reports separately from `survived`.
+mutate_only_covered_lines = true
+
 # Not "fork": that forks every session from the process that already ran the
 # stats pass, so its imports leak into the clean run and every mutant. Measured:
 # test_migration_registry imports a package from its tmp_path, pytest deletes
