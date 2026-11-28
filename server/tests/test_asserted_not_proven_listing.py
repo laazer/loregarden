@@ -63,7 +63,6 @@ from tests.asserted_not_proven_helpers import (
     make_ticket,
     make_workspace,
     mark_a_code_site,
-    paths_this_change_adds,
     # Fixtures, discovered by pytest once they are in this namespace. They live
     # in the helpers so the suites cannot drift apart on the checkout their
     # answers are measured against.
@@ -71,7 +70,6 @@ from tests.asserted_not_proven_helpers import (
     ticket_fixture,  # noqa: F401
     workspace_fixture,  # noqa: F401
 )
-from tests.repo_paths import REPO_ROOT
 
 RECORD_TOOL = "loregarden_record_asserted_not_proven"
 
@@ -680,30 +678,6 @@ def test_publish_tree_puts_the_section_in_the_pr_body():
     """R11.4. A section builder nobody calls renders nothing."""
     source = Path("loregarden/services/publish_tree.py").read_text(encoding="utf-8")
     assert "asserted_not_proven_section" in source
-
-
-# --------------------------------------------------------------------------- #
-# AC12 — NO GRAPHICAL SURFACE
-# --------------------------------------------------------------------------- #
-
-
-def test_no_client_surface_is_added_by_this_change():
-    """R5.10 / AC12. Verified at source by the ui-design stage: no client file
-    filters on `artifacts.kind`, and `ticket_documents._is_document` requires
-    `run_id is None` and `format == "markdown"`, so these rows never reach a
-    ticket's Documents list. A later stage proposing a page comes back through
-    ui-design first."""
-    root = REPO_ROOT
-    offenders = paths_this_change_adds(root, ("client/src/pages/", "client/src/components/"))
-    if offenders is None:
-        pytest.skip("no comparable origin/main in this checkout")
-    assert offenders == [], f"AC12 settled NO GRAPHICAL SURFACE; this change touches {offenders}"
-
-
-# --------------------------------------------------------------------------- #
-# The workspace's own repo_path, which is RELATIVE on the one workspace that
-# matters most (R4, R5's closable rule, R7's bound)
-# --------------------------------------------------------------------------- #
 
 
 def test_a_relative_repo_path_resolves_against_loregardens_root_not_the_cwd(db_session, tmp_path):

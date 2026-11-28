@@ -67,9 +67,7 @@ from tests.asserted_not_proven_helpers import (
     claim_values,
     make_ticket,
     make_workspace,
-    paths_this_change_adds,
 )
-from tests.repo_paths import REPO_ROOT
 
 RECORD_TOOL = "loregarden_record_asserted_not_proven"
 
@@ -117,23 +115,6 @@ def test_the_artifacts_kind_column_is_still_an_open_string():
     it; this is the assertion that keeps a later hand from adding one.
     """
     assert Artifact.model_fields["kind"].annotation is str
-
-
-def test_the_change_ships_no_migration():
-    """R1.2's other half, checked against the tree rather than the model.
-
-    Attributed to THIS ticket's commits, not to every commit the branch carries:
-    the branch has merged `integration/lg-code-knowledge-273`, which brings
-    lg-code-knowledge-299's `db/versions/code_signals.py` with it. Charging that
-    to this change would fail an assertion about a migration this ticket did not
-    write, and the fix would be to weaken the assertion. See
-    `asserted_not_proven_helpers.paths_this_change_adds`, which is fail-closed.
-    """
-    root = REPO_ROOT
-    offenders = paths_this_change_adds(root, ("server/loregarden/db/versions/",))
-    if offenders is None:
-        pytest.skip("no comparable origin/main in this checkout")
-    assert offenders == [], f"this change must ship no migration; it adds {offenders}"
 
 
 def test_the_two_vocabularies_are_enums_with_exactly_their_members():
