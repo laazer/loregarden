@@ -29,6 +29,9 @@ from loregarden.models.domain import (
     AgentRun,
     AgentTransport,
     Artifact,
+    OrchestrationRun,
+    OrchestrationRunStatus,
+    ParallelAgentSpec,
     ProcessState,
     RunLogLine,
     RunStatus,
@@ -278,7 +281,7 @@ def test_an_unparseable_exit_code_fails_the_run_the_same_way(db_session: Session
     assert NO_RC_STDERR in (settled.stderr or "")
 
 
-def test_the_stage_cursor_moves_when_a_reattached_run_passes(db_session: Session, adopted):
+def test_the_stage_cursor_moves_when_a_reattached_run_passes(db_session: Session, adopted, caplog):
     """AC12, asserted on the STAGE CURSOR rather than on log text.
 
     The whole point of gap #2: today the stage never completes, commits or
@@ -298,14 +301,60 @@ def test_the_stage_cursor_moves_when_a_reattached_run_passes(db_session: Session
     assert _stage_status(db_session, ticket_id) is StageStatus.RUNNING
     _write_output(adopted, out="done\n" + _report("pass"), rc="0")
 
-    with mock.patch.object(run_resupervise, "liveness", _gone):
+    with (
+        caplog.at_level(logging.WARNING, logger=run_resupervise.__name__),
+        mock.patch.object(run_resupervise, "liveness", _gone),
+    ):
         resupervise(adopted.id, interval_seconds=0)
 
     db_session.expire_all()
     assert _stage_status(db_session, ticket_id) is StageStatus.DONE
+    # A serial stage is never treated as a parallel one with no orchestration run to settle it.
+    assert not [r for r in caplog.records if r.name == run_resupervise.__name__]
     ticket = db_session.get(Ticket, ticket_id)
     assert ticket.workflow_stage_status is StageStatus.DONE
     assert _stage_status_of(db_session, ticket_id, "verify") is StageStatus.PENDING
+
+
+def _make_implement_a_parallel_stage(db_session: Session, run: AgentRun) -> None:
+    """Re-shape the fixture's `implement` as a one-member parallel stage, the run its member,
+    under an orchestration run: the shape `_reconcile_member` settles."""
+    instance = db_session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == run.ticket_id)
+    ).one()
+    template = db_session.get(WorkflowTemplate, instance.template_id)
+    stages = [WorkflowStageDef.model_validate(row) for row in json.loads(template.stages_json)]
+    stages[0] = stages[0].model_copy(
+        update={
+            "stage_type": "parallel",
+            "parallel_agents": [ParallelAgentSpec(agent_id=run.agent_id)],
+        }
+    )
+    template.stages_json = json.dumps([stage.model_dump(mode="json") for stage in stages])
+    orch = OrchestrationRun(
+        run_code=f"orch_{uuid4().hex[:6]}",
+        ticket_id=run.ticket_id,
+        workspace_id=run.workspace_id,
+        status=OrchestrationRunStatus.RUNNING,
+    )
+    db_session.add_all([template, orch])
+    db_session.commit()
+    run.orchestration_run_id = orch.id
+    db_session.add(run)
+    db_session.commit()
+
+
+def test_a_reattached_last_member_settles_its_parallel_stage(db_session: Session, adopted):
+    """Completed without advancing (a member does not route the stage), then reconciled:
+    as the last outstanding member, its pass finishes the stage."""
+    _make_implement_a_parallel_stage(db_session, adopted)
+    _write_output(adopted, out="done\n" + _report("pass"), rc="0")
+
+    with mock.patch.object(run_resupervise, "liveness", _gone):
+        resupervise(adopted.id, interval_seconds=0)
+
+    db_session.expire_all()
+    assert _stage_status(db_session, adopted.ticket_id) is StageStatus.DONE
 
 
 def test_the_stage_report_from_the_file_is_what_routes(db_session: Session, adopted):

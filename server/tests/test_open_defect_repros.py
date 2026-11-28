@@ -55,9 +55,11 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from loregarden.config import settings
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
+    AgentTransport,
     Artifact,
     BlockKind,
     ProcessState,
@@ -67,11 +69,14 @@ from loregarden.models.domain import (
     WorkItemType,
     Workspace,
 )
+from loregarden.services import run_resupervise
 from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
 from loregarden.services.process_identity import liveness, record_process_identity
+from loregarden.services.run_output_files import paths_for
 from loregarden.services.ticket_service import TicketService
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 from tests.repo_paths import REPO_ROOT
 
@@ -504,3 +509,50 @@ def test_a_shortened_feed_row_never_claims_more_than_it_stores(
     assert row.content_shown_bytes <= row.content_bytes, (
         f"the row says it shows {row.content_shown_bytes} bytes of a stored {row.content_bytes}"
     )
+
+
+@pytest.fixture
+def adopted_run_with_no_ticket(db_session: Session, tmp_path, monkeypatch) -> AgentRun:
+    """A workspace-scoped RUNNING run whose agent exited non-zero while no server watched."""
+    monkeypatch.setattr(settings, "run_log_dir", tmp_path / "run-logs")
+    (tmp_path / "run-logs").mkdir()
+    workspace = Workspace(slug="no-ticket-runs", name="No ticket", repo_path=str(tmp_path))
+    db_session.add(workspace)
+    db_session.commit()
+    run = AgentRun(
+        workspace_id=workspace.id,
+        ticket_id=None,
+        run_code="run_noticket1",
+        agent_id="baxter",
+        stage_key="",
+        status=RunStatus.RUNNING,
+        agent_pid=4242,
+        agent_pid_identity="a start time no later pid can wear",
+        agent_transport=AgentTransport.FILE,
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    paths = paths_for(run.run_code, run.id)
+    paths.out.write_text("it broke\n", encoding="utf-8")
+    paths.err.write_text("Traceback: workspace scan\n", encoding="utf-8")
+    paths.rc.write_text("2", encoding="utf-8")
+    return run
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=IntegrityError,
+    reason="lg-run-durability-2826 — open: the resumed log streamer inserts a LOG artifact "
+    "with ticket_id NULL before _complete's no-ticket branch can settle the run",
+)
+def test_a_reattached_run_with_no_ticket_is_settled(
+    db_session: Session, adopted_run_with_no_ticket: AgentRun
+) -> None:
+    with patch.object(run_resupervise, "liveness", return_value=ProcessState.GONE):
+        run_resupervise.resupervise(adopted_run_with_no_ticket.id, interval_seconds=0)
+
+    db_session.expire_all()
+    run = db_session.get(AgentRun, adopted_run_with_no_ticket.id)
+    assert run.status is RunStatus.FAILED
+    assert "Traceback: workspace scan" in run.stderr

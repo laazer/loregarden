@@ -221,9 +221,10 @@ def test_an_incomplete_listing_is_logged(repo, caplog):
 def test_a_complete_listing_is_cached_and_a_failed_one_is_retried(repo):
     complete = _gh_ok(_pages([_pr(1, "feature/a")], total=1, last_has_next=False))
     with patch(RUN_GH, return_value=complete) as run_gh:
-        branch_triage_service._pr_listing(repo)
-        branch_triage_service._pr_listing(repo)
+        first = branch_triage_service._pr_listing(repo)
+        second = branch_triage_service._pr_listing(repo)
     assert run_gh.call_count == 1
+    assert second == first, "the cached read is what a cache hit serves"
 
     branch_triage_service._pr_listing_cache.clear()
     failed = subprocess.CompletedProcess(args=["gh"], returncode=1, stdout="", stderr="down")

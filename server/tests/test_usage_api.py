@@ -1496,3 +1496,47 @@ def test_stored_snapshot_is_none_when_nothing_has_been_read(tmp_path, monkeypatc
 )
 def test_the_claude_plan_label_reads_the_subscription_and_its_tier(oauth, label):
     assert usage_service._claude_plan_label(oauth) == label
+
+
+# --- Model-scoped weekly limit -------------------------------------------------
+
+
+def _scoped(model: str, percent, kind: str = "weekly_scoped", resets_at=None) -> dict:
+    entry = {"kind": kind, "scope": {"model": {"display_name": model}}}
+    if percent is not None:
+        entry["percent"] = percent
+    if resets_at is not None:
+        entry["resets_at"] = resets_at
+    return entry
+
+
+def test_fable_weekly_meter_comes_from_the_first_matching_scoped_limit():
+    """Only a weekly_scoped entry for Fable that carries a percent becomes the meter,
+    and only the first such entry: a later duplicate must not add a second meter."""
+    body = {
+        "limits": [
+            "not-an-entry",
+            _scoped("Sonnet", 7),
+            _scoped("Fable", 5, kind="weekly"),
+            _scoped("Fable", None),
+            _scoped("Fable", 61, resets_at="2026-08-09T12:00:00Z"),
+            _scoped("Fable", 99),
+        ]
+    }
+
+    meters = usage_service._claude_meters_from_body(body)
+
+    assert [(m.key, m.label, m.used, m.percent_used) for m in meters] == [
+        ("scoped_fable", "Fable weekly", 61.0, 61.0)
+    ]
+    assert meters[0].resets_at == "2026-08-09T12:00:00+00:00"
+    assert meters[0].limit == 100.0
+
+
+@pytest.mark.parametrize("limits", [None, {"kind": "weekly_scoped"}, []])
+def test_no_scoped_meter_without_a_list_of_limits(limits):
+    meters = usage_service._claude_meters_from_body(
+        {"five_hour": {"utilization": 10.0}, "limits": limits}
+    )
+
+    assert [m.key for m in meters] == ["five_hour"]

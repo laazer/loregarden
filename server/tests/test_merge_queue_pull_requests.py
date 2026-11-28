@@ -12,10 +12,13 @@ a push the author makes while the entry waits is adopted, never overwritten.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from loregarden.models.domain import (
     Approval,
     MergeQueueAdmission,
+    MergeQueueEntry,
     MergeQueueState,
     PullRequestState,
 )
@@ -204,6 +207,39 @@ def test_a_closed_pr_and_a_trees_publish_pr_are_refused(session, workspace, repo
     authors.open(PR + 1, "publish/integration/lg-1")
     with pytest.raises(QueueRefusal, match="by a ticket"):
         enqueue_pull_request(session, workspace, PR + 1, github=authors)
+
+
+def test_a_pr_whose_head_cannot_be_fetched_is_refused_and_queues_nothing(
+    session, workspace, origin, authors, opened
+):
+    git(origin, "symbolic-ref", "-d", f"refs/pull/{PR}/head")
+
+    # Refused for the fetch, not mistaken for a head that moved while it was read.
+    with pytest.raises(QueueRefusal, match="fetch"):
+        enqueue_pull_request(session, workspace, PR, github=authors)
+
+    assert session.exec(select(MergeQueueEntry)).all() == []
+
+
+def test_a_push_between_the_read_and_the_fetch_is_refused_and_queues_nothing(
+    session, workspace, repo, authors, opened
+):
+    """The fetched head must be the head GitHub reported, or the queue would test a
+    commit nobody looked at under the PR's name."""
+    read = authors.read_pull_request
+
+    def read_then_author_pushes(number: int) -> StagedPullRequest:
+        reported = read(number)
+        _author_pushes(repo, "raced-read.txt")
+        return reported
+
+    with (
+        patch.object(authors, "read_pull_request", side_effect=read_then_author_pushes),
+        pytest.raises(QueueRefusal, match="moved"),
+    ):
+        enqueue_pull_request(session, workspace, PR, github=authors)
+
+    assert session.exec(select(MergeQueueEntry)).all() == []
 
 
 def test_a_push_leased_on_a_stale_head_is_refused(repo, origin, opened):

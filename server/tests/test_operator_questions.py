@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -449,20 +450,48 @@ def test_a_queued_override_is_applied_when_the_run_completes(db_session, ticket)
     assert scheduled.called, "the ticket resumes on the operator's answer"
 
 
-def test_an_override_past_the_rework_cap_resets_the_budget_and_reroutes(db_session, ticket):
+def _own_warnings(caplog) -> list[logging.LogRecord]:
+    return [
+        r
+        for r in caplog.records
+        if r.name == "loregarden.services.operator_questions" and r.levelno >= logging.WARNING
+    ]
+
+
+def test_an_override_under_the_rework_cap_counts_as_one_more_round(db_session, ticket, caplog):
+    asked = ask_operator(db_session, ticket, _request()).approval
+    record_rework_feedback(
+        db_session, ticket, target_stage=IMPLEMENT, from_stage=GATE, context="r0"
+    )
+
+    with (
+        caplog.at_level(logging.WARNING, logger="loregarden.services.operator_questions"),
+        patch("loregarden.services.orchestration_resume.schedule_orchestration"),
+    ):
+        _override(db_session, asked)
+
+    assert rework_reroute_count(db_session, ticket, IMPLEMENT) == 2, "nothing was forgiven"
+    assert not _own_warnings(caplog)
+
+
+def test_an_override_past_the_rework_cap_resets_the_budget_and_reroutes(db_session, ticket, caplog):
     asked = ask_operator(db_session, ticket, _request()).approval
     for round_ in range(MAX_REWORK_REROUTES):
         record_rework_feedback(
             db_session, ticket, target_stage=IMPLEMENT, from_stage=GATE, context=f"r{round_}"
         )
 
-    with patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled:
+    with (
+        caplog.at_level(logging.WARNING, logger="loregarden.services.operator_questions"),
+        patch("loregarden.services.orchestration_resume.schedule_orchestration") as scheduled,
+    ):
         _override(db_session, asked)
 
     db_session.refresh(asked)
     db_session.refresh(ticket)
     assert asked.status is ApprovalStatus.APPROVED
     assert rework_reroute_count(db_session, ticket, IMPLEMENT) == 1, "reset, then this round"
+    assert len(_own_warnings(caplog)) == 1, "forgiving rounds the cap was meant to stop is logged"
     assert ticket.workflow_stage_status is StageStatus.PENDING
     assert scheduled.called
 
