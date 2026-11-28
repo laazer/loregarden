@@ -44,6 +44,7 @@ Rules for this module:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -57,12 +58,16 @@ from fastapi.testclient import TestClient
 from loregarden.main import app
 from loregarden.models.domain import (
     AgentRun,
+    Artifact,
     BlockKind,
     ProcessState,
     RunStatus,
+    Ticket,
+    TicketState,
     WorkItemType,
     Workspace,
 )
+from loregarden.services.artifact_service import list_ticket_artifacts
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.gate_runner import _run_command
 from loregarden.services.process_identity import liveness, record_process_identity
@@ -407,3 +412,95 @@ def test_a_long_message_with_an_unclosed_bracket_keeps_most_of_itself(
         assert len(result) > under_test.limit // 2, (
             f"{label}: the cut kept {len(result)} of {under_test.limit} characters"
         )
+
+
+class _ShortenedRow(NamedTuple):
+    """One shortened feed row, and what it says about its own size."""
+
+    content_bytes: int
+    content_shown_bytes: int
+    truncated: bool
+
+
+@pytest.fixture
+def compact_oversized_feed_row(db_session: Session) -> _ShortenedRow:
+    """One artifact row whose stored text is compact, read back through the feed.
+
+    1,200 keys is the smallest round count that crosses the threshold: default
+    separators (`", "` / `": "`) add two bytes per key over the compact ones, so
+    the row re-encodes 2,399 bytes larger than it was stored. 1,100 keys does not
+    reproduce (stored 13,191, re-encoded 15,390, never shortened).
+
+    Built here and not in the test body, per this module's rules: a feed that
+    raised, or a row the bound declined to shorten, would otherwise read as a
+    healthy open defect instead of the broken repro it would be.
+    """
+    workspace = Workspace(slug="ws-compact-row", name="Compact row", repo_path="/tmp")
+    db_session.add(workspace)
+    db_session.commit()
+    db_session.refresh(workspace)
+    ticket = Ticket(
+        external_id="compact-row-1",
+        title="Compact row",
+        state=TicketState.IN_PROGRESS,
+        workspace_id=workspace.id,
+    )
+    db_session.add(ticket)
+    db_session.commit()
+    db_session.refresh(ticket)
+
+    raw = json.dumps({f"k{i:04d}": i for i in range(1200)}, separators=(",", ":"))
+    db_session.add(Artifact(ticket_id=ticket.id, kind="context", title="compact", content_json=raw))
+    db_session.commit()
+
+    rows = list_ticket_artifacts(db_session, ticket.id)["items"]
+    assert len(rows) == 1, "the fixture must produce exactly the row under test"
+    row = rows[0]
+    assert row.get("content_truncated") is True, (
+        "the row must be shortened for this to mean anything"
+    )
+    return _ShortenedRow(
+        content_bytes=row["content_bytes"],
+        content_shown_bytes=row["content_shown_bytes"],
+        truncated=True,
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason=(
+        "unfiled — open: surfaced by lg-milestone-that-1424's test-break stage. "
+        "`loregarden_create_ticket` refused the filing (that ticket already holds the maximum "
+        "five findings awaiting a scope decision), so the finding lives here and in that "
+        "stage's report until a person files it. `content_bytes` is the STORED text "
+        "(artifact_service.py:1389) and `content_shown_bytes` is the bounded content "
+        "RE-ENCODED with default separators (:1403), so a row stored with compact separators "
+        "re-encodes larger than it was stored: measured 14,491 stored against 16,380 shown. "
+        "The reader's status line then reads 'Showing the first 16.4 KB — loading all "
+        "14.5 KB', and AC11's partial tag says the same inversion. It is NOT an unmet 1424 "
+        "criterion — AC4 defines both fields exactly as implemented, and "
+        "test_a_row_over_the_limit_only_as_stored_text_is_not_shortened covers the opposite "
+        "direction on purpose. No in-app writer reaches it: every write goes through "
+        "OrchestrationCallbacks.attach_artifact with json.dumps(content), whose default "
+        "separators make stored >= re-encoded. A direct insert, an importer, or a future "
+        "writer choosing compact separators does. The fix is a decision about what the Size "
+        "column means, not a clamp: clamping shown to total trades one wrong number for "
+        "another."
+    ),
+)
+def test_a_shortened_feed_row_never_claims_more_than_it_stores(
+    compact_oversized_feed_row: _ShortenedRow,
+) -> None:
+    """The correct behaviour: a row cannot show more of itself than it has.
+
+    Both numbers the operator is shown come from this one row, and the whole
+    point of the pair is the sentence "showing the first X of Y". Y < X makes
+    that sentence false on the one surface built to answer "am I looking at the
+    whole of this output, or only its beginning?".
+    """
+    row = compact_oversized_feed_row
+
+    assert row.content_shown_bytes <= row.content_bytes, (
+        f"the row says it shows {row.content_shown_bytes} bytes of a stored {row.content_bytes}"
+    )

@@ -607,6 +607,21 @@
   background: color-mix(in srgb, var(--amb) 12%, transparent);
 }
 
+/*
+ * "Only the beginning of this output is in this table." Lives in the Size
+ * column, beside the FULL stored size, in the KindTag/VerdictPill style.
+ */
+.out-partial {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  color: var(--aml);
+  background: color-mix(in srgb, var(--amb) 12%, transparent);
+}
+
 /* ── Outputs ───────────────────────────────────────────────── */
 
 .out {
@@ -734,6 +749,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The cell must hold formatBytes plus the `partial` tag whole: `.out-table td`
+   clips and ellipsizes, and `table-layout: fixed` means the declared width is
+   the only width. Measured in Chromium, the widest size text plus the tag is
+   133px, so 140px leaves the full stored size readable beside the marker. The
+   extra width is taken only when a visible row is actually shortened, so an
+   unshortened feed keeps it for the title. */
+.out-table--partial .out-col-size {
+  width: 140px;
+}
+
 .out-title {
   width: 100%;
   display: flex;
@@ -801,6 +826,12 @@
 
   .out-table .out-col-size {
     text-align: right;
+  }
+
+  /* The grid sizes this cell from its content; the fixed-table width above
+     would overflow its column here. */
+  .out-table--partial .out-col-size {
+    width: auto;
   }
 
   .tl-attempt-row {

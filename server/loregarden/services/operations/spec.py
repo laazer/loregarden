@@ -48,6 +48,8 @@ class OperationId(StrEnum):
     ARTIFACT_INDEX = "artifact_index"
     #: Every artifact on one ticket, newest first, for the Artifacts tab.
     ARTIFACT_FEED = "artifact_feed"
+    #: One artifact of one ticket with its whole content, past the feed's bound.
+    ARTIFACT_DETAIL = "artifact_detail"
     #: Start a ticket's orchestration on the profile's driver, admitted to a lane.
     ORCHESTRATION_START = "orchestration_start"
     #: The calls a run makes back as it works (`run_callbacks.py`).

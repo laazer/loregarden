@@ -114,6 +114,7 @@ import type {
   BtwExchange,
   RunMessage,
   TicketLedger,
+  TicketArtifactItem,
   TicketArtifactsFeed,
   HandoffFeed,
   McpServerInput,
@@ -299,6 +300,9 @@ export const api = {
     request<TicketLedger>(`/api/tickets/${ticketId}/ledger`),
   ticketArtifacts: (ticketId: string) =>
     request<TicketArtifactsFeed>(`/api/tickets/${ticketId}/artifacts`),
+  /** One artifact with the whole of its content — the feed's rows are bounded. */
+  ticketArtifact: (ticketId: string, artifactId: string) =>
+    request<TicketArtifactItem>(`/api/tickets/${ticketId}/artifacts/${artifactId}`),
   /** Newest first: one ticket's handoffs, one workspace's, or (neither given) every workspace's; `q` narrows by agent or ticket. */
   handoffs: (scope: { ticketId?: string | null; workspace?: string; q?: string }) => {
     const q = new URLSearchParams();

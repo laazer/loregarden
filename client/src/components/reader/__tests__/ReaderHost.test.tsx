@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -6,6 +7,16 @@ import { MarkdownContent } from "../../chat/MarkdownContent";
 import { ReaderHost } from "../ReaderHost";
 
 afterEach(() => act(() => useReaderStore.getState().close()));
+
+/**
+ * The reader fetches the rest of a shortened document (lg-milestone-that-1424
+ * AC6-AC10), so it needs a query client the way it needs the store. In the app
+ * it is mounted inside `App`'s provider; here every render supplies its own.
+ */
+function renderInApp(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const LONG = Array.from({ length: 20 }, (_, i) => `Paragraph ${i} of the review.`).join("\n\n");
 
@@ -17,7 +28,7 @@ it("offers no Open control on short markdown", () => {
 
 it("opens long markdown in the reader, titled, and closes on Escape", async () => {
   const user = userEvent.setup();
-  render(
+  renderInApp(
     <>
       <MarkdownContent content={LONG} readerTitle="Security review" />
       <ReaderHost />
@@ -35,7 +46,7 @@ it("opens long markdown in the reader, titled, and closes on Escape", async () =
 });
 
 it("lays an object out as facts and sections, with the raw source a toggle away", () => {
-  render(<ReaderHost />);
+  renderInApp(<ReaderHost />);
   act(() =>
     useReaderStore.getState().open({
       title: "Review",
@@ -53,7 +64,7 @@ it("lays an object out as facts and sections, with the raw source a toggle away"
 });
 
 it("shows a stage report's verdict once, beside the title, and each fact once", () => {
-  render(<ReaderHost />);
+  renderInApp(<ReaderHost />);
   act(() =>
     useReaderStore.getState().open({
       title: "Stage report — gate",
@@ -79,7 +90,7 @@ it("shows a stage report's verdict once, beside the title, and each fact once", 
 });
 
 it("lays a handoff's checklist out as a table, without a heading for its wrapper", () => {
-  render(<ReaderHost />);
+  renderInApp(<ReaderHost />);
   act(() =>
     useReaderStore.getState().open({
       title: "handoff spec → test_designer",
@@ -107,7 +118,7 @@ it("lays a handoff's checklist out as a table, without a heading for its wrapper
 });
 
 it("renders a diff artifact's lines as a diff, not one card per line", () => {
-  render(<ReaderHost />);
+  renderInApp(<ReaderHost />);
   act(() =>
     useReaderStore.getState().open({
       title: "client/src/api/types.ts",

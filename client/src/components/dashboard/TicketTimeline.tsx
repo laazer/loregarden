@@ -188,7 +188,7 @@ export function TicketTimeline({
           />
           {timeline.beforeFirstRun.length > 0 ? (
             <ol className="tl-list">
-              <BeforeFirstRun outputs={timeline.beforeFirstRun} />
+              <BeforeFirstRun outputs={timeline.beforeFirstRun} ticketId={ticket.id} />
             </ol>
           ) : null}
         </>
@@ -237,12 +237,13 @@ export function TicketTimeline({
                 key={visit.key}
                 visit={visit}
                 stageName={stageNames.get(visit.visit.stage_key) ?? visit.visit.stage_key}
+                ticketId={ticket.id}
                 isLatest={index === 0}
                 shownAbove={shownAbove}
                 onOpenRunLog={onOpenRunLog}
               />
             ))}
-            <BeforeFirstRun outputs={timeline.beforeFirstRun} />
+            <BeforeFirstRun outputs={timeline.beforeFirstRun} ticketId={ticket.id} />
           </ol>
         </>
       )}
@@ -261,7 +262,13 @@ export function TicketTimeline({
 }
 
 /** Outputs attached before any stage ran: an import's context, an integration diff. */
-function BeforeFirstRun({ outputs }: { outputs: readonly TicketArtifactItem[] }) {
+function BeforeFirstRun({
+  outputs,
+  ticketId,
+}: {
+  outputs: readonly TicketArtifactItem[];
+  ticketId: string;
+}) {
   if (outputs.length === 0) return null;
   return (
     <li className="tl-visit tl-visit--quiet">
@@ -272,7 +279,7 @@ function BeforeFirstRun({ outputs }: { outputs: readonly TicketArtifactItem[] })
           {outputs.length} output{outputs.length === 1 ? "" : "s"}
         </span>
       </div>
-      <OutputList outputs={outputs} />
+      <OutputList outputs={outputs} ticketId={ticketId} />
     </li>
   );
 }
@@ -307,12 +314,14 @@ function ordinal(n: number): string {
 function VisitItem({
   visit,
   stageName,
+  ticketId,
   isLatest,
   shownAbove,
   onOpenRunLog,
 }: {
   visit: TimelineVisit;
   stageName: string;
+  ticketId: string;
   isLatest: boolean;
   shownAbove: string | null;
   onOpenRunLog: (runId: string) => void;
@@ -399,7 +408,7 @@ function VisitItem({
             )}
           </ul>
           {visit.outputs.length > 0 ? (
-            <OutputList outputs={visit.outputs} stageName={stageName} />
+            <OutputList outputs={visit.outputs} ticketId={ticketId} stageName={stageName} />
           ) : (
             <div className="tl-none">No outputs recorded while this stage ran.</div>
           )}
@@ -537,7 +546,16 @@ function FailedRunRow({
   );
 }
 
-function OutputList({ outputs, stageName }: { outputs: readonly TicketArtifactItem[]; stageName?: string }) {
+function OutputList({
+  outputs,
+  ticketId,
+  stageName,
+}: {
+  outputs: readonly TicketArtifactItem[];
+  /** The address the reader fills a shortened row in from. */
+  ticketId: string;
+  stageName?: string;
+}) {
   return (
     <ul className="tl-outputs">
       {outputs.map((item) => (
@@ -545,7 +563,7 @@ function OutputList({ outputs, stageName }: { outputs: readonly TicketArtifactIt
           <Button
             variant="plain"
             className={`tl-output${isErrorOutput(item) ? " tl-output--error" : ""}`}
-            onClick={() => openOutput(item, stageName)}
+            onClick={() => openOutput(item, { ticketId, stage: stageName })}
           >
             <KindTag item={item} />
             <span className="tl-output-title">{outputTitle(item)}</span>

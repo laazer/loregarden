@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from loregarden.models.domain import BlockedOn, TicketState, TicketSummary, WorkItemType
-from loregarden.services.artifact_service import list_ticket_artifacts
+from loregarden.services.artifact_service import get_ticket_artifact, list_ticket_artifacts
 from loregarden.services.operations.spec import (
     Caller,
     Effect,
@@ -93,6 +93,14 @@ class ArtifactFeedQuery(TicketKey):
     limit: int = Field(default=200, ge=1)
 
 
+class ArtifactDetailQuery(TicketKey):
+    artifact_id: str
+
+
+class ArtifactNotFound(LookupError):  # noqa: N818 — reads as the condition
+    """No artifact of that id belongs to that ticket."""
+
+
 def _search(session: Session, query: TicketSearch, _caller: Caller) -> dict[str, Any]:
     return list_tickets_mcp(
         session,
@@ -129,6 +137,15 @@ def _feed(session: Session, query: ArtifactFeedQuery, _caller: Caller) -> dict[s
     return list_ticket_artifacts(session, query.resolve(session).id, limit=query.limit)
 
 
+def _artifact(session: Session, query: ArtifactDetailQuery, _caller: Caller) -> dict[str, Any]:
+    # By the ticket's own id: an artifact of another ticket is not served
+    # under this one's path.
+    item = get_ticket_artifact(session, query.resolve(session).id, query.artifact_id)
+    if item is None:
+        raise ArtifactNotFound("Artifact not found")
+    return item
+
+
 TICKET_LISTS = (
     Operation(
         id=OperationId.TICKET_SEARCH,
@@ -163,6 +180,17 @@ TICKET_LISTS = (
         unavailable_on={
             Transport.MCP: "every artifact's full content, newest first, for the page to "
             "poll; agents read artifact_index, then one artifact by id",
+            Transport.CLI: "the CLI runs MCP's tools, which do not offer it",
+        },
+    ),
+    Operation(
+        id=OperationId.ARTIFACT_DETAIL,
+        effect=Effect.READ,
+        args=ArtifactDetailQuery,
+        handler=_artifact,
+        unavailable_on={
+            Transport.MCP: "the whole of one artifact for the Artifacts tab; agents read "
+            "an artifact through artifact_index and the document tools",
             Transport.CLI: "the CLI runs MCP's tools, which do not offer it",
         },
     ),
