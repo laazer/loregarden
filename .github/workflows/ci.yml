@@ -234,9 +234,10 @@ jobs:
           if-no-files-found: error
 
   # Per-file test time on every run, and on a pull request a check that fails when
-  # a suite grew more than 20% over the median of main's last ten runs, naming
-  # the files that grew. The arithmetic is lore_eden.testing.profile_delta;
-  # .github/scripts/suite_timing.py decides which runs it sees. Main's pushes
+  # a suite grew more than 20% over the median of main's last ten runs, scaled by
+  # the runner's speed, naming the files that grew. The arithmetic is
+  # lore_eden.testing.profile_delta; .github/scripts/suite_timing.py decides which
+  # runs it sees and scales the baseline. Main's pushes
   # store the baseline; nothing a pull request uploads is read as one.
   suite-timing:
     name: Suite time (vs main)
