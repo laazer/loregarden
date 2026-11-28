@@ -189,6 +189,7 @@ def test_no_merged_id_has_been_renamed_or_removed():
     when they are missing is deliberate — skipping would make the one check
     that sees a rename optional.
     """
+    # branch-rule: a migration id main has shipped is never renamed or removed
     fork_point = run_git(
         ["merge-base", "HEAD", SHIPPED_REF],
         cwd=REPO_ROOT,
