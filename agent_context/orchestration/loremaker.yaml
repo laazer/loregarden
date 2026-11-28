@@ -27,6 +27,7 @@ callbacks:
   mode: mcp
 max_stages_per_run: 0
 git:
+  commit: true
   # The suites the landing's diff reaches, on the candidate merge, before its ref
   # moves. A candidate cut before these scripts existed is refused, not passed:
   # merge master into it.

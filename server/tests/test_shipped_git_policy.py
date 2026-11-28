@@ -72,9 +72,19 @@ def test_blobert_publishes_its_trees_and_opens_but_never_auto_merges_their_prs()
     assert config.tree_auto_merge is False and config.auto_merge is False
 
 
-@pytest.mark.parametrize("slug", ["lore-eden", "loremaker", "a-workspace-with-no-profile"])
+def test_loremaker_commits_its_stage_work_and_publishes_nothing():
+    """Asked for on 2026-11-26 (`loremaker.yaml` gained `commit: true`): stage work
+    is committed on the ticket branch rather than left for a person to commit.
+    Push and PRs were not part of that decision and stay off."""
+    config = resolve_git_automation(_workspace("loremaker"))
+
+    assert enabled_steps(config) == ["commit"]
+    assert config.worktree is True
+
+
+@pytest.mark.parametrize("slug", ["lore-eden", "a-workspace-with-no-profile"])
 def test_every_other_workspace_still_publishes_nothing(slug: str):
-    """The change was scoped to loregarden and blobert, and stays that way until asked.
+    """The change was scoped to loregarden, blobert and loremaker's commit, and stays that way until asked.
 
     A workspace falling through to `default.yaml` writes into another repository
     on this machine. Turning commit on there is a separate decision, and this is
