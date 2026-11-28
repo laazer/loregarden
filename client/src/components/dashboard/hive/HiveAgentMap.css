@@ -349,6 +349,12 @@
   color: var(--map-danger-hi);
 }
 
+/* The fourth state: the log never said what became of this call. Not a failure, not a win. */
+.hive-map__feed-row--unknown .hive-map__feed-mark,
+.hive-map__feed-row--unknown .hive-map__feed-label {
+  color: var(--map-ink-3);
+}
+
 .hive-map__feed-time {
   grid-area: time;
   font-family: var(--mono);
@@ -370,6 +376,11 @@
   color: var(--map-inbox-hi);
 }
 
+/* The desk is the agent's own position, not a station on the ring: it reads quieter. */
+.hive-map__feed-station--desk {
+  color: var(--map-ink-2);
+}
+
 .hive-map__feed-label {
   grid-area: label;
   overflow: hidden;
@@ -386,6 +397,36 @@
 
 .hive-map__feed-agent {
   grid-area: agent;
+  font-size: var(--fs-micro);
+  color: var(--map-ink-3);
+}
+
+/* Between the heading and the first feed row, in that tab order. */
+.hive-map__filter {
+  margin: 0 0 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--map-edge);
+  border-radius: 999px;
+  background: var(--map-card);
+  color: var(--map-ink-2);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.hive-map__filter:hover,
+.hive-map__filter:focus-visible {
+  border-color: var(--map-edge-hi);
+  color: var(--map-ink);
+}
+
+.hive-map__filter[aria-pressed="true"] {
+  border-color: var(--map-danger);
+  background: color-mix(in srgb, var(--map-danger) 16%, var(--map-card));
+  color: var(--map-danger-hi);
+}
+
+.hive-map__filter-status {
+  margin: 0 0 6px;
   font-size: var(--fs-micro);
   color: var(--map-ink-3);
 }

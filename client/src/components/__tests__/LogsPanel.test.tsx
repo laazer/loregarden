@@ -70,6 +70,8 @@ function runLogFor(runId: string, text: string): RunLog {
     stage_key: "implement",
     status: "running",
     command: "",
+    adapter: "claude",
+    call_lines_expected: true,
     started_at: null,
     finished_at: null,
     lines: [{ time: "10:00:00", tag: "OUT", text }],

@@ -21,6 +21,13 @@ export interface RunLog {
   stage_key: string;
   status: string;
   command: string;
+  /**
+   * The CLI adapter resolved from `command` (`services/cli_settings.adapter_for_command`), or
+   * "" when the command is empty or resolves to nothing — 790 of 6,211 runs record none.
+   */
+  adapter: string;
+  /** Whether this adapter is one that writes `call ·` lines. A prediction; lines outrank it. */
+  call_lines_expected: boolean;
   started_at: string | null;
   finished_at: string | null;
   /** Empty for runs that predate the log streamer. */

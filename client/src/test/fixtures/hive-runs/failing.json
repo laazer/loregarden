@@ -1,0 +1,913 @@
+{
+  "run_id": "fcc2a8a7-9235-4c08-a5a6-da1a678845f4",
+  "run_code": "run_0755aa",
+  "agent_id": "repair",
+  "skill_name": "",
+  "stage_key": "integration-merge",
+  "status": "failed",
+  "adapter": "",
+  "call_lines_expected": false,
+  "started_at": "2026-11-18T13:23:46.838217Z",
+  "lines": [
+    {
+      "time": "13:23:48",
+      "tag": "RUN",
+      "text": "repair invoked \u00b7 skill=\u2014"
+    },
+    {
+      "time": "13:23:48",
+      "tag": "CMD",
+      "text": "Queuing agent\u2026"
+    },
+    {
+      "time": "13:23:52",
+      "tag": "SYS",
+      "text": "session init \u00b7 claude-opus-5"
+    },
+    {
+      "time": "13:23:54",
+      "tag": "OUT",
+      "text": "I'll start by examining the merge conflicts."
+    },
+    {
+      "time": "13:23:58",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git status: Check git status and conflict diffstat"
+    },
+    {
+      "time": "13:24:10",
+      "tag": "TOOL",
+      "text": "result\nA  .lefthook/scripts/merge_drops_check.py\nM  .lefthook/scripts/py_ref_writers_check.py\nM  agent_context/agents/common_assets/loregarden_mcp_v1.md\nM  agent_context/agents/misc_agents/ticket_scoper_v1.md\nM  client/src/components/initiatives/plan/PhaseTree.tsx\nA  client/src/components/initiatives/plan/__tests__/PhaseTree.test.tsx\nM  lefthook.yml\nM  server/loregarden/agents/executors/cli.py\nM  server/loregarden/agents/executors/print_mode.py\nM  server/loregarden/agents/mcp_context.py\nM  server/loregarden/api/docker_capacity.py\nM  server/loregarden/api/github_issues.py\nM  server/loregarden/api/inbox.py\nM  server/loregarden/api/initiatives.py\nM  server/loregarden/api/machine_disk.py\nM  server/loregarden/api/memory.py\nM  server/loregarden/api/merge_queue.py\nA  server/loregarden/api/operation_bodies.py\nA  server/loregarden/api/operation_routes.py\nUU server/loregarden/api/orchestration.py\nM  server/loregarden/api/reference_library.py\nM  server/loregarden/api/reference_research.py\nM  server/loregarden/api/ticket_autopilot.py\nM  server/loregarden/api/ticket_pull_request.py\nUU server/loregarden/api/tickets.py\nM  server/loregarden/api/workspace_integration.py\nA  server/loregarden/cli/git_calls.py\nM  server/loregarden/cli/main.py\nM  server/loregarden/cli/mcp_tools.py\nM  server/loregarden/config.py\nA  server/loregarden/db/versions/code_signals.py\nA  server/loregarden/db/versions/integration_branch_moves.py\nA  server/loregarden/db/versions/symbol_map.py\nM  server/loregarden/main.py\nUU server/loregarden/mcp/artifact_tools.py\nM  server/loregarden/mcp/block_ticket_args.py\nA  server/loregarden/mcp/branch_moves_tool.py\nM  server/loregarden/mcp/disk_usage_tool.py\nM  server/loregarden/mcp/docker_capacity_tool.py\nM  server/loregarden/mcp/document_tools.py\nM  server/loregarden/mcp/external_harness_tools.py\nM  server/loregarden/mcp/github_issue_tool.py\nM  server/loregarden/mcp/initiative_membership_tools.py\nM  server/loregarden/mcp/initiative_plan_tools.py\nM  server/loregarden/mcp/memory_too"
+    },
+    {
+      "time": "13:24:16",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 for: Log commits per conflicted file"
+    },
+    {
+      "time": "13:24:19",
+      "tag": "TOOL",
+      "text": "result\n=== server/loregarden/api/orchestration.py\n> db8c13d10a feat(api): operation routes take their request body from the args model (#895)\n> 66eb9b6420 feat(operations): orchestration start and run callbacks run through operation_call (#882)\n> 5f0b8b8744 feat(operations): ticket and artifact lists run through operation_call (#880)\n> 6d3d6701d9 fix(state): REST and MCP read one ticket-state payload, and a GET writes nothing (#878)\n< 5b40be90de fix(land-receipt): judge the covered set against the producer report, and give the refusal its own slot\n=== server/loregarden/api/tickets.py\n> db8c13d10a feat(api): operation routes take their request body from the args model (#895)\n> b1a1174dd6 feat(operations): the remaining paired MCP tools and REST routes run through operation_call (#891)\n> cab7fdbf56 feat(operations): ticket dependencies and relations run through operation_call (#890)\n> 5f0b8b8744 feat(operations): ticket and artifact lists run through operation_call (#880)\n< fc86a51684 Refresh loregarden/lg-milestone-that-1426 from integration/lg-milestone-that-491 before landing\n< 8f2550bd60 Refresh integration/lg-milestone-that-491 from main\n< 5b40be90de fix(land-receipt): judge the covered set against the producer report, and give the refusal its own slot\n< 2f30839699 Refresh integration/lg-milestone-that-491 from main\n=== server/loregarden/mcp/artifact_tools.py\n> 66eb9b6420 feat(operations): orchestration start and run callbacks run through operation_call (#882)\n< 5b40be90de fix(land-receipt): judge the covered set against the producer report, and give the refusal its own slot\n< 85222f2f1a fix(land-receipt): refuse the privileged write, and bind the receipt the reader trusts\n=== server/loregarden/mcp/tools.py\n> 641231dd58 feat(mcp): operation tools take their schema from the args model (#892)\n> b1a1174dd6 feat(operations): the remaining paired MCP tools and REST routes run through operation_call (#891)\n> 66eb9b6420 feat(operations): orchestration start and run callbacks r"
+    },
+    {
+      "time": "13:24:24",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 for: Count and locate conflict markers"
+    },
+    {
+      "time": "13:24:27",
+      "tag": "TOOL",
+      "text": "result\n=== server/loregarden/api/orchestration.py  2 conflicts,      378 lines\n43:<<<<<<< HEAD\n50:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n334:<<<<<<< HEAD\n362:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n=== server/loregarden/api/tickets.py  1 conflicts,     1142 lines\n82:<<<<<<< HEAD\n426:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n=== server/loregarden/mcp/artifact_tools.py  3 conflicts,      134 lines\n1:<<<<<<< HEAD\n12:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n21:<<<<<<< HEAD\n25:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n33:<<<<<<< HEAD\n93:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n=== server/loregarden/mcp/tools.py  1 conflicts,      871 lines\n854:<<<<<<< HEAD\n863:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n=== server/loregarden/services/invariant_registry.py  3 conflicts,     1488 lines\n46:<<<<<<< HEAD\n53:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n349:<<<<<<< HEAD\n519:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n1065:<<<<<<< HEAD\n1074:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n=== server/tests/test_land_verification_invariant.py  2 conflicts,     2108 lines\n102:<<<<<<< HEAD\n111:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n1045:<<<<<<< HEAD\n2108:>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a"
+    },
+    {
+      "time": "13:24:30",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Read artifact_tools.py conflicts"
+    },
+    {
+      "time": "13:24:33",
+      "tag": "TOOL",
+      "text": "result\n1\t<<<<<<< HEAD\n     2\t\"\"\"The artifact-writing MCP tools: `loregarden_attach_artifact` and `loregarden_attach_evidence`.\n     3\t\n     4\t`attach_artifact` is one of the three doors a refused reserved-kind write can\n     5\tarrive at. All three report it through\n     6\t`services.reserved_kind_refusal.report_reserved_kind_refusal`, which is the one\n     7\tplace the caller's payload, the `warning` line and the operator's row are\n     8\tdecided \u2014 so this door's only job is to say WHICH run was refused.\n     9\t\"\"\"\n    10\t=======\n    11\t\"\"\"`loregarden_attach_evidence`. `loregarden_attach_artifact` is the `artifact_attach` operation.\"\"\"\n    12\t>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n    13\t\n    14\tfrom __future__ import annotations\n    15\t\n    16\timport json\n    17\tfrom typing import Any\n    18\t\n    19\tfrom sqlmodel import Session\n    20\t\n    21\t<<<<<<< HEAD\n    22\tfrom loregarden.models.domain import AgentRun\n    23\t=======\n    24\tfrom loregarden.services.artifact_content import parse_content_object\n    25\t>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n    26\tfrom loregarden.services.evidence import ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND\n    27\tfrom loregarden.services.evidence import EVIDENCE_KINDS, resolve_head_sha\n    28\tfrom loregarden.services.reserved_kind_refusal import (\n    29\t    ReservedKindRefused,\n    30\t    report_reserved_kind_refusal,\n    31\t)\n    32\t\n    33\t<<<<<<< HEAD\n    34\t_CONTENT_OBJECT = TypeAdapter(dict[str, Any])\n    35\t\n    36\t\n    37\tdef _content_object(raw: str | None) -> dict[str, Any]:\n    38\t    \"\"\"`content_json` parsed, refusing anything but a JSON object.\n    39\t\n    40\t    Every reader of `Artifact.content_json` treats it as an object. A JSON string\n    41\t    holding an object (an agent that encoded twice) was once accepted and made\n    42\t    `GET /api/tickets/{id}` fail on every load for that ticket.\n    43\t    \"\"\"\n    44\t    if not raw:\n    45\t        return {}\n    46\t    try:\n    47\t        return _CONTENT_OBJECT.validate_j"
+    },
+    {
+      "time": "13:24:41",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git show: Show integration artifact_tools and find artifact_attach operation"
+    },
+    {
+      "time": "13:24:45",
+      "tag": "TOOL",
+      "text": "result\n1\t\"\"\"`loregarden_attach_evidence`. `loregarden_attach_artifact` is the `artifact_attach` operation.\"\"\"\n     2\t\n     3\tfrom __future__ import annotations\n     4\t\n     5\timport json\n     6\tfrom typing import Any\n     7\t\n     8\tfrom sqlmodel import Session\n     9\t\n    10\tfrom loregarden.services.artifact_content import parse_content_object\n    11\tfrom loregarden.services.evidence import ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND\n    12\tfrom loregarden.services.evidence import EVIDENCE_KINDS, resolve_head_sha\n    13\t\n    14\t\n    15\tdef attach_evidence(\n    16\t    session: Session, svc, ticket, arguments: dict[str, Any], *, run_id: str | None\n    17\t) -> str:\n    18\t    \"\"\"Record proof of behaviour, stamped with the commit it proves.\"\"\"\n    19\t    evidence_kind = arguments[\"evidence_kind\"]\n    20\t    if evidence_kind not in EVIDENCE_KINDS:\n    21\t        raise ValueError(\n    22\t            f\"Unknown evidence_kind '{evidence_kind}'. Valid kinds: {', '.join(EVIDENCE_KINDS)}\"\n    23\t        )\n    24\t    content = parse_content_object(arguments.get(\"content_json\"))\n    25\t    # Stamped here, not taken from the agent: an agent choosing its own sha can\n    26\t    # claim proof against a commit its work predates.\n    27\t    artifact = svc.attach_artifact(\n    28\t        ticket,\n    29\t        kind=EVIDENCE_ARTIFACT_KIND,\n    30\t        title=arguments.get(\"title\", \"\"),\n    31\t        content=content,\n    32\t        evidence_kind=evidence_kind,\n    33\t        commit_sha=resolve_head_sha(session, ticket),\n    34\t        run_id=run_id,\n    35\t    )\n    36\t    return json.dumps(\n    37\t        {\"ok\": True, \"artifact_id\": artifact.id, \"commit_sha\": artifact.commit_sha}, indent=2\n    38\t    )\n=== OPERATIONS ===\n__init__.py\nadvertised.py\ncall.py\ndisk_operations.py\ndocker_capacity_operations.py\ngithub_issue_operations.py\ninitiatives.py\nmemory_discredit.py\nmemory_operations.py\nmerge_queue_ops.py\norganization_operations.py\npull_request_merges.py\nresearch_record.py\nrun_callbacks.py\nspec.py"
+    },
+    {
+      "time": "13:24:47",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Find artifact_attach operation"
+    },
+    {
+      "time": "13:24:52",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/mcp/artifact_tools.py:11:\"\"\"`loregarden_attach_evidence`. `loregarden_attach_artifact` is the `artifact_attach` operation.\"\"\"\nserver/loregarden/services/operations/spec.py:58:    ARTIFACT_ATTACH = \"artifact_attach\"\n=== ticket_writes ===\n112:def _work_item_type(raw: str) -> WorkItemType:\n119:def _parent_id(session: Session, parent: str) -> str | None:\n132:def _prerequisites(session: Session, refs: list[str]) -> list[Ticket]:\n142:def _create(session: Session, args: TicketCreateArgs, caller: Caller) -> FiledTicket:\n181:def _filed_reply(_session: Session, filed: FiledTicket) -> dict[str, Any]:\n194:def _filed_detail(session: Session, filed: FiledTicket) -> Any:\n296:def refuse_unpaired_stage_status(stage_key: str | None, stage_status: object) -> None:\n303:def _criteria_fields(ticket: Ticket, args: TicketUpdateArgs) -> dict[str, Any]:\n323:def collect_update_fields(ticket: Ticket, args: TicketUpdateArgs) -> dict[str, Any]:\n348:def _update(session: Session, args: TicketUpdateArgs, caller: Caller) -> Ticket:\n396:def _set_workflow(session: Session, args: TicketWorkflowArgs, _caller: Caller) -> Ticket:\n420:def _state_reply(session: Session, ticket: Ticket) -> dict[str, Any]:\n424:def _detail_reply(session: Session, ticket: Ticket) -> Any:"
+    },
+    {
+      "time": "13:24:54",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Find ARTIFACT_ATTACH usage and refusal reporters"
+    },
+    {
+      "time": "13:25:01",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/mcp/operation_tools.py:33:    McpTool.ATTACH_ARTIFACT.value: OperationId.ARTIFACT_ATTACH,\nserver/loregarden/api/orchestration.py:221:    operation=OperationId.ARTIFACT_ATTACH,\nserver/loregarden/api/orchestration.py:361:    return run_rest_operation(session, OperationId.ARTIFACT_ATTACH, _naming_run(run_id, body))\nserver/loregarden/services/operations/spec.py:58:    ARTIFACT_ATTACH = \"artifact_attach\"\nserver/loregarden/services/operations/run_callbacks.py:361:    _write(OperationId.ARTIFACT_ATTACH, ArtifactAttach, _attach_artifact),\n---\nserver/loregarden/mcp/artifact_tools.py\nserver/loregarden/mcp/document_tools.py\nserver/loregarden/api/orchestration.py\nserver/loregarden/services/reserved_kind_refusal.py\nserver/tests/test_privileged_artifact_writes.py"
+    },
+    {
+      "time": "13:25:03",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read run_callbacks.py"
+    },
+    {
+      "time": "13:25:07",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"Starting an orchestration and the calls a run makes back, as operations.\n\nThese were written twice, once as MCP tools and once as the REST callbacks\nunder `/api/orchestration/runs/{run_id}/`, and the two had drifted: the REST\n`start_stage` reserved no slot and could not start past a prerequisite with a\nrecorded override, its `complete_stage` dropped findings, its `block` dropped\nthe prepared action and never assessed the handover, and its `attach_artifact`\nrecorded no source run.\nEach is now one operation, offered on every transport with the same rules.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom typing import Any\n\nfrom loregarden.models.domain import (\n    BlockOrigin,\n    FindingDisposition,\n    HumanActionTier,\n    OrchestrationRun,\n    OrchestrationRunStatus,\n    OrchestrationRunView,\n    StageCompletionOutcome,\n    Ticket,\n)\nfrom loregarden.services.artifact_content import parse_content_object\nfrom loregarden.services.block_settlement import AGENT_ASKED_FOR_A_PERSON\nfrom loregarden.services.dependency_hold import admit_named_start\nfrom loregarden.services.external_harness import start_external_orchestration\nfrom loregarden.services.operations.advertised import items_like, one_of\nfrom loregarden.services.operations.spec import Caller, Effect, Operation, OperationId\nfrom loregarden.services.orchestration_callbacks import OrchestrationCallbackService\nfrom loregarden.services.prepared_action import assess_handover, prepared_action_from\nfrom loregarden.services.run_resolution import RunRef, attributed_agent_run_id, resolve_run_ref\nfrom loregarden.services.stage_report import findings_from\nfrom loregarden.services.stage_shape import current_stage_shape\nfrom loregarden.services.work_admission import (\n    OrchestrationStart,\n    WorkQueued,\n    run_admitted,\n    start_orchestration_admitted,\n)\nfrom pydantic import BaseModel, ConfigDict, Field\nfrom sqlmodel import Session\n\n#: MCP callers have always been able to send keys a tool does not read.\n_LENIENT = ConfigDic"
+    },
+    {
+      "time": "13:25:12",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Read reserved_kind_refusal and callback attach_artifact"
+    },
+    {
+      "time": "13:25:15",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"Refusing a reserved artifact kind, and making sure the operator meets it.\n\n`models.domain.enums.RESERVED_ARTIFACT_KINDS` names the kinds the control plane\nkeeps for its own records. This module is everything that happens when a caller\nasks for one: the typed refusal the write handler raises, the allowlisted names\nand payload the caller gets back, and the record the operator reads.\n\n**Two things are told to two audiences, and they are not the same thing.**\n\n- The *caller* gets a name and a code and nothing else \u2014 no expected digest, no\n  expected command set, no landed sha, no free-text reason. A refusal that names\n  what would have passed is a recipe, and prose handed back as a label is how\n  such a name leaks.\n- The *operator* gets the whole of it, twice: once as a `warning` log line (the\n  repo's accepted backend channel) and once as an artifact row the existing\n  Outputs tab already renders (under its own kind; see below). A security\n  refusal nobody is shown is the same silence this exists to fix, and nothing\n  in the IDE reads server logs.\n\nThe record is capped at one row per (ticket, run, refused kind) with an\n`attempts` count. A refused agent can retry inside one turn, Outputs is one\nunpaginated list, and the worst live ticket already carries 31 error-shaped\nrows \u2014 so a row per attempt is the volume failure to pre-empt rather than\ndiscover.\n**The row has its OWN `artifacts.kind` and shares it with no other writer**\n(`REFUSAL_RECORD_KIND`, lg-milestone-that-2614). `artifact_service._upsert_artifact`\nmatches on `(ticket_id, kind)` alone \u2014 no title, no `order_by` \u2014 so while this\nrecord sat in the shared `ArtifactKind.ERROR` slot, `record_blocking_issue`\nretitled and rewrote it. That writer is agent-reachable\n(`loregarden_append_checkpoint blocker=true` with a message over\n`BLOCKING_ISSUE_INLINE_LIMIT`), which made it a security record the refused\nagent could erase. Its kind is itself a member of `RESERVED_ARTIFACT_KINDS`, so\nan agent cannot mint one beside it"
+    },
+    {
+      "time": "13:25:19",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read orchestration.py"
+    },
+    {
+      "time": "13:25:21",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"REST API for orchestration callbacks \u2014 used by MCP server and external drivers.\"\"\"\n\nfrom typing import Any\n\nfrom fastapi import APIRouter, Body, Depends, HTTPException\nfrom loregarden.api.operation_bodies import OperationBody\nfrom loregarden.api.operation_routes import run_rest_operation\nfrom loregarden.core.terminal_text import strip_ansi\nfrom loregarden.db.session import get_session\nfrom loregarden.models.domain import (\n    FindingDecision,\n    GateOutcome,\n    GatesConfigUpdate,\n    GateTestCommandResult,\n    GateTestReport,\n    GateTestRequest,\n    GitAutomationView,\n    OrchestrationProfileView,\n    OrchestrationRunView,\n    Workspace,\n)\nfrom loregarden.services.discovered_work import undecided\nfrom loregarden.services.gate_runner import (\n    dry_run_gate_commands,\n    gates_can_run,\n    resolved_transition_script,\n    sample_gate_context,\n    transition_name,\n)\nfrom loregarden.services.operations import OperationId\nfrom loregarden.services.orchestration_callbacks import OrchestrationCallbackService\nfrom loregarden.services.orchestration_profile import (\n    PRESERVED_GATE_KEYS,\n    GatesConfig,\n    GitAutomationConfig,\n    ProfileUnreadableError,\n    default_gate_commands,\n    list_profiles,\n    resolve_orchestration_profile,\n    update_gates_config,\n    update_git_config,\n)\n<<<<<<< HEAD\nfrom loregarden.services.queue_admission import QueueAdmissionService\nfrom loregarden.services.reserved_kind_refusal import (\n    ReservedKindRefused,\n    report_reserved_kind_refusal,\n)\n=======\n>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\nfrom loregarden.services.scope_round import decide_finding\nfrom pydantic import BaseModel\nfrom sqlmodel import Session, select\n\nrouter = APIRouter(prefix=\"/orchestration\", tags=[\"orchestration\"])\n\n\ndef _profile_view(profile, workspace: Workspace) -> OrchestrationProfileView:\n    return OrchestrationProfileView(\n        slug=profile.slug,\n        name=profile.name or profile.slug,\n        driver=profile.driver,\n        workflow_templ"
+    },
+    {
+      "time": "13:25:26",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Check usages and operation call plumbing"
+    },
+    {
+      "time": "13:25:29",
+      "tag": "TOOL",
+      "text": "result\n44:from loregarden.services.queue_admission import QueueAdmissionService\n336:    run = _get_run(session, run_id)\n=== operation_routes ===\n\"\"\"REST's way into an operation: `operation_call`, with refusals as HTTP statuses.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Callable, Mapping\nfrom typing import Any, NamedTuple\n\nfrom fastapi import HTTPException\nfrom loregarden.services.dependency_hold import DependencyHold\nfrom loregarden.services.docker_leases import UnknownLease\nfrom loregarden.services.github_pr_listing import GitHubReadError\nfrom loregarden.services.initiative_autopilot import AutopilotRefusedError\nfrom loregarden.services.initiative_membership import MembershipConflictError\nfrom loregarden.services.memory_links import MemoryRelationError\nfrom loregarden.services.memory_store import MemoryGraphNotConfiguredError\nfrom loregarden.services.merge_queue import QueueNotFound, QueueRefusal\nfrom loregarden.services.operations import (\n    Caller,\n    OperationId,\n    OperationUnavailable,\n    Transport,\n    run_operation,\n)\nfrom loregarden.services.operations.disk_operations import (\n    DiskNodeNotFound,\n    DiskScanUnreadable,\n    NoDiskScan,\n)\nfrom loregarden.services.operations.github_issue_operations import IssueNotLinked\nfrom loregarden.services.operations.initiatives import PlanNotFound\nfrom loregarden.services.organization_gate_service import UnknownWorkspaceError\nfrom loregarden.services.pull_request_merge import MergeFailed, MergeRefused\nfrom loregarden.services.run_resolution import RunNotFound\nfrom loregarden.services.ticket_dependencies import DependencyCycleError\nfrom loregarden.services.ticket_growth_guard import SizeCapError\nfrom loregarden.services.ticket_ids import TicketNotFound\nfrom loregarden.services.ticket_revision_guard import TicketRevisionConflict\nfrom loregarden.services.work_admission import WorkQueued\nfrom loregarden.services.workspace_integration import InstallerError\nfrom pydantic import ValidationError\nfrom s"
+    },
+    {
+      "time": "13:25:38",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Read operation_tools.py and tools.py conflict"
+    },
+    {
+      "time": "13:25:40",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"MCP tools that are operations: the tool name is MCP's spelling of one.\n\n`execute_tool` tries this table before its own chain, so a tool listed here\nruns through `operation_call` on MCP and on the CLI alike.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nfrom collections.abc import Mapping\nfrom typing import Any\n\nfrom pydantic_core import to_jsonable_python\nfrom sqlmodel import Session\n\nfrom loregarden.mcp.operation_schemas import ToolShape, input_schema\nfrom loregarden.mcp.tool_ids import McpTool\nfrom loregarden.services.operations import Caller, OperationId, run_operation\nfrom loregarden.services.operations.call import OPERATIONS\nfrom loregarden.services.work_admission import WorkQueued\n\n#: Keyed by the wire name, as `tool_registry.EXTENDED_TOOLS` is.\nOPERATION_TOOLS: Mapping[str, OperationId] = {\n    McpTool.GET_TICKET.value: OperationId.TICKET_BRIEF,\n    McpTool.GET_TICKET_BY_EXTERNAL.value: OperationId.TICKET_BRIEF,\n    McpTool.LIST_TICKETS.value: OperationId.TICKET_SEARCH,\n    McpTool.LIST_ARTIFACTS.value: OperationId.ARTIFACT_INDEX,\n    McpTool.START_ORCHESTRATION.value: OperationId.ORCHESTRATION_START,\n    McpTool.START_STAGE.value: OperationId.STAGE_START,\n    McpTool.COMPLETE_STAGE.value: OperationId.STAGE_COMPLETE,\n    McpTool.SKIP_STAGE.value: OperationId.STAGE_SKIP,\n    McpTool.BLOCK_TICKET.value: OperationId.TICKET_BLOCK,\n    McpTool.ATTACH_ARTIFACT.value: OperationId.ARTIFACT_ATTACH,\n    McpTool.REQUEST_APPROVAL.value: OperationId.APPROVAL_REQUEST,\n    McpTool.COMPLETE_ORCHESTRATION.value: OperationId.ORCHESTRATION_COMPLETE,\n    McpTool.LINK_DEPENDENCY.value: OperationId.TICKET_DEPENDENCY_ADD,\n    McpTool.UNLINK_DEPENDENCY.value: OperationId.TICKET_DEPENDENCY_REMOVE,\n    McpTool.LINK_RELATION.value: OperationId.TICKET_RELATION_ADD,\n    McpTool.UNLINK_RELATION.value: OperationId.TICKET_RELATION_REMOVE,\n    # The merge queue (`services/operations/merge_queue_ops.py`).\n    McpTool.MERGE_QUEUE_STATUS.value: OperationId.MERGE_QUEUE_READ,\n    McpToo"
+    },
+    {
+      "time": "13:25:44",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read operations spec"
+    },
+    {
+      "time": "13:25:46",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"What an operation is: one thing the control plane does, declared once.\n\nEvery transport (MCP, the CLI, REST) reaches an operation through\n`operation_call`, never its handler directly, so an operation behaves the same\non each and turning one transport off is a line here, with its reason, rather\nthan a route nobody remembers to delete.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Callable, Mapping\nfrom dataclasses import dataclass, field\nfrom enum import StrEnum\nfrom typing import Any\n\nfrom pydantic import BaseModel\nfrom sqlmodel import Session\n\n\nclass Transport(StrEnum):\n    \"\"\"How a caller reached the control plane.\"\"\"\n\n    MCP = \"mcp\"\n    #: `loregarden-cli.sh mcp call`: MCP's tool names, run in-process.\n    CLI = \"cli\"\n    REST = \"rest\"\n\n\nclass Effect(StrEnum):\n    READ = \"read\"\n    WRITE = \"write\"\n\n\nclass OperationId(StrEnum):\n    #: What an agent reads before acting on a ticket: position, requirement,\n    #: blockers, documents.\n    TICKET_BRIEF = \"ticket_brief\"\n    #: Where a ticket sits in its workflow, with its edges and active run.\n    TICKET_STATE = \"ticket_state\"\n    #: The ticket page's view: the summary plus artifacts, transitions, runtime\n    #: and delivery.\n    TICKET_DETAIL = \"ticket_detail\"\n    #: An agent's ticket lookup: short rows to choose from.\n    TICKET_SEARCH = \"ticket_search\"\n    #: The board's ticket list: full summaries, filtered and optionally paged.\n    TICKET_SUMMARIES = \"ticket_summaries\"\n    #: Which documents describe a ticket, up its ancestors, without bodies.\n    ARTIFACT_INDEX = \"artifact_index\"\n    #: Every artifact on one ticket, newest first, for the Artifacts tab.\n    ARTIFACT_FEED = \"artifact_feed\"\n    #: Start a ticket's orchestration on the profile's driver, admitted to a lane.\n    ORCHESTRATION_START = \"orchestration_start\"\n    #: The calls a run makes back as it works (`run_callbacks.py`).\n    STAGE_START = \"stage_start\"\n    STAGE_COMPLETE = \"stage_complete\"\n    STAGE_SKIP = \"stage_skip\"\n    TI"
+    },
+    {
+      "time": "13:25:48",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read Caller dataclass"
+    },
+    {
+      "time": "13:25:50",
+      "tag": "TOOL",
+      "text": "result\n@dataclass(frozen=True)\nclass Caller:\n    transport: Transport\n    #: A run Loregarden itself supervises (MCP's `X-Loregarden-Orchestrated`).\n    orchestrated: bool = False\n    #: The supervised agent run whose MCP config made the call, when known.\n    run_id: str = \"\"\n\n\n@dataclass(frozen=True)\nclass Operation:\n    id: OperationId\n    effect: Effect\n    #: Validates the caller's arguments; every transport passes the same model.\n    args: type[BaseModel]\n    #: Called with the session, the validated args and the caller.\n    handler: Callable[[Session, Any, Caller], Any]\n    #: Transports this operation is not offered on, each with the reason. An\n    #: absent transport is offered, and must be bound (`test_operations.py`).\n    unavailable_on: Mapping[Transport, str] = field(default_factory=dict)\n    #: How a transport words the handler's result, where its callers have always\n    #: been answered in their own shape (an agent with the state payload, the\n    #: ticket page with its detail). The effect is one; the reply is the\n    #: transport's. A transport absent here gets the result as it is.\n    replies: Mapping[Transport, Callable[[Session, Any], Any]] = field(default_factory=dict)\n\n\nclass OperationUnavailable(Exception):  # noqa: N818 \u2014 reads as the condition, like StopIteration\n    \"\"\"The operation is not offered on the caller's transport.\"\"\"\n\n    def __init__(self, operation: OperationId, transport: Transport, reason: str) -> None:\n        super().__init__(f\"{operation} is not available over {transport}: {reason}\")\n        self.operation = operation\n        self.transport = transport\n        self.reason = reason\n\n\nclass ReadOperationWrote(RuntimeError):  # noqa: N818 \u2014 reads as the condition\n    \"\"\"A read operation tried to write. Raised where reads are strict (tests).\"\"\""
+    },
+    {
+      "time": "13:26:00",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Scan privileged artifact write tests"
+    },
+    {
+      "time": "13:26:03",
+      "tag": "TOOL",
+      "text": "result\n5:`{\"status\": \"passed\"}`, and that row was not privileged \u2014 `loregarden_attach_artifact`\n21:- `OrchestrationCallbackService.attach_artifact` gains `orchestrated: bool = False`\n24:- `mcp/artifact_tools.attach_artifact(session, svc, ticket, arguments, *, run_id,\n25:  orchestrated)` catches that refusal, logs it once at `warning`, records it, and\n26:  returns the payload. `mcp/tools.py` passes `orchestrated` in and uses it for\n167:    \"\"\"One real `loregarden_attach_artifact` call, as the MCP dispatcher makes it.\"\"\"\n210:def test_the_reserved_set_is_derived_from_the_kind_enums_and_excludes_evidence():\n237:def test_the_reserved_list_is_not_repeated_as_string_literals_anywhere():\n264:def test_the_refusal_vocabulary_is_an_enum_with_exactly_two_members():\n273:def test_attach_artifact_refuses_every_reserved_kind_and_writes_no_row(session, workspace):\n285:            svc.attach_artifact(\n296:def test_an_unreserved_kind_the_agent_coined_is_still_written(session, workspace):\n304:    written = svc.attach_artifact(\n312:def test_no_caller_supplied_bypass_was_added(session):\n313:    \"\"\"AC1's last clause. `orchestrated` is read for one thing only \u2014 which code\n320:    signature = inspect.signature(OrchestrationCallbackService.attach_artifact)\n326:    assert \"orchestrated\" in signature.parameters, (\n337:def test_a_forged_passing_receipt_is_refused_and_the_landing_is_still_reported(\n372:def test_the_orchestration_id_form_really_is_the_null_run_id_shape(session, landed):\n397:def test_the_forgery_is_refused_through_the_module_the_criterion_names(session, landed):\n398:    \"\"\"AC2 names `loregarden.mcp.artifact_tools.attach_artifact` as the thing\n402:    assert artifact_tools.attach_artifact.__module__ == \"loregarden.mcp.artifact_tools\"\n405:    assert \"attach_artifact(\" in dispatcher\n406:    assert \"orchestrated=orchestrated\" in dispatcher, (\n440:def test_no_mcp_or_api_module_can_write_a_receipt_or_a_report():\n444:    `attach_artifact` is worth nothing if a later tool imports the writer\n462:"
+    },
+    {
+      "time": "13:26:09",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read tickets.py conflict edges"
+    },
+    {
+      "time": "13:26:12",
+      "tag": "TOOL",
+      "text": "result\n_test_artifact_is_valid = artifact_service._test_artifact_is_valid\n\nlogger = logging.getLogger(__name__)\n\nrouter = APIRouter(prefix=\"/tickets\", tags=[\"tickets\"])\n\n\n<<<<<<< HEAD\ndef _latest_run_code(session: Session, ticket_id: str) -> str:\n    # The column, not the row: `agent_runs.stdout` holds a run's whole\n    # transcript, and every ticket summary calls this \u2014 once per ticket on the\n    # list endpoint, which made a page of summaries fetch a page of transcripts.\n    run_code = session.exec(\n        select(AgentRun.run_code)\n        .where(AgentRun.ticket_id == ticket_id)\n        .order_by(AgentRun.created_at.desc())\n    ).first()\n    return run_code or \"\"\n\n\n#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.\n_ID_CHUNK = 400\n\n\ndef _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]:\n    \"\"\"Every ticket's latest run code, in one scan per chunk rather than per ticket.\n\n    `agent_runs` has no index behind `ORDER BY created_at DESC`, so asking\n    `_latest_run_code` once per row scanned the table once per row \u2014 measured on\n    a copy of the live database, 837 queries and 17.5s of an 85s ticket list.\n    Ascending order lets a later run overwrite an earlier one, so what lands is\n    the latest.\n\n    A ticket with no runs is absent from the result; callers pass `\"\"`, which is\n    what `_latest_run_code` answers for the same case.\n    \"\"\"\n    codes: dict[str, str] = {}\n    for start in range(0, len(ticket_ids), _ID_CHUNK):\n        chunk = ticket_ids[start : start + _ID_CHUNK]\n        rows = session.exec(\n            select(AgentRun.ticket_id, AgentRun.run_code)\n            .where(col(AgentRun.ticket_id).in_(chunk))\n            .order_by(col(AgentRun.created_at))\n        ).all()\n        for ticket_id, run_code in rows:\n            codes[ticket_id] = run_code\n..... OURS tail .....\n        return grouped\n\n    workspace = workspace_for(session, ticket.workspace_id)\n    if workspace:\n        grouped[\"diff\"] = ensure_di"
+    },
+    {
+      "time": "13:26:16",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: List symbols in tickets.py HEAD block"
+    },
+    {
+      "time": "13:26:18",
+      "tag": "TOOL",
+      "text": "result\n2:def _latest_run_code(session: Session, ticket_id: str) -> str:\n14:#: SQLite's default parameter limit is 999; a page of tickets is bigger than that.\n15:_ID_CHUNK = 400\n18:def _latest_run_codes(session: Session, ticket_ids: list[str]) -> dict[str, str]:\n43:def _ticket_summary(\n95:def _run_statuses(session: Session, run_ids: list[str | None]) -> dict[str, RunStatus]:\n105:def _apply_log_artifacts(\n175:def _retry_payload(art: Artifact) -> dict:\n193:class _ErrorArtifactContent(BaseModel):\n201:def _current_error(\n234:def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:\n311:def _workspace_filter(session: Session, workspace: str | None):\n320:def _apply_ticket_query_filters("
+    },
+    {
+      "time": "13:26:23",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 for: Find where integration moved each tickets.py symbol"
+    },
+    {
+      "time": "13:26:26",
+      "tag": "TOOL",
+      "text": "result\n--- _latest_run_code\nserver/loregarden/services/ticket_detail_view.py\n--- _latest_run_codes\n--- _ticket_summary\n--- _run_statuses\nserver/loregarden/services/ticket_detail_view.py\n--- _apply_log_artifacts\nserver/loregarden/services/ticket_detail_view.py\n--- _retry_payload\nserver/loregarden/services/ticket_detail_view.py\n--- _ErrorArtifactContent\nserver/loregarden/services/ticket_detail_view.py\n--- _current_error\nserver/loregarden/services/ticket_detail_view.py\n--- _artifacts_grouped\n--- _workspace_filter\n--- _apply_ticket_query_filters"
+    },
+    {
+      "time": "13:26:31",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 for: Search broader for remaining symbols in integration"
+    },
+    {
+      "time": "13:26:33",
+      "tag": "TOOL",
+      "text": "result\n--- _latest_run_codes\n--- _ticket_summary\n--- _artifacts_grouped\nserver/loregarden/services/ticket_detail_view.py\n--- _workspace_filter\n--- _apply_ticket_query_filters"
+    },
+    {
+      "time": "13:26:38",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 merge-base: Diff base to HEAD for conflicted api files"
+    },
+    {
+      "time": "13:26:40",
+      "tag": "TOOL",
+      "text": "result\nbase 73a70f6acf60577c3443ef0ee9228de66cd8aa51\n=== server/loregarden/api/tickets.py\ndiff --git a/server/loregarden/api/tickets.py b/server/loregarden/api/tickets.py\nindex 7f794996c6..9d8c4a71fc 100644\n--- a/server/loregarden/api/tickets.py\n+++ b/server/loregarden/api/tickets.py\n@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse\n from loregarden.core.workflow_loader import stage_display_name\n from loregarden.db.session import get_session\n from loregarden.models.domain import (\n+    ERROR_ARTIFACT_KINDS,\n     AdvanceStageRequest,\n     AgentRun,\n     Artifact,\n@@ -383,7 +384,12 @@ def _artifacts_grouped(session: Session, ticket: Ticket) -> dict:\n             grouped[\"diff\"] = content\n         elif art.kind == \"log\":\n             log_artifacts.append(art)\n-        elif art.kind == \"error\":\n+        elif art.kind in ERROR_ARTIFACT_KINDS:\n+            # Every kind that is a failure record, not just `error`: the\n+            # reserved-kind refusal has its own kind (so no other writer can\n+            # upsert over it) and still has to reach `artifacts.error`, which is\n+            # what lights `TicketAttention`. A kind missing from that set is a\n+            # failure the operator is never shown.\n             error_artifacts.append(art)\n         elif art.kind == \"test\":\n             grouped[\"tests\"] = content\n=== server/loregarden/api/orchestration.py\ndiff --git a/server/loregarden/api/orchestration.py b/server/loregarden/api/orchestration.py\nindex 75ceba6a93..2452a00f98 100644\n--- a/server/loregarden/api/orchestration.py\n+++ b/server/loregarden/api/orchestration.py\n@@ -51,6 +51,10 @@ from loregarden.services.orchestration_profile import (\n     update_git_config,\n )\n from loregarden.services.queue_admission import QueueAdmissionService\n+from loregarden.services.reserved_kind_refusal import (\n+    ReservedKindRefused,\n+    report_reserved_kind_refusal,\n+)\n from loregarden.services.scope_round import decide_finding\n from loregarden.services.studio_routing import tic"
+    },
+    {
+      "time": "13:26:47",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 merge-base: Diff base to HEAD for invariant registry"
+    },
+    {
+      "time": "13:26:49",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/mcp/artifact_tools.py          |   72 +-\n server/loregarden/services/invariant_registry.py |  219 +---\n server/tests/test_land_verification_invariant.py | 1248 +++++++++++++++++++++-\n 3 files changed, 1274 insertions(+), 265 deletions(-)\n=== INV ===\ndiff --git a/server/loregarden/services/invariant_registry.py b/server/loregarden/services/invariant_registry.py\nindex 7b9b8b8993..cee88ce30d 100644\n--- a/server/loregarden/services/invariant_registry.py\n+++ b/server/loregarden/services/invariant_registry.py\n@@ -9,19 +9,15 @@ pass picks it up from `INVARIANTS` by name (`reconciliation.PERIODIC_STEPS`).\n \n from __future__ import annotations\n \n-import json\n import logging\n from collections.abc import Sequence\n from datetime import date, datetime, timezone\n \n from loregarden.models.domain import (\n     AgentSlot,\n-    Artifact,\n-    ArtifactKind,\n     InvariantReentry,\n     Ticket,\n     TicketState,\n-    Workspace,\n     Worktree,\n     WorktreeState,\n )\n@@ -46,9 +42,11 @@ from loregarden.services.finding_placement_checks import (\n     unrecorded_children_of_a_run,\n )\n from loregarden.services.gate_parked_sweep import block_parked, parked_by_gate\n-from loregarden.services.git_automation_config import resolve_git_automation\n from loregarden.services.invariants import Invariant, Violation\n-from loregarden.services.land_verification import RECEIPT_PASSED\n+from loregarden.services.land_receipt_detector import (\n+    LAND_VERIFICATION_SINCE,\n+    landed_without_a_verified_suite,\n+)\n from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing\n from loregarden.services.landing_refused import landings_retried_on_refused_tips\n from loregarden.services.landing_survival import landings_lost_from_their_branch\n@@ -339,207 +337,6 @@ def _landed_with_uncommitted_work(session: Session) -> list[Violation]:\n     return found\n \n \n-#: When the land-verification receipt's writer landed, and so the line between\n-#: backlog and re-entry for `LAND_VERIFICA"
+    },
+    {
+      "time": "13:26:52",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read invariant_registry conflicts 1 and 2"
+    },
+    {
+      "time": "13:26:54",
+      "tag": "TOOL",
+      "text": "result\nfrom loregarden.services.finding_placement_checks import (\n    follow_ups_under_their_source,\n    unrecorded_children_of_a_run,\n)\nfrom loregarden.services.gate_parked_sweep import block_parked, parked_by_gate\nfrom loregarden.services.invariants import Invariant, Violation\n<<<<<<< HEAD\nfrom loregarden.services.land_receipt_detector import (\n    LAND_VERIFICATION_SINCE,\n    landed_without_a_verified_suite,\n)\n=======\nfrom loregarden.services.land_verification_coverage import covered_landings\n>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\nfrom loregarden.services.landing_carried_work import done_tickets_that_landed_nothing\nfrom loregarden.services.landing_refused import landings_retried_on_refused_tips\nfrom loregarden.services.landing_survival_checks import landings_lost_from_their_branch\nfrom loregarden.services.landing_uncommitted import uncommitted_at_landing\nfrom loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal\nfrom loregarden.services.merge_queue_closed_prs import STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR\nfrom loregarden.services.orchestration_capacity import (\n=== H2 345-525 ===\n            )\n    return found\n\n\n<<<<<<< HEAD\n=======\n#: When the land-verification receipt's writer landed, and so the line between\n#: backlog and re-entry for `LAND_VERIFICATION_RAN`. One constant, shared by the\n#: registration and by the detector's own bound: two copies is two answers to\n#: \"what is backlog?\", and the one that drifts is the detector's \u2014 which is the\n#: one that decides whether eighty old landings are reported.\n#:\n#: Measured on the live database read-only 2026-10-23: 1,844 tickets, 474\n#: `done`, 80 `done` with a `landed_sha`, and 0 land-verification receipts of any\n#: kind, because no landing had ever written one. Unbounded, the first reconcile\n#: tick after boot would upsert 80 `invariant_unrepaired` findings and\n#: auto-create one escalation Bug listing all 80 by external id \u2014 and\n#: `run_invariant` re-reports the pre-`since` back"
+    },
+    {
+      "time": "13:26:58",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 ls: Read land_receipt_detector.py"
+    },
+    {
+      "time": "13:27:00",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/services/land_receipt_detector.py\nserver/loregarden/services/land_verification_coverage.py\n=== detector ===\n\"\"\"Done tickets whose recorded landing has no receipt anybody can trust.\n\nThe reader half of the security boundary `land_verification`'s docstring names:\nthat module writes a receipt and its producer report, and this one decides\nwhether a receipt is evidence. Before lg-milestone-that-1426 it decided that by\nreading `{\"status\": \"passed\"}` out of `artifacts.content_json` \u2014 a text column\n`loregarden_attach_artifact` passed through verbatim \u2014 so any agent could mint\nitself a clean verdict and silence a report-only check for its ticket for good.\n\nTwo things changed. The body now goes through `land_receipt.LandReceipt`, and\nevery field this reader trusts is compared against an `ExpectedReceipt` built\nfrom values it owns; and a receipt in the trusted class clears a landing only\nwhen a `land_verification_reports` row whose digest matches stands behind it.\n**No report is a violation, not a skip** \u2014 otherwise the whole binding is\nopt-in for the forger.\n\n**Which record the covered set is judged against is the whole of AC9.** It is\nthe `land_verification_reports` row written for THE LANDING ON THE TICKET \u2014\nmatched by `candidate_sha`, never \"some report this ticket has\" \u2014 and never the\nworkspace's configured suite read on this tick. The report is server-only: no\ntool and no HTTP handler can write that table, and the digest already binds it,\nso it is as trustworthy as the configuration and, unlike the configuration,\ncannot be edited after the fact. Judging against today's configuration would\nmean one edit to a workspace's YAML re-judges every landing since\n`RECEIPT_BINDING_SINCE` \u2014 findings on landings that genuinely ran a suite, which\n`repair=None` never clears.\n\nIt is NOT asked whether the landing brought in only the paths it declared. That\nquestion belongs to `LANDINGS_CARRY_THE_WORK` /\n`landing_carried_work.done_tickets_that_landed_nothing`, which alre"
+    },
+    {
+      "time": "13:27:03",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Read land_verification_coverage.py"
+    },
+    {
+      "time": "13:27:05",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"Which recorded landings a land-verification receipt covers.\n\n`land_verification_ran`'s detector reads this; the receipt words are\n`land_verification`'s, and this module is the one reading of them.\n\nA landing is covered by either of two things:\n\n- **A passing receipt.** A suite ran against the candidate merge and passed.\n- **A contained landing from a ticket that wrote nothing.** The target already\n  held the branch (`outcome == already_contained`), so `merge_tips` built no\n  candidate and no suite could run. When every run the ticket had recorded\n  its changed paths and every record is empty, the landing moved no code of\n  this ticket's onto anything: there was nothing to verify, which is a\n  different fact from \"nobody verified it\". Measured on the live database\n  2026-11-15: 274 of `land_verification_ran`'s 345 violations were contained\n  landings on `integration/lg-reference-sources-358`, every tip a \"Refresh \u2026\n  from main\" commit, and 270 of them survey carriers whose runs all recorded\n  `[]`.\n\nA contained landing whose runs wrote code, or whose runs include one with no\nrecord, stays uncovered: the work reached the target some other way, and a\nperson has to find out whether that way was verified. A run with no record\ncannot say it wrote nothing (`recorded_paths`).\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nfrom collections.abc import Sequence\n\nfrom loregarden.models.domain import Artifact, ArtifactKind, Ticket\nfrom loregarden.services.land_verification import RECEIPT_ALREADY_CONTAINED, RECEIPT_PASSED\nfrom loregarden.services.recorded_paths import tickets_that_recorded_writing_nothing\nfrom pydantic import BaseModel, ConfigDict, ValidationError\nfrom sqlmodel import Session, col, select\n\n\nclass _ReceiptVerdict(BaseModel):\n    \"\"\"The two fields of a receipt body this module reads.\"\"\"\n\n    model_config = ConfigDict(extra=\"ignore\")\n\n    status: str = \"\"\n    outcome: str = \"\"\n\n\ndef _verdict(body: str | None) -> _ReceiptVerdict | None:\n    \"\"\"A receipt body"
+    },
+    {
+      "time": "13:27:14",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read land_receipt.py"
+    },
+    {
+      "time": "13:27:16",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"The land-verification receipt's shape, declared by the reader that trusts it.\n\nA forged receipt silenced `land_verification_ran` because the reader took two\nkeys out of an agent-authored text column and believed them. The answer is in\ntwo halves, and both live here:\n\n- the body is a **model**, so a key the writer invents or drops is refused at\n  one boundary rather than compared by hand on a 30-second timer; and\n- every field the reader trusts is compared against an `ExpectedReceipt` the\n  reader builds from values it owns \u2014 the ticket's own `external_id`,\n  `landed_sha` and `landed_branch`, and the covered set the landing's own\n  producer report recorded. Nothing the receipt says about itself is evidence\n  for itself.\n\n**The covered set is judged against the producer report, never against today's\nconfiguration** (lg-milestone-that-2612, AC9). `land_verification_reports`\nis server-only, is written in the same transaction as the receipt by the one\nfunction that ran the suite, and is already bound by the digest \u2014 so no agent\ncan write it, and a later edit to a workspace's configured suite cannot\nretroactively falsify a landing that genuinely ran one. Reading that\nconfiguration here instead would re-arm the finding wall `RECEIPT_BINDING_SINCE`\nexists to keep shut, on a report-only check nothing can ever clear.\n\nImported by the writer (`land_verification`) and by the reader\n(`land_receipt_detector`), which is the whole point: two modules spelling the\nbody separately drift, and the drift is a receipt one writes and the other\nrefuses.\n\n**Pure.** No database handle, no git, no tool dispatch, no reconcile-pass\nimport. It is read on every reconcile tick and written on every landing, so it\nhas to be comparison and hashing and nothing else.\n\n`target`, not `branch`, is what matches `landed_branch`: `branch` is the\n*source* branch and matched it in 0 of 17 live passing receipts, where `target`\nmatched 17 of 17. A shape check written the other way round refuses every\ngenuine r"
+    },
+    {
+      "time": "13:27:18",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Check land_verification writer"
+    },
+    {
+      "time": "13:27:20",
+      "tag": "TOOL",
+      "text": "result\n75:    LandVerificationReport,\n726:RECEIPT_ALREADY_CONTAINED = \"already_contained\"\n750:def record_land_verification(\n794:        outcome=(outcome.outcome.value if outcome is not None else RECEIPT_ALREADY_CONTAINED),\n812:    report = LandVerificationReport("
+    },
+    {
+      "time": "13:27:22",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read record_land_verification"
+    },
+    {
+      "time": "13:27:23",
+      "tag": "TOOL",
+      "text": "result\ndef record_land_verification(\n    session: Session,\n    ticket: Ticket,\n    *,\n    branch: str,\n    target: str,\n    candidate_sha: str,\n    outcome: VerifyOutcome | None,\n) -> Artifact:\n    \"\"\"File the one row that answers \"was a suite run against this landing?\".\n\n    One per landing, on every verdict, and it REPLACES the `kind=log`\n    `Land verification output \u2014 <branch>` row this module used to write under\n    `if not outcome.ok and outcome.output`. That guard is why the answer existed\n    nowhere: `select count(*) from artifacts where title like 'Land verification\n    output%'` was 0 across 19,418 live rows, so three recurrences of a ticket\n    marked done with its implementation missing were invisible until somebody ran\n    the full suite by hand (lg-milestone-that-1419).\n\n    `outcome=None` is a landing that produced no verdict at all. The title and\n    `content_json.status` carry the same three words so the Title column, the\n    Outputs tab's `matches()` search and `reportVerdict`'s pill all read it\n    without a client change; `stage_key` is the other key `reportVerdict`\n    requires, and without both it renders nothing. The body carries the FULL\n    output, never the inline excerpt `_trailing` cuts for the block message \u2014\n    the operator already has those twenty lines there.\n\n    It writes TWO rows, in one transaction, and is the only function that writes\n    either (lg-milestone-that-1426). The receipt is the row the client renders;\n    the `land_verification_reports` row is the out-of-band record that binds it,\n    reachable from no tool and no HTTP handler. A report with no receipt, or a\n    receipt with no report, is therefore not a state any code path can produce \u2014\n    which is what lets the reader treat a receipt with no report as a forgery\n    rather than as something it has not checked yet.\n\n    The body is built through `LandReceipt` rather than an inline dict, so the\n    key set the reader declares IS the key set the writer sends: an undeclared"
+    },
+    {
+      "time": "13:27:40",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Resolve tools.py conflict"
+    },
+    {
+      "time": "13:27:42",
+      "tag": "TOOL",
+      "text": "result\n14:from loregarden.mcp.artifact_tools import attach_evidence\n115:    another's real argument. `content` is an alias for `content_json` on attach_artifact and\n277:    if name == \"loregarden_attach_artifact\":"
+    },
+    {
+      "time": "13:27:46",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Stage tools.py"
+    },
+    {
+      "time": "13:27:48",
+      "tag": "TOOL",
+      "text": "result\nok"
+    },
+    {
+      "time": "13:27:50",
+      "tag": "OUT",
+      "text": "Now artifact_tools.py \u2014 integration moved `attach_artifact` into the `artifact_attach` operation, so the refusal handling moves there too."
+    },
+    {
+      "time": "13:27:53",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git checkout: Take integration artifact_tools.py"
+    },
+    {
+      "time": "13:27:55",
+      "tag": "TOOL",
+      "text": "result\nUpdated 1 path from the index\n\"\"\"`loregarden_attach_evidence`. `loregarden_attach_artifact` is the `artifact_attach` operation.\"\"\"\n\nfrom __future__ import annotations\n\nimport json\nfrom typing import Any\n\nfrom sqlmodel import Session\n\nfrom loregarden.services.artifact_content import parse_content_object\nfrom loregarden.services.evidence import ARTIFACT_KIND as EVIDENCE_ARTIFACT_KIND\nfrom loregarden.services.evidence import EVIDENCE_KINDS, resolve_head_sha\n\n\ndef attach_evidence("
+    },
+    {
+      "time": "13:27:56",
+      "tag": "OUT",
+      "text": "Now the refusal handling moves into the single operation handler:"
+    },
+    {
+      "time": "13:28:14",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Move refusal handling into the attach operation"
+    },
+    {
+      "time": "13:28:17",
+      "tag": "TOOL",
+      "text": "result\n41:class RunRef:\n42-    \"\"\"What a `run_id` argument resolved to.\"\"\"\n43-\n44-    named: str\n45-    ticket_id: str\n46-    orchestration: OrchestrationRun | None\n47-    #: The agent run it named, when it named one rather than an orchestration.\n48-    agent_run_id: str | None\n49-\n50-    def require_orchestration(self, tool: str) -> OrchestrationRun:\n51-        if self.orchestration is None:\n52-            raise ValueError(\n53-                f\"{tool} needs an orchestration run, and '{self.named}' is a standalone \"\n54-                \"stage run with no orchestration run behind it. Ticket-scoped tools \"\n55-                \"(attach_artifact, attach_evidence, request_approval) accept it.\"\n56-            )\n57-        return self.orchestration\n58-\n59-\n60-def resolve_run_ref(session: Session, run_ref: str) -> RunRef:\n61-    orchestration = session.get(OrchestrationRun, run_ref) or _one_by_code(\n62-        session, OrchestrationRun, run_ref\n63-    )\n64-    if orchestration is not None:\n65-        return RunRef(\n66-            named=run_ref,"
+    },
+    {
+      "time": "13:28:30",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Fix RunRef usage and add payload to the refusal"
+    },
+    {
+      "time": "13:28:32",
+      "tag": "TOOL",
+      "text": "result\nFalse"
+    },
+    {
+      "time": "13:28:49",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Wire the refusal through both transports"
+    },
+    {
+      "time": "13:28:52",
+      "tag": "TOOL",
+      "text": "result\ndone"
+    },
+    {
+      "time": "13:28:53",
+      "tag": "OUT",
+      "text": "Now orchestration.py and tickets.py:"
+    },
+    {
+      "time": "13:29:01",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Resolve orchestration.py conflicts"
+    },
+    {
+      "time": "13:29:04",
+      "tag": "TOOL",
+      "text": "result\n5:from fastapi import APIRouter, Body, Depends, HTTPException\n81:        raise HTTPException(404, \"Workspace not found\")\n93:        raise HTTPException(400, str(exc)) from exc\n102:        raise HTTPException(404, \"Workspace not found\")\n110:        raise HTTPException(400, str(exc)) from exc\n119:        raise HTTPException(404, \"Workspace not found\")\n130:        raise HTTPException(\n144:        raise HTTPException(404, \"Workspace not found\")\n172:        raise HTTPException(404, \"Workspace not found\")\n176:        raise HTTPException(400, str(exc)) from exc\n186:        raise HTTPException(404, \"Workspace not found\")"
+    },
+    {
+      "time": "13:29:11",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Resolve tickets.py conflict"
+    },
+    {
+      "time": "13:29:13",
+      "tag": "TOOL",
+      "text": "result\n10:    ERROR_ARTIFACT_KINDS,\n12:    AgentRun,\n681:        select(AgentRun).where(\n682:            AgentRun.ticket_id == ticket_id,\n683:            AgentRun.status.in_("
+    },
+    {
+      "time": "13:29:15",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Find the error-kind branch in ticket_detail_view"
+    },
+    {
+      "time": "13:29:17",
+      "tag": "TOOL",
+      "text": "result\n279:    session: Session, ticket_id: str, error_artifacts: list[Artifact]\n290:    if not error_artifacts:\n292:    latest = max(error_artifacts, key=lambda a: comparable_utc(a.created_at))\n357:    log_artifacts, error_artifacts = _fold_artifacts(artifacts, grouped)\n359:    grouped[\"error\"] = _current_error(session, ticket.id, error_artifacts)\n372:    error_artifacts: list[Artifact] = []\n379:        elif art.kind == \"error\":\n380:            error_artifacts.append(art)\n387:    return log_artifacts, error_artifacts"
+    },
+    {
+      "time": "13:29:19",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read _fold_artifacts and imports"
+    },
+    {
+      "time": "13:29:20",
+      "tag": "TOOL",
+      "text": "result\nExit code 1\n(eval):cd:1: no such file or directory: server"
+    },
+    {
+      "time": "13:29:22",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read _fold_artifacts and imports"
+    },
+    {
+      "time": "13:29:23",
+      "tag": "TOOL",
+      "text": "result\nExit code 1\nsed: server/loregarden/services/ticket_detail_view.py: No such file or directory\n---\nsed: server/loregarden/services/ticket_detail_view.py: No such file or directory"
+    },
+    {
+      "time": "13:29:25",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 pwd: Check cwd"
+    },
+    {
+      "time": "13:29:26",
+      "tag": "TOOL",
+      "text": "result\n/private/var/folders/bc/pdnl9kxd25v7s84crpw41gch0000gn/T/loregarden-integration-merge-c8lhzc9h/tree/server\nloregarden\npyproject.toml\ntests\nuv.lock"
+    },
+    {
+      "time": "13:29:30",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read ticket_detail_view"
+    },
+    {
+      "time": "13:29:32",
+      "tag": "TOOL",
+      "text": "result\ndef _fold_artifacts(\n    artifacts: Sequence[Artifact], grouped: dict\n) -> tuple[list[Artifact], list[Artifact]]:\n    \"\"\"Fold the latest-wins kinds into `grouped`; return the logs and errors,\n    which are chosen among afterwards rather than folded.\"\"\"\n    log_artifacts: list[Artifact] = []\n    error_artifacts: list[Artifact] = []\n    for art in artifacts:\n        content = json.loads(art.content_json or \"{}\")\n        if art.kind == \"diff\":\n            grouped[\"diff\"] = content\n        elif art.kind == \"log\":\n            log_artifacts.append(art)\n        elif art.kind == \"error\":\n            error_artifacts.append(art)\n        elif art.kind == \"test\":\n            grouped[\"tests\"] = content\n        elif art.kind == \"context\":\n            grouped[\"context\"].extend(_context_sections(content))\n        elif art.kind == \"pr\":\n            grouped[\"pr\"] = content\n    return log_artifacts, error_artifacts\n\n\ndef _transient_retries(artifacts: Sequence[Artifact]) -> list[dict]:\n\"\"\"The ticket page's view of one ticket: `TicketSummary` and `TicketDetail`.\n\nMoved out of `api/tickets.py` so the `ticket_detail` operation can build it\nwithout a service importing a route module, and so the write routes that reply\nwith a ticket's detail build it the same way the read does.\n\"\"\"\n\nimport json\nimport logging\nfrom collections.abc import Sequence\nfrom typing import Any\n\nfrom loregarden.core.workflow_loader import stage_display_name\nfrom loregarden.models.domain import (\n    AgentRun,\n    Artifact,\n    OrchestrationRunView,\n    RunStatus,\n    StageBudgetArtifactKind,\n    StageStatus,\n    Ticket,\n    TicketActivity,\n    TicketDependencyRef,\n    TicketDetail,\n    TicketSummary,\n    WorkflowTransitionView,\n    comparable_utc,\n)\nfrom loregarden.services import artifact_service\nfrom loregarden.services.acceptance_criteria import load_checked, load_criteria\nfrom loregarden.services.artifact_service import (\n    ensure_diff_artifact,\n    ensure_test_artifact,\n)\nfrom loregarden.services.base_delivery"
+    },
+    {
+      "time": "13:29:40",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Move the ERROR_ARTIFACT_KINDS change to ticket_detail_view"
+    },
+    {
+      "time": "13:29:42",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/services/ticket_detail_view.py:15:    ERROR_ARTIFACT_KINDS,\nserver/loregarden/services/ticket_detail_view.py:380:        elif art.kind in ERROR_ARTIFACT_KINDS:"
+    },
+    {
+      "time": "13:29:47",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 uv run: Ruff check the resolved files"
+    },
+    {
+      "time": "13:29:51",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nUsing CPython 3.11.15\nCreating virtual environment at: server/.venv\n   Building loregarden-server @ file:///private/var/folders/bc/pdnl9kxd25v7s84crpw41gch0000gn/T/loregarden-integration-merge-c8lhzc9h/tree/server\n      Built loregarden-server @ file:///private/var/folders/bc/pdnl9kxd25v7s84crpw41gch0000gn/T/loregarden-integration-merge-c8lhzc9h/tree/server\nInstalled 68 packages in 420ms\nAll checks passed!"
+    },
+    {
+      "time": "13:29:56",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Stage resolved API/MCP files"
+    },
+    {
+      "time": "13:29:59",
+      "tag": "TOOL",
+      "text": "result\n2"
+    },
+    {
+      "time": "13:30:00",
+      "tag": "OUT",
+      "text": "Now the invariant registry \u2014 our side moved the detector out; integration added the contained-landing coverage rule."
+    },
+    {
+      "time": "13:30:03",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read invariant_registry third conflict"
+    },
+    {
+      "time": "13:30:05",
+      "tag": "TOOL",
+      "text": "result\n)\n\nLAND_VERIFICATION_RAN = Invariant(\n    name=\"land_verification_ran\",\n    ticket=\"lg-milestone-that-1419\",\n<<<<<<< HEAD\n    statement=\"every recorded landing has a passing land-verification receipt\",\n    detect=landed_without_a_verified_suite,\n=======\n    statement=(\n        \"every recorded landing has a passing land-verification receipt, or merged \"\n        \"nothing from a ticket whose runs wrote nothing\"\n    ),\n    detect=_landed_without_a_verified_suite,\n>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\n    # Report-only: only a person can run a suite and judge what it says. A\n    # repair here would be the control plane deciding its own landing passed.\n    repair=None,\n    reentry=InvariantReentry.DEFECT,\n    since=LAND_VERIFICATION_SINCE,\n    prevented_by=("
+    },
+    {
+      "time": "13:30:17",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Resolve invariant_registry.py"
+    },
+    {
+      "time": "13:30:21",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nAll checks passed!"
+    },
+    {
+      "time": "13:30:22",
+      "tag": "OUT",
+      "text": "Now fold integration's contained-landing coverage rule into our bound-receipt detector:"
+    },
+    {
+      "time": "13:30:50",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Fold contained-landing coverage into the bound detector"
+    },
+    {
+      "time": "13:30:55",
+      "tag": "TOOL",
+      "text": "result\n68 | | from loregarden.services.land_receipt import (\n69 | |     RECEIPT_PASSED,\n70 | |     ExpectedReceipt,\n71 | |     LandReceipt,\n72 | |     expected_receipt,\n73 | |     judge_receipt,\n74 | |     receipt_digest,\n75 | | )\n76 | | from loregarden.services.recorded_paths import tickets_that_recorded_writing_nothing\n77 | | from loregarden.services.ticket_workspace_binding import workspace_for_ticket\n78 | | from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError\n79 | | from sqlmodel import Session, col, select\n   | |_________________________________________^\n80 |\n81 |   #: When the land-verification receipt's writer landed, and so the line between\n   |\nhelp: Organize imports\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+    },
+    {
+      "time": "13:31:03",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 uv run: Fix imports and smoke-test the registry"
+    },
+    {
+      "time": "13:31:12",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nFound 1 error (1 fixed, 0 remaining).\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nland_verification_ran"
+    },
+    {
+      "time": "13:31:14",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Stage detector work; read test conflict 1"
+    },
+    {
+      "time": "13:31:17",
+      "tag": "TOOL",
+      "text": "result\nstaged\nfrom loregarden.services.memory_store import AgentMemoryService\nfrom loregarden.services.reconciliation import PERIODIC_STEPS\n<<<<<<< HEAD\nfrom loregarden.testing.factories import make_artifact, make_workspace\n=======\nfrom loregarden.testing.factories import (\n    make_agent_run,\n    make_artifact,\n    make_ticket,\n    make_workspace,\n)\n>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a\nfrom loregarden.testing.prod_shape import build_prod_shape\nfrom pydantic import ValidationError\nfrom sqlmodel import Session, col, select\nfrom tests import land_receipt_helpers as helpers"
+    },
+    {
+      "time": "13:31:19",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Inspect the big test conflict"
+    },
+    {
+      "time": "13:31:22",
+      "tag": "TOOL",
+      "text": "result\nassert _subjects(session) == {ticket.id}\n\n\n# ---------------------------------------------------------------------------\n<<<<<<< HEAD\n# lg-milestone-that-1426, AC10. A receipt is trusted only when the producer\n# report binds it. No report is a violation, not a skip.\n# ---------------------------------------------------------------------------\n\n\ndef _bound_landing(session: Session, workspace: Workspace, external_id: str) -> Ticket:\n    \"\"\"A landing dated after the binding bound, so its receipts are judged.\"\"\"\n    return helpers.landed_ticket(\n        session,\n        workspace,\n        external_id,\n        resolved_at=_binding_midnight() + timedelta(days=1),\n    )\n\n\n... MIDDLE MARKER ...\n104:=======\n2053:=======\n... tail ...\n    _receipt(session, ticket, DISABLED, outcome=\"already_contained\")\n\n    assert _subjects(session) == {ticket.id}\n\n\ndef test_a_ticket_that_wrote_nothing_still_needs_a_contained_receipt(session, workspace):\n    \"\"\"Writing nothing is not a verdict: a `disabled` landing that merged a\n    candidate nobody ran is unverified whatever the runs recorded.\"\"\"\n    ticket = _landed(session, workspace, \"lg-contained-4\")\n    _run(session, ticket, wrote=[])\n    _receipt(session, ticket, DISABLED, outcome=\"disabled\")\n\n    assert _subjects(session) == {ticket.id}\n>>>>>>> d96f0456fd74b1455f44e18bda790ab4e176c83a"
+    },
+    {
+      "time": "13:31:24",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read integration's added test block"
+    },
+    {
+      "time": "13:31:26",
+      "tag": "TOOL",
+      "text": "result\nsession, mismatched, body, created_at=_binding_midnight() + timedelta(days=1)\n    )\n    helpers.write_report(session, mismatched, body, commands=list(ran))\n\n    first = [(v.subject_id, v.detail) for v in _detect(session)]\n    second = [(v.subject_id, v.detail) for v in _detect(session)]\n\n    assert {bare.id, unbound.id, mismatched.id} <= {subject for subject, _ in first}, first\n    assert first == second, (\n        \"two passes over an unchanged database disagree; on a report-only \"\n        \"invariant each pass re-reports, so this is a finding that reads as new \"\n        \"every 30 seconds\"\n    )\n=======\n# A contained landing merged nothing, so no suite could run. It is covered only\n# when the ticket's runs show none of its code moved: 270 of the 345 live\n# violations on 2026-11-15 were survey carriers in exactly that state.\n# ---------------------------------------------------------------------------\n\n\ndef _run(session: Session, ticket: Ticket, *, wrote: list[str] | None, code: str = \"RUN-1\") -> None:\n    \"\"\"One run on `ticket`. `wrote=None` is a run that recorded nothing at all.\"\"\"\n    make_agent_run(\n        session,\n        workspace_id=ticket.workspace_id,\n        ticket_id=ticket.id,\n        run_code=code,\n        changed_paths_json=json.dumps(wrote or []),\n        changed_paths_recorded_at=None if wrote is None else datetime.now(timezone.utc),\n    )\n\n\ndef test_a_contained_landing_from_a_ticket_that_wrote_nothing_is_covered(session, workspace):\n    ticket = _landed(session, workspace, \"lg-contained-1\")\n    _run(session, ticket, wrote=[], code=\"RUN-A\")\n    _run(session, ticket, wrote=[], code=\"RUN-B\")\n    _receipt(session, ticket, DISABLED, outcome=\"already_contained\")\n\n    assert _subjects(session) == set()\n\n\ndef test_a_contained_landing_whose_runs_wrote_code_is_still_a_violation(session, workspace):\n    \"\"\"The work reached the target some other way; a person checks that way.\"\"\"\n    ticket = _landed(session, workspace, \"lg-contained-2\")\n    _run(session, ticket,"
+    },
+    {
+      "time": "13:31:30",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Check helper availability in merged test file"
+    },
+    {
+      "time": "13:31:32",
+      "tag": "TOOL",
+      "text": "result\n70:import json\n72:from datetime import date, datetime, timedelta, timezone\n139:def _landed(\n180:def _receipt(\n223:def _detect(session: Session) -> list:\n227:def _subjects(session: Session) -> set[str]:"
+    },
+    {
+      "time": "13:31:34",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read helpers in merged test file"
+    },
+    {
+      "time": "13:31:36",
+      "tag": "TOOL",
+      "text": "result\ndef _landed(\n    session: Session,\n    workspace: Workspace,\n    external_id: str,\n    *,\n    days_from_since: int | None = 1,\n    state: TicketState = TicketState.DONE,\n    landed_sha: str = \"c0ffee\" + \"0\" * 34,\n    landed_branch: str = \"integration/lg-ms-1\",\n) -> Ticket:\n    \"\"\"A ticket recorded as landed. `days_from_since=None` leaves it undated.\"\"\"\n    resolved = None\n    if days_from_since is not None:\n        midnight = datetime(_since().year, _since().month, _since().day, tzinfo=timezone.utc)\n        resolved = midnight + timedelta(days=days_from_since)\n    return helpers.landed_ticket(\n        session,\n        workspace,\n        external_id,\n        resolved_at=resolved,\n        # `resolved_at=None` means \"now\" to the helper, so undated is its own flag.\n        dated=days_from_since is not None,\n        state=state,\n        landed_sha=landed_sha,\n        landed_branch=landed_branch,\n    )\n\n\ndef _binding_midnight() -> datetime:\n    return datetime(\n        RECEIPT_BINDING_SINCE.year,\n        RECEIPT_BINDING_SINCE.month,\n        RECEIPT_BINDING_SINCE.day,\n        tzinfo=timezone.utc,\n    )\n\n\ndef _workspace_of(session: Session, ticket: Ticket) -> Workspace:\n    return session.exec(select(Workspace).where(Workspace.id == ticket.workspace_id)).one()\n\n\ndef _receipt(\n    session: Session,\n    ticket: Ticket,\n    status: str,\n    *,\n    outcome: str | None = None,\n    bound: bool = True,\n    commands: list[str] | None = None,\n) -> Artifact:\n    \"\"\"The receipt a genuine landing leaves, through the reader's own model.\n\n    `bound=True` (the default) dates the row after `RECEIPT_BINDING_SINCE` and\n    writes the producer report beside it, which is what `record_land_verification`\n    does in one transaction. Both halves matter: before lg-milestone-that-1426\n    this helper built a dict literal, which is precisely what the forged receipt\n    was \u2014 so a detector that stopped reading the body would have gone on passing\n    every test in this file. The date is EXPLICIT rath"
+    },
+    {
+      "time": "13:31:44",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Check existing already_contained tests"
+    },
+    {
+      "time": "13:31:47",
+      "tag": "TOOL",
+      "text": "result\nassert _subjects(session) == {ticket.id}\n\n\ndef test_a_landing_with_a_passing_receipt_is_not(session, workspace):\n    ticket = _landed(session, workspace, \"lg-lv-2\")\n    _receipt(session, ticket, PASSED)\n\n    assert _subjects(session) == set()\n\n\ndef test_a_landing_whose_only_receipt_says_nobody_verified_it_is_a_violation(session, workspace):\n    \"\"\"The whole point. `disabled` is the honest report of a landing nobody\n    checked, and it is exactly the state all three recurrences were in.\"\"\"\n    ticket = _landed(session, workspace, \"lg-lv-3\")\n    _receipt(session, ticket, DISABLED, outcome=\"already_contained\")\n\n    assert _subjects(session) == {ticket.id}\n\n\ndef test_a_failed_receipt_without_a_landing_recorded_is_not_a_violation(session, workspace):\n    \"\"\"A refused land records no `landed_sha`, so there is no landing to judge \u2014\n    the refusal is already visible as a block on the ticket.\"\"\"\n    ticket = _landed(session, workspace, \"lg-lv-4\", landed_sha=\"\", landed_branch=\"\")\n    _receipt(session, ticket, FAILED)\n\n    assert _subjects(session) == set()\n\n\ndef test_a_re_land_that_wrote_a_disabled_receipt_beside_a_passing_one_is_not_a_violation(\n    session, workspace\n):\n    \"\"\"Condition 3 is \"no PASSING receipt\", not \"no receipt\". A verified landing\n    re-landed later writes an `already_contained` row, and reading \"the latest\n    receipt\" instead of \"any passing receipt\" would turn that into a violation.\"\"\"\n    ticket = _landed(session, workspace, \"lg-lv-5\")\n    _receipt(session, ticket, PASSED)\n    _receipt(session, ticket, DISABLED, outcome=\"already_contained\")\n\n    assert _subjects(session) == set()\n\n\ndef test_a_ticket_that_never_landed_is_the_outputs_tabs_empty_state(session, workspace):\n=== 1025-1042 ===\n\n    assert _subjects(session) == {unarmed.id, reported.id}\n    assert verified.id not in _subjects(session)\n\n\ndef test_a_disabled_receipt_in_an_armed_workspace_is_still_an_unverified_landing(\n    session, workspace\n):\n    \"\"\"The exact row `land_ticket` writes when v"
+    },
+    {
+      "time": "13:31:50",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Read recorded_paths"
+    },
+    {
+      "time": "13:31:54",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"The paths a ticket's runs have recorded as theirs.\n\nIts own module, below anything that touches git, because both the handoff\ncheck (`handoff_committed_work`) and the execution-root resolver\n(`ticket_worktree`) need it, and the resolver sits underneath the git services\nthe handoff check imports.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport json\n\nfrom loregarden.models.domain import AgentRun, Ticket\nfrom sqlmodel import Session, col, select\n\n\ndef ticket_recorded_paths(session: Session, ticket: Ticket) -> set[str]:\n    \"\"\"Every path this ticket's runs have claimed to touch.\n\n    The same source `gate_recovery._ticket_changed_paths` reads. Usually\n    empty, which is why it is never the only basis.\n    \"\"\"\n    rows = session.exec(\n        select(AgentRun.changed_paths_json).where(AgentRun.ticket_id == ticket.id)\n    ).all()\n    paths: set[str] = set()\n    for raw in rows:\n        paths.update(json.loads(raw or \"[]\"))\n    return {path for path in paths if path}\n\n\ndef tickets_that_recorded_writing_nothing(session: Session, ticket_ids: list[str]) -> set[str]:\n    \"\"\"The ids of these tickets whose every run looked and wrote nothing.\n\n    At least one run, and every run's `changed_paths_recorded_at` set with an\n    empty record. A run with no record (`changed_paths_recorded_at` NULL) cannot\n    say it wrote nothing, so one such run leaves its ticket out, as does a\n    ticket with no runs at all.\n    \"\"\"\n    if not ticket_ids:\n        return set()\n    rows = session.exec(\n        select(\n            AgentRun.ticket_id, AgentRun.changed_paths_json, AgentRun.changed_paths_recorded_at\n        ).where(col(AgentRun.ticket_id).in_(ticket_ids))\n    ).all()\n    looked: set[str] = set()\n    wrote_or_unknown: set[str] = set()\n    for ticket_id, raw, recorded_at in rows:\n        if recorded_at is None or any(json.loads(raw or \"[]\")):\n            wrote_or_unknown.add(ticket_id)\n        else:\n            looked.add(ticket_id)\n    return looked - wrote_or_unknown"
+    },
+    {
+      "time": "13:32:05",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Resolve the test file conflicts"
+    },
+    {
+      "time": "13:32:08",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nF401 [*] `loregarden.testing.factories.make_ticket` imported but unused\n   --> server/tests/test_land_verification_invariant.py:105:5\n    |\n103 |     make_agent_run,\n104 |     make_artifact,\n105 |     make_ticket,\n    |     ^^^^^^^^^^^\n106 |     make_workspace,\n107 | )\n    |\nhelp: Remove unused import: `loregarden.testing.factories.make_ticket`\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+    },
+    {
+      "time": "13:32:12",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 uv run: Fix and stage the test file"
+    },
+    {
+      "time": "13:32:15",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nFound 1 error (1 fixed, 0 remaining).\nno conflicts left\n[This command modified 1 file you've previously read: server/tests/test_land_verification_invariant.py. Call Read before editing.]"
+    },
+    {
+      "time": "13:32:16",
+      "tag": "OUT",
+      "text": "All six conflicts resolved and staged. Now running the tests covering what I touched."
+    },
+    {
+      "time": "13:32:20",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Run tests covering the resolved files"
+    },
+    {
+      "time": "13:32:31",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nF\n=================================== FAILURES ===================================\n_________ test_the_invariant_is_registered_as_this_ticket_declares_it __________\n\n    def test_the_invariant_is_registered_as_this_ticket_declares_it():\n        assert LAND_VERIFICATION_RAN in INVARIANTS\n        assert LAND_VERIFICATION_RAN.name == \"land_verification_ran\"\n        assert LAND_VERIFICATION_RAN.ticket == \"lg-milestone-that-1419\"\n>       assert LAND_VERIFICATION_RAN.statement == (\n            \"every recorded landing has a passing land-verification receipt, or merged \"\n            \"nothing from a ticket whose runs wrote nothing\"\n        )\nE       AssertionError: assert 'every record...wrote nothing' == 'every record...wrote nothing'\nE         \nE         - every recorded landing has a passing land-verification receipt, or merged nothing from a ticket whose runs wrote nothing\nE         ?                             --------\nE         + every recorded landing has a land-verification receipt the reader can trust, or merged nothing from a ticket whose runs wrote nothing\nE         ?                                                       +++++++++++++++++++++\n\nserver/tests/test_land_verification_invariant.py:236: AssertionError\n=============================== warnings summary ===============================\nserver/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1\n  /private/var/folders/bc/pdnl9kxd25v7s84crpw41gch0000gn/T/loregarden-integration-merge-c8lhzc9h/tree/server/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient as TestClient  # noqa\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/captur"
+    },
+    {
+      "time": "13:32:41",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git show: Check HEAD's statement pin"
+    },
+    {
+      "time": "13:32:43",
+      "tag": "TOOL",
+      "text": "result\n232:    assert LAND_VERIFICATION_RAN.statement == (\n233-        \"every recorded landing has a passing land-verification receipt\"\n234-    )\n235-    assert LAND_VERIFICATION_RAN.reentry is InvariantReentry.DEFECT, (\n236-        \"a writer is supposed to make this unreachable; EXPECTED would say the \""
+    },
+    {
+      "time": "13:32:49",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Align statement and rerun tests"
+    },
+    {
+      "time": "13:34:49",
+      "tag": "TOOL",
+      "text": "result\nExit code 143\nCommand timed out after 2m 0s"
+    },
+    {
+      "time": "13:34:54",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Rerun tests with a timeout"
+    },
+    {
+      "time": "13:36:09",
+      "tag": "TOOL",
+      "text": "result\ndef test_the_path_scope_question_is_owned_by_landing_carried_work():\n        \"\"\"AC12. \"Did this landing touch only what it declared?\" is delegated, not\n        duplicated.\n    \n        Two modules deciding which paths a landing may touch will drift, and the\n        drift surfaces as a landing one accepts and the other refuses \u2014 on a\n        report-only invariant, as a finding nothing can clear. So the delegation is\n        asserted: the owner exists, it is registered, and this detector does not grow\n        a path check of its own.\n        \"\"\"\n        from loregarden.services.invariant_registry import LANDINGS_CARRY_THE_WORK\n        from loregarden.services.landing_carried_work import done_tickets_that_landed_nothing\n    \n        assert LANDINGS_CARRY_THE_WORK in INVARIANTS\n        assert callable(done_tickets_that_landed_nothing)\n    \n        detector = (REPO_ROOT / \"server/loregarden/services/land_receipt_detector.py\").read_text(\n            encoding=\"utf-8\"\n        )\n        assert \"landing_carried_work\" in detector, (\n            \"the delegation is not stated where a reader of this detector will meet it\"\n        )\n        for duplicated in (\"changed_paths\", \"recorded_paths\", \"touched\"):\n>           assert duplicated not in detector, (\n                f\"the detector reads {duplicated!r}; the path-scope question belongs to \"\n                \"LANDINGS_CARRY_THE_WORK and two owners will drift\"\n            )\nE           AssertionError: the detector reads 'recorded_paths'; the path-scope question belongs to LANDINGS_CARRY_THE_WORK and two owners will drift\nE           assert 'recorded_paths' not in '\"\"\"Done tic...ezone.utc)\\n'\nE             \nE             'recorded_paths' is contained here:\nE               ing, and `recorded_paths` the record). `merge_tips` built no\nE             ?           ++++++++++++++\nE               candidate, so no suite could run, and nothing of the ticket's moved onto\nE               anything: there was nothing to verify, which is a different"
+    },
+    {
+      "time": "13:36:25",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Find covered_landings users"
+    },
+    {
+      "time": "13:36:26",
+      "tag": "TOOL",
+      "text": "result\n(eval):1: no matches found: --include=*.py"
+    },
+    {
+      "time": "13:36:28",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Find covered_landings users"
+    },
+    {
+      "time": "13:36:42",
+      "tag": "TOOL",
+      "text": "result\nserver/loregarden/services/land_receipt_detector.py:29:every run the ticket had recorded writing nothing (`land_verification_coverage`\nBinary file server/loregarden/services/__pycache__/land_receipt_detector.cpython-311.pyc matches"
+    },
+    {
+      "time": "13:36:47",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 grep: Check tests referencing covered_landings"
+    },
+    {
+      "time": "13:36:50",
+      "tag": "TOOL",
+      "text": "result\nnone"
+    },
+    {
+      "time": "13:37:07",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Delegate the contained reading out of the detector"
+    },
+    {
+      "time": "13:37:09",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nAll checks passed!\n[This command modified 1 file you've previously read: server/loregarden/services/land_verification_coverage.py. Call Read before editing.]"
+    },
+    {
+      "time": "13:37:15",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Rerun the covering tests"
+    },
+    {
+      "time": "13:45:38",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\n........................................................................ [ 16%]\n.........................F............F..................F.............. [ 33%]\n.....F.................................................................. [ 50%]\n........................................................................ [ 66%]\n.............."
+    },
+    {
+      "time": "13:45:41",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Get the failure list"
+    },
+    {
+      "time": "13:51:17",
+      "tag": "TOOL",
+      "text": "result\nFAILED server/tests/test_land_verification_invariant.py::test_a_contained_landing_from_a_ticket_that_wrote_nothing_is_covered\nFAILED server/tests/test_privileged_artifact_writes.py::test_the_forgery_is_refused_through_the_module_the_criterion_names\nFAILED server/tests/test_privileged_artifact_writes.py::test_no_attestation_ceremony_was_built\nFAILED server/tests/test_privileged_artifact_writes.py::test_the_trio_is_one_function_and_no_door_reimplements_it\n4 failed, 426 passed, 1 warning in 324.94s (0:05:24)"
+    },
+    {
+      "time": "13:51:23",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Diagnose the contained-landing test failure"
+    },
+    {
+      "time": "13:51:33",
+      "tag": "TOOL",
+      "text": "result\n>       assert _subjects(session) == set()\nE       AssertionError: assert {'5df9ff47-92...c1bd25362569'} == set()\nE         \nE         Extra items in the left set:\nE         '5df9ff47-92bf-4c99-a3f4-c1bd25362569'\nE         Use -v to get more diff"
+    },
+    {
+      "time": "13:51:35",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read the receipt helper"
+    },
+    {
+      "time": "13:51:38",
+      "tag": "TOOL",
+      "text": "result\n\"\"\"\n    ticket.git_automation_json = json.dumps(override, sort_keys=True)\n    session.add(ticket)\n    session.commit()\n    session.refresh(ticket)\n    kept = parse_override(ticket.git_automation_json)\n    assert set(kept) == set(override), (\n        f\"the override was dropped: {sorted(set(override) - set(kept))} are not overridable \"\n        \"fields of GitAutomationConfig, so nothing here is configured\"\n    )\n\n\ndef receipts(session: Session, ticket: Ticket) -> list[Artifact]:\n    \"\"\"Every land-verification receipt on the ticket, oldest first.\"\"\"\n    return list(\n        session.exec(\n            select(Artifact)\n            .where(\n                col(Artifact.ticket_id) == ticket.id,\n                col(Artifact.kind) == ArtifactKind.LAND_VERIFICATION,\n            )\n            .order_by(col(Artifact.created_at), col(Artifact.id))\n        ).all()\n    )\n\n\ndef content(receipt: Artifact) -> dict:\n    return json.loads(receipt.content_json or \"{}\")\n\n\ndef sha(cwd: Path, ref: str = \"HEAD\") -> str:\n    return git(cwd, \"rev-parse\", ref).stdout.strip()\n\n\ndef ticket_tree(session: Session, landing: Landing) -> Path:\n    \"\"\"The ticket's own worktree, which is where uncommitted work is found.\"\"\"\n    run = AgentRun(\n        run_code=f\"r-{landing.ticket.external_id}\",\n        ticket_id=landing.ticket.id,\n        workspace_id=landing.workspace.id,\n        agent_id=\"backend_implementer\",\n        status=RunStatus.SUCCEEDED,\n    )\n    session.add(run)\n    session.commit()\n    session.refresh(run)\n    return resolve_execution_root(session, run, landing.ticket, landing.workspace)\n\n\n# ---------------------------------------------------------------------------\n# A recorded landing, and the receipt/report pair the real writer leaves on it\n# (lg-milestone-that-1426).\n# ---------------------------------------------------------------------------\n\n\ndef landed_ticket(\n    session: Session,\n    workspace: Workspace,\n    external_id: str,\n    *,\n    resolved_at: datetime | None = None,\n    dated"
+    },
+    {
+      "time": "13:51:53",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Debug the contained test"
+    },
+    {
+      "time": "13:52:02",
+      "tag": "TOOL",
+      "text": "result\n>       assert _subjects(session) == set()\nE       AssertionError: assert {'380ba00f-51...8631e4074e90'} == set()"
+    },
+    {
+      "time": "13:52:11",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 cat: Debug via pytest plugin"
+    },
+    {
+      "time": "13:52:18",
+      "tag": "TOOL",
+      "text": "result\nTICKET lg-contained-1 wrote_nothing True receipts 1 reports 1 reason: status is 'disabled', not 'passed'\n   {\"status\":\"disabled\",\"stage_key\":\"done\",\"outcome\":\"already_contained\",\"branch\":\"loregarden/lg-contained-1\",\"target\":\"integration/lg-ms-1\",\"candidate_sha\":\"c0ffee0000000000000000000\n    def test_a_contained_landing_from_a_ticket_that_wrote_nothing_is_covered(session, workspace):\n        ticket = _landed(session, workspace, \"lg-contained-1\")\n        _run(session, ticket, wrote=[], code=\"RUN-A\")\n        _run(session, ticket, wrote=[], code=\"RUN-B\")\n        _receipt(session, ticket, DISABLED, outcome=\"already_contained\")\n    \n>       assert _subjects(session) == set()\nE       AssertionError: assert {'9d55e202-52...de8a9b27c182'} == set()"
+    },
+    {
+      "time": "13:52:23",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 rm: Read judge_receipt"
+    },
+    {
+      "time": "13:52:24",
+      "tag": "TOOL",
+      "text": "result\n213:def judge_receipt(expected: ExpectedReceipt, body: LandReceipt) -> ReceiptVerdict:\n214-    \"\"\"Whether this body is a passing receipt for the landing `expected` names.\n215-\n216-    Never raises on a body the model accepted: past the model, judging is\n217-    comparison. The reader runs inside one step of the reconcile pass, so a\n218-    raise here reports nothing for any ticket from then on while the surface\n219-    says there are no violations \u2014 a guard failing that reads exactly like a\n220-    guard working.\n221-\n222-    The covered set is compared for **equality** in both directions against\n223-    `expected.reported_commands` \u2014 the set the landing's own producer report\n224-    recorded, which the digest already binds and which no agent can write. An\n225-    empty one is refused rather than vacuously satisfying the comparison:\n226-    `set() <= anything` is True, and 12 of the 17 live passing receipts name a\n227-    command no longer in their workspace's suite, so a subset check would clear\n228-    a receipt covering nothing.\n229-    \"\"\"\n230-    if body.status != RECEIPT_PASSED:\n231-        return ReceiptVerdict(False, f\"status is {_quoted(body.status)}, not '{RECEIPT_PASSED}'\")\n232-    for field, said, owned in (\n233-        (\"ticket_external_id\", body.ticket_external_id, expected.ticket_external_id),\n234-        (\"candidate_sha\", body.candidate_sha, expected.candidate_sha),\n235-        (\"target\", body.target, expected.target),\n236-    ):\n237-        if said != owned:\n238-            return ReceiptVerdict(False, f\"{field} is {_quoted(said)}, not {_quoted(owned)}\")\n239-    covered = set(body.commands)\n240-    if not covered:\n241-        return ReceiptVerdict(False, \"commands is empty, so the receipt covers no suite\")\n242-    wanted = set(expected.reported_commands)\n243-    if covered != wanted:\n244-        return ReceiptVerdict(False, f\"commands {_set_detail(covered, wanted)}\")\n245-    return ReceiptVerdict(True, \"\")\n246-\n247-\n248-def _set_detail(covered: set["
+    },
+    {
+      "time": "13:52:47",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Judge contained receipts on identity plus the report"
+    },
+    {
+      "time": "13:52:49",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nAll checks passed!"
+    },
+    {
+      "time": "13:52:50",
+      "tag": "OUT",
+      "text": "Now the three structural assertions in `test_privileged_artifact_writes.py` that pin the pre-refactor door:"
+    },
+    {
+      "time": "13:52:54",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 sed: Read the three failing structural tests"
+    },
+    {
+      "time": "13:52:56",
+      "tag": "TOOL",
+      "text": "result\ndef test_the_forgery_is_refused_through_the_module_the_criterion_names(session, landed):\n    \"\"\"AC2 names `loregarden.mcp.artifact_tools.attach_artifact` as the thing\n    driven. The dispatcher is driven above because it is strictly more real; this\n    pins that the dispatcher still routes there, so the tests above cannot pass\n    against some other handler.\"\"\"\n    assert artifact_tools.attach_artifact.__module__ == \"loregarden.mcp.artifact_tools\"\n    dispatcher = (REPO_ROOT / \"server/loregarden/mcp/tools.py\").read_text(encoding=\"utf-8\")\n\n    assert \"attach_artifact(\" in dispatcher\n    assert \"orchestrated=orchestrated\" in dispatcher, (\n        \"AC4's flag is not threaded into the artifact handler, so both refusals \"\n        \"would carry the same code\"\n    )\n\n\n# ---------------------------------------------------------------------------\n# AC3. The genuine writer is untouched, and nothing agent-reachable can write.\n# ---------------------------------------------------------------------------\n\n#: The trees that are reachable from an agent's own tool call or an HTTP request.\nAGENT_REACHABLE_ROOTS = (\n    REPO_ROOT / \"server/loregarden/mcp\",\n    REPO_ROOT / \"server/loregarden/api\",\n)\n=== 900-930 ===\n        \"opens an approval instead of being refused\"\n    )\n\n\ndef test_no_attestation_ceremony_was_built():\n    \"\"\"Decision D2 and risk R3. AC4's prose is borrowed from a system that HAS\n    attestation; building a ceremony that reads as enforcement and is not is\n    worse than the hole, and AC4's own last sentence forbids it.\n\n    `mcp/caller.py` keeps saying what it says, and no `caller_kind` field or\n    `owned_subject` reverse lookup appears.\n    \"\"\"\n    caller = (REPO_ROOT / \"server/loregarden/mcp/caller.py\").read_text(encoding=\"utf-8\")\n    resolution = (REPO_ROOT / \"server/loregarden/mcp/run_resolution.py\").read_text(encoding=\"utf-8\")\n\n    assert \"claim, not a credential\" in caller, (\n        \"the docstring that records this debt is gone; a self-declared root \""
+    },
+    {
+      "time": "13:53:05",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 ls: Check run_resolution location"
+    },
+    {
+      "time": "13:53:07",
+      "tag": "TOOL",
+      "text": "result\nls: server/loregarden/mcp/run_resolution.py: No such file or directory\nserver/loregarden/services/run_resolution.py"
+    },
+    {
+      "time": "13:53:26",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Repoint the three structural tests"
+    },
+    {
+      "time": "13:53:28",
+      "tag": "TOOL",
+      "text": "result\n24:- `mcp/artifact_tools.attach_artifact(session, svc, ticket, arguments, *, run_id,\n61:from loregarden.mcp import artifact_tools\n62:from loregarden.mcp.tool_ids import McpTool\n63:from loregarden.mcp.tools import TOOL_DEFINITIONS, execute_tool\n398:    \"\"\"AC2 named `loregarden.mcp.artifact_tools.attach_artifact` as the thing\n647:    with caplog.at_level(logging.WARNING, logger=\"loregarden.mcp.artifact_tools\"):\n1486:# different ways: `mcp/artifact_tools.attach_artifact` logs and records;"
+    },
+    {
+      "time": "13:53:34",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 python3: Fix test imports"
+    },
+    {
+      "time": "13:53:36",
+      "tag": "TOOL",
+      "text": "result\n92 | |     ReservedKindRefused,\n 93 | |     record_reserved_kind_refusal,\n 94 | |     refusal_name,\n 95 | |     refusal_payload,\n 96 | |     report_reserved_kind_refusal,\n 97 | |     reserved_kind_refusal,\n 98 | |     reserved_kind_refusal_title,\n 99 | | )\n100 | | from pydantic import ValidationError\n101 | | from sqlmodel import Session, col, select\n102 | | from tests import land_receipt_helpers as helpers\n103 | | from tests.worktree_helpers import commit_on, git, make_repo\n    | |____________________________________________________________^\n104 |\n105 |   REPO_ROOT = Path(__file__).resolve().parents[2]\n    |\nhelp: Organize imports\n\nFound 1 error.\n[*] 1 fixable with the `--fix` option."
+    },
+    {
+      "time": "13:53:39",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 uv run: Rerun the two affected test files"
+    },
+    {
+      "time": "13:55:05",
+      "tag": "TOOL",
+      "text": "result\nwarning: `VIRTUAL_ENV=/Users/jacobbrandt/workspace/loregarden/server/.venv` does not match the project environment path `server/.venv` and will be ignored; use `--active` to target the active environment instead\nFound 1 error (1 fixed, 0 remaining).\n160 passed, 1 warning in 78.65s (0:01:18)\n[This command modified 1 file you've previously read: server/tests/test_privileged_artifact_writes.py. Call Read before editing.]"
+    },
+    {
+      "time": "13:55:08",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Stage everything and check for leftovers"
+    },
+    {
+      "time": "13:55:10",
+      "tag": "TOOL",
+      "text": "result\nR  server/loregarden/mcp/run_resolution.py -> server/loregarden/services/run_resolution.py\nR  server/loregarden/mcp/admission.py -> server/loregarden/services/work_admission.py\n--- clean ---\n     251"
+    },
+    {
+      "time": "13:55:13",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git status: Confirm no untracked files; rerun operations/invariants"
+    },
+    {
+      "time": "13:55:19",
+      "tag": "TOOL",
+      "text": "result\nERROR: file or directory not found: server/tests/test_reserved_artifact_kinds.py"
+    },
+    {
+      "time": "13:55:22",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Rerun operations, invariants and detail-view tests"
+    },
+    {
+      "time": "13:55:27",
+      "tag": "TOOL",
+      "text": "result\nERROR: file or directory not found: server/tests/test_orchestration_callbacks.py"
+    },
+    {
+      "time": "13:55:30",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 env: Rerun operations and invariants"
+    },
+    {
+      "time": "13:57:56",
+      "tag": "TOOL",
+      "text": "result\n270 passed, 1 warning in 140.01s (0:02:20)"
+    },
+    {
+      "time": "13:57:58",
+      "tag": "TOOL",
+      "text": "call \u00b7 Bash \u00b7 git add: Final staging check"
+    },
+    {
+      "time": "13:58:00",
+      "tag": "TOOL",
+      "text": "result\nuntracked: none\nunstaged: above"
+    },
+    {
+      "time": "13:58:16",
+      "tag": "OUT",
+      "text": "All six conflicts resolved, staged, nothing unstaged or untracked. Tests green: **430 passed** across `test_land_verification_invariant.py`, `test_privileged_artifact_writes.py`, `test_invariants.py`, `test_operations.py`.\n\n## How each conflict went\n\nIntegration had refactored every paired MCP tool / REST route into **operations** (`operation_call`). Our branch's land-receipt security work sat on the pre-refactor doors. Resolution was to land our behaviour at integration's new single door.\n\n| File | Resolution |\n|---|---|\n| `mcp/tools.py`, `mcp/artifact_tools.py` | Took integration's shape \u2014 `loregarden_attach_artifact` is now the `artifact_attach` operation. |\n| `api/orchestration.py` | Took integration's `run_rest_operation` route; moved our reserved-kind refusal handling into the operation handler. |\n| `api/tickets.py` | Took integration's deletion (moved to `services/ticket_detail_view.py`); re-applied our `ERROR_ARTIFACT_KINDS` fold there so the refusal row still lights `TicketAttention`. |\n| `services/invariant_registry.py` | Kept our extracted `land_receipt_detector`; kept integration's statement wording. |\n| `test_land_verification_invariant.py` | Kept both test blocks (our binding tests + integration's contained-landing tests). |\n\n## Changes beyond the conflicted files, each forced by a merge collision\n\n- **`services/operations/run_callbacks._attach_artifact`** now catches `ReservedKindRefused`, reports it through the one shared function, and re-raises. `ReservedKindRefused` carries the classified `payload`; `api/operation_routes.py` words it as a 409, `mcp/operation_tools.py` returns it as the tool's reply \u2014 so no transport hands back the exception's prose. `orchestrated` is `caller.orchestrated or ref.orchestration is not None`, preserving the REST door's \"it presented an orchestration run\" signal.\n- **`land_receipt_detector`** gained integration's contained-landing clause (#872), bound the same way a pass is: past `RECEIPT_BINDING_SINCE` the `already_contained` receipt must fit the declared shape, name this landing, and be bound by its producer report. That needed a new `judge_contained_receipt` (identity only \u2014 a contained landing's `commands` is empty by construction, and relaxing `judge_receipt`'s empty-set check would reopen the hole it closes).\n- **`land_verification_coverage.py`** was reshaped to own just `landings_that_merged_nothing`. Our AC12 test forbids the detector reading path-scope questions; delegating the read keeps that true while giving integration's rule a home. Its receipt-status reading was dropped \u2014 the detector now does that with binding.\n- **Three structural assertions in `test_privileged_artifact_writes.py`** pinned the pre-refactor module layout (`artifact_tools.attach_artifact`, `\"orchestrated=orchestrated\"` in `tools.py`, `mcp/run_resolution.py`). Repointed at the operation handler, and the \"no door reimplements the trio\" check now also asserts the four transports report *nothing* themselves.\n\nOne note for review: the invariant's `statement` is integration's wording verbatim (\"has a passing land-verification receipt, or merged nothing\u2026\"), because the merged test pins that string. It now understates the detector, which requires a *trusted* receipt, not merely a passing one."
+    },
+    {
+      "time": "13:58:16",
+      "tag": "OUT",
+      "text": "All six conflicts resolved, staged, nothing unstaged or untracked. Tests green: **430 passed** across `test_land_verification_invariant.py`, `test_privileged_artifact_writes.py`, `test_invariants.py`, `test_operations.py`.\n\n## How each conflict went\n\nIntegration had refactored every paired MCP tool / REST route into **operations** (`operation_call`). Our branch's land-receipt security work sat on the pre-refactor doors. Resolution was to land our behaviour at integration's new single door.\n\n| File | Resolution |\n|---|---|\n| `mcp/tools.py`, `mcp/artifact_tools.py` | Took integration's shape \u2014 `loregarden_attach_artifact` is now the `artifact_attach` operation. |\n| `api/orchestration.py` | Took integration's `run_rest_operation` route; moved our reserved-kind refusal handling into the operation handler. |\n| `api/tickets.py` | Took integration's deletion (moved to `services/ticket_detail_view.py`); re-applied our `ERROR_ARTIFACT_KINDS` fold there so the refusal row still lights `TicketAttention`. |\n| `services/invariant_registry.py` | Kept our extracted `land_receipt_detector`; kept integration's statement wording. |\n| `test_land_verification_invariant.py` | Kept both test blocks (our binding tests + integration's contained-landing tests). |\n\n## Changes beyond the conflicted files, each forced by a merge collision\n\n- **`services/operations/run_callbacks._attach_artifact`** now catches `ReservedKindRefused`, reports it through the one shared function, and re-raises. `ReservedKindRefused` carries the classified `payload`; `api/operation_routes.py` words it as a 409, `mcp/operation_tools.py` returns it as the tool's reply \u2014 so no transport hands back the exception's prose. `orchestrated` is `caller.orchestrated or ref.orchestration is not None`, preserving the REST door's \"it presented an orchestration run\" signal.\n- **`land_receipt_detector`** gained integration's contained-landing clause (#872), bound the same way a pass is: past `RECEIPT_BINDING_SINCE` the `already_contained` receipt must fit the declared shape, name this landing, and be bound by its producer report. That needed a new `judge_contained_receipt` (identity only \u2014 a contained landing's `commands` is empty by construction, and relaxing `judge_receipt`'s empty-set check would reopen the hole it closes).\n- **`land_verification_coverage.py`** was reshaped to own just `landings_that_merged_nothing`. Our AC12 test forbids the detector reading path-scope questions; delegating the read keeps that true while giving integration's rule a home. Its receipt-status reading was dropped \u2014 the detector now does that with binding.\n- **Three structural assertions in `test_privileged_artifact_writes.py`** pinned the pre-refactor module layout (`artifact_tools.attach_artifact`, `\"orchestrated=orchestrated\"` in `tools.py`, `mcp/run_resolution.py`). Repointed at the operation handler, and the \"no door reimplements the trio\" check now also asserts the four transports report *nothing* themselves.\n\nOne note for review: the invariant's `statement` is integration's wording verbatim (\"has a passing land-verification receipt, or merged nothing\u2026\"), because the merged test pins that string. It now understates the detector, which requires a *trusted* receipt, not merely a passing one."
+    },
+    {
+      "time": "13:58:33",
+      "tag": "ERR",
+      "text": "the merge fails the workspace gates on what it adds over integration/lg-milestone-that-491:"
+    },
+    {
+      "time": "13:58:33",
+      "tag": "ERR",
+      "text": "py_organization_check.py: /private/var/folders/bc/pdnl9kxd25v7s84crpw41gch0000gn/T/loregarden-integration-merge-c8lhzc9h/tree/server/loregarden/services/orchestration_callbacks.py:110: class `OrchestrationCallbackService` is 1001 lines (max 1000); extract helper classes/modules"
+    },
+    {
+      "time": "13:58:33",
+      "tag": "FAIL",
+      "text": "run failed"
+    }
+  ]
+}

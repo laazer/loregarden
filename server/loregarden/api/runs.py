@@ -1,10 +1,19 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loregarden.core.timestamps import iso_utc
 from loregarden.db.session import get_session
-from loregarden.models.domain import HandoffCheckinRequest, RunMessageCreate, RunStatus, Ticket
+from loregarden.models.domain import (
+    HandoffCheckinRequest,
+    RunLogArtifact,
+    RunLogView,
+    RunMessageCreate,
+    RunStatus,
+    Ticket,
+)
 from loregarden.services.artifact_service import load_run_log
+from loregarden.services.cli_settings import adapter_for_command
 from loregarden.services.run_cancellation import cancel_refusal, request_cancel
 from loregarden.services.run_errors import normalize_timeout_stderr
 from loregarden.services.run_output_files import attach_command
@@ -31,11 +40,15 @@ from loregarden.services.token_usage_trend import (
     TrendMetric,
     token_trend,
 )
+from loregarden.services.tool_call_line import CALL_LINE_ADAPTERS
+from pydantic import ValidationError
 from sqlmodel import Session, col, select
 
 _IN_FLIGHT_STATUSES = (RunStatus.RUNNING, RunStatus.AWAITING_PERMISSION)
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+logger = logging.getLogger(__name__)
 
 
 def _tickets_by_id(session: Session, ticket_ids: set[str]) -> dict[str, Ticket]:
@@ -201,8 +214,19 @@ def get_usage_trend(
     return _trend_payload(token_trend(session, flt), metric)
 
 
+def _run_log_artifact(session: Session, run_id: str) -> RunLogArtifact:
+    """The stored log body as its model. A body this process cannot read is reported and
+    treated as no log, so the modal still shows the run's identity rather than a 500."""
+    body = load_run_log(session, run_id) or {}
+    try:
+        return RunLogArtifact.model_validate(body)
+    except ValidationError:
+        logger.warning("run %s has an unreadable log artifact body", run_id, exc_info=True)
+        return RunLogArtifact()
+
+
 @router.get("/{run_id}/log")
-def get_run_log(run_id: str, session: Session = Depends(get_session)) -> dict:
+def get_run_log(run_id: str, session: Session = Depends(get_session)) -> RunLogView:
     """Rendered log lines for one run, for the run-log modal.
 
     Serves the capped `{lines, live}` artifact rather than `AgentRun.stdout`:
@@ -215,30 +239,34 @@ def get_run_log(run_id: str, session: Session = Depends(get_session)) -> dict:
     run = svc.get_run(run_id)
     if not run:
         raise HTTPException(404, "Run not found")
-    body = load_run_log(session, run_id) or {}
-    lines = body.get("lines")
-    live = body.get("live")
-    return {
-        "id": run.id,
-        "run_code": run.run_code,
-        "agent_id": run.agent_id,
-        "skill_name": run.skill_name,
-        "stage_key": run.stage_key,
-        "status": run.status.value,
-        "command": run.command,
-        "started_at": iso_utc(run.started_at),
-        "finished_at": iso_utc(run.finished_at),
-        "lines": lines if isinstance(lines, list) else [],
-        "live": live if isinstance(live, str) else None,
-        "stderr": normalize_timeout_stderr(run.stderr or ""),
+    log = _run_log_artifact(session, run_id)
+    # Read from `command` because no column records the adapter, so a run that streamed nothing
+    # still says what ran it — which is what separates "this adapter writes no call lines" from
+    # "this run has made no call yet" on the Hive map (lg-hive-office-2784, S1b/S7).
+    adapter = adapter_for_command(run.command or "")
+    return RunLogView(
+        id=run.id,
+        run_code=run.run_code,
+        agent_id=run.agent_id,
+        skill_name=run.skill_name,
+        stage_key=run.stage_key,
+        status=run.status.value,
+        command=run.command,
+        adapter=adapter,
+        call_lines_expected=adapter in {a.value for a in CALL_LINE_ADAPTERS},
+        started_at=iso_utc(run.started_at),
+        finished_at=iso_utc(run.finished_at),
+        lines=log.lines,
+        live=log.live,
+        stderr=normalize_timeout_stderr(run.stderr or ""),
         # How this run's process was detached, as one word the modal renders
         # directly. "" for the 1,449 rows that predate the column, which the
         # client shows as an em dash rather than guessing `file`.
-        "transport": run.agent_transport.value if run.agent_transport else "",
+        transport=run.agent_transport.value if run.agent_transport else "",
         # Composed here: the client cannot know the tmux session name, and ""
         # is how it knows to render no copy control at all.
-        "attach_command": attach_command(run),
-    }
+        attach_command=attach_command(run),
+    )
 
 
 def _message_payload(message) -> dict:

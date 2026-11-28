@@ -1322,6 +1322,62 @@ class FinalizeHierarchyResponse(SQLModel):
     total_created: int
 
 
+class RunLogLineView(SQLModel):
+    """One rendered log line, as `run_log_stream` writes it into the log artifact."""
+
+    time: str = ""
+    tag: str = ""
+    text: str = ""
+
+
+class RunLogArtifact(SQLModel):
+    """The stored `{lines, live}` log artifact, as `services.log_storage` writes it.
+
+    Parsed rather than probed: the body comes back from the artifact store as plain JSON, and a
+    hand-rolled `isinstance` check at the boundary is the schema check this model is.
+    """
+
+    lines: list[RunLogLineView] = Field(default_factory=list)
+    #: The partial line being streamed right now; absent once the turn has ended.
+    live: str | None = None
+
+
+class RunLogView(SQLModel):
+    """One run's rendered log — GET /api/runs/{id}/log, for the run-log modal.
+
+    Mirrored on the client as `RunLog` in `client/src/api/runLogTypes.ts`.
+    """
+
+    id: str
+    run_code: str
+    agent_id: str
+    skill_name: str
+    stage_key: str
+    status: str
+    command: str
+    #: The CLI that ran the turn, resolved from `command` by
+    #: `services.cli_settings.adapter_for_command`. "" when the command is empty or names no
+    #: adapter, which the Hive map renders as `activity unknown — adapter not recorded` rather
+    #: than as an idle run (lg-hive-office-2784, S7). Never null: a missing key and `false` are
+    #: different answers on the client and both branches are reachable.
+    adapter: str = ""
+    #: Whether this adapter is one that writes `call ·` lines
+    #: (`services.tool_call_line.CALL_LINE_ADAPTERS`). A prediction about the log, not a reading
+    #: of it — observed call lines outrank it, so a run with lines reads as active either way.
+    call_lines_expected: bool = False
+    started_at: str | None = None
+    finished_at: str | None = None
+    #: Empty for runs that predate the log streamer, rather than a 404.
+    lines: list[RunLogLineView] = Field(default_factory=list)
+    live: str | None = None
+    stderr: str = ""
+    #: `tmux` or `file`, or "" for a row that records neither.
+    transport: str = ""
+    #: The `tmux attach` command for a live tmux run, composed server-side; "" when there is
+    #: nothing to attach to.
+    attach_command: str = ""
+
+
 class McpServerCreate(SQLModel):
     name: str
     description: str = ""

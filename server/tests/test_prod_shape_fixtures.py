@@ -41,9 +41,11 @@ from tests.prod_shape_templates import (
     build_prod_shape_template,
     restore_prod_shape,
 )
-from tests.repo_paths import REPO_ROOT
+from tests.repo_paths import OWN_CHECKOUT_ROOT
 
-FIXTURES = REPO_ROOT / "client" / "src" / "test" / "fixtures" / "prod-shape"
+# The fixtures are committed in *this* tree, so they are located from this file rather than
+# through `REPO_ROOT`, which an inherited `LOREGARDEN_REPO_ROOT` can point at another checkout.
+FIXTURES = OWN_CHECKOUT_ROOT / "client" / "src" / "test" / "fixtures" / "prod-shape"
 RECORD = os.environ.get("LOREGARDEN_RECORD_FIXTURES") == "1"
 
 #: Written at record time and therefore different on every run; pinned so the
