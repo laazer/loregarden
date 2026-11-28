@@ -692,3 +692,35 @@ describe("the error panes' keyboard paths", () => {
     expect(screen.queryByRole("group", { name: "Attempt error output" })).toBeNull();
   });
 });
+
+
+it("opens a shortened output with the ticket it belongs to, so the reader can fetch the rest", async () => {
+  // lg-milestone-that-1424 AC6: `openOutput` takes the ticket id, and the
+  // timeline is the second call site — `OutputList` threads `ticket.id` down.
+  // Without it the reader has a partial document and no address to complete it
+  // from, which is the blank-pane failure in a quieter form.
+  renderTimeline({
+    items: [
+      item({
+        title: "Land verification — failed — loregarden/lg-r-1",
+        kind: "land_verification",
+        created_at: "2026-09-20T10:51:00",
+        content_bytes: 1_048_576,
+        content_truncated: true,
+        content_shown_bytes: 16_384,
+        content: { status: "failed", stage_key: "gate", exit_code: 1, output: "FAILED test_a.py\n" },
+      }),
+    ],
+  });
+
+  const gate = await screen.findByRole("button", { name: /Quality Gate/ });
+  const gateBody = document.getElementById(gate.getAttribute("aria-controls")!)!;
+  fireEvent.click(within(gateBody).getByRole("button", { name: /Land verification/ }));
+
+  expect(useReaderStore.getState().document?.partial).toEqual({
+    ticketId: "t1",
+    artifactId: "Land verification — failed — loregarden/lg-r-1",
+    shownBytes: 16_384,
+    totalBytes: 1_048_576,
+  });
+});

@@ -351,3 +351,22 @@ h4.sc-heading {
 .md-unparsed-card[open] > summary {
   margin-bottom: 8px;
 }
+
+/*
+ * The one line that says a document is only its beginning, and the inline
+ * failure it becomes when the rest cannot be fetched. Under the subtitle, in
+ * both Formatted and Source modes, so Source never presents a prefix
+ * unlabelled as the source.
+ */
+.reader-fill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: var(--fs-small);
+  color: var(--txl);
+}
+
+.reader-fill--error {
+  color: var(--rdl);
+}

@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import os
-import shlex
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -57,6 +56,11 @@ from loregarden.services.doctor_dev_server import (
     check_server_follows_main,
 )
 from loregarden.services.doctor_docker import check_docker_capacity, check_docker_unaccounted
+from loregarden.services.doctor_gate_commands import (
+    GateCommandSource,
+    configured_gate_commands,
+    unresolved_gate_commands,
+)
 from loregarden.services.doctor_landings import check_landed_files_reach_base
 from loregarden.services.git_subprocess import (
     GH_USER_ENV,
@@ -477,7 +481,13 @@ def check_git_writable(session: Session, workspace: Workspace, repo_root: Path) 
 def check_gate_commands_resolve(
     session: Session, workspace: Workspace, repo_root: Path
 ) -> DoctorFinding:
-    """Every configured transition-gate command names something that resolves.
+    """Every command the orchestration profile configures can start.
+
+    Four profile fields are read: `gates.commands`, `gates.transition_script`,
+    `git.land_verify_commands` and `gates.criterion_test_commands`. The land
+    verifier does not run until a ticket is otherwise finished, so a missing
+    script there was found only after the whole pipeline had completed; this
+    moves that discovery to a doctor call.
 
     A path with a separator in it is resolved against `repo_root` — the tree the
     agent runs in, not the shared checkout, which is how three hooks reported a
@@ -485,9 +495,12 @@ def check_gate_commands_resolve(
     that is what a shell does with one; note this is the doctor process's PATH,
     which is not always the PATH the agent's shell will have.
 
-    Only the executable is resolved, not the arguments: the rest of the command
-    line is the gate's own business, and a check that tried to validate it would
-    be guessing at shell semantics it does not own.
+    An interpreter (`sh`, `bash`, `python3`, `node`) or `uv run` is resolved past
+    to the script it is given, since `sh missing.sh` starts fine and then exits
+    127. Arguments after the script, and the arguments of any other command, are
+    the command's own business and are not read. The full rules and the known
+    gaps (interpreter flags with a separate value, `env`/`cd &&` forms) are in
+    `services.doctor_gate_commands`.
 
     DELIBERATELY NOT IN `DISPATCH_PREFLIGHT_CHECKS`, for the reason that constant
     gives for excluding REPO_HAS_COMMIT: `gate_runner` already catches OSError at
@@ -503,38 +516,28 @@ def check_gate_commands_resolve(
     the executable resolved, and this check would have passed it. Catching that
     needs the gate to run, which a read-only preflight must not do.
     """
-    gates = resolve_orchestration_profile(workspace).gates
-    configured = [command for command in gates.commands if command.strip()]
-    if gates.transition_script.strip():
-        configured.append(gates.transition_script)
+    configured = configured_gate_commands(resolve_orchestration_profile(workspace))
     if not configured:
         return _ok(DoctorCheck.GATE_COMMANDS_RESOLVE, "No gate commands configured.")
 
-    unresolved: list[str] = []
-    for command in configured:
-        parts = shlex.split(command)
-        if not parts:
-            continue
-        executable = parts[0]
-        if "/" in executable:
-            if not (repo_root / executable).exists():
-                unresolved.append(executable)
-        elif shutil.which(executable, path=os.environ.get("PATH", "")) is None:
-            unresolved.append(executable)
-
+    unresolved = unresolved_gate_commands(configured, repo_root)
     if not unresolved:
         return _ok(
             DoctorCheck.GATE_COMMANDS_RESOLVE,
             f"All {len(configured)} gate command(s) resolve from {repo_root}.",
         )
+    fields = ", ".join(source.value for source in GateCommandSource)
     return DoctorFinding(
         check=DoctorCheck.GATE_COMMANDS_RESOLVE,
         status=DoctorStatus.FAIL,
-        finding=f"Gate command(s) do not resolve from {repo_root}: {', '.join(unresolved)}.",
+        finding=(
+            f"Gate command(s) do not resolve from {repo_root}: "
+            f"{'; '.join(command.describe() for command in unresolved)}."
+        ),
         remediation=(
-            "Point them at a path that exists in the tree the agent runs in, or install "
-            "the executable. A gate that cannot start reports a missing file that is "
-            "usually present somewhere else."
+            f"Point the named profile field ({fields}) at a path that exists in the tree "
+            "the agent runs in, or install the executable. A command that cannot start "
+            "reports a missing file that is usually present somewhere else."
         ),
     )
 

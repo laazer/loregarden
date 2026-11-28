@@ -10,7 +10,13 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { Select } from "../ui/Select";
-import { formatBytes, formatShortTime, openOutput, outputTitle } from "../../lib/ticketOutputs";
+import {
+  formatBytes,
+  formatShortTime,
+  openOutput,
+  outputTitle,
+  partialTagLabel,
+} from "../../lib/ticketOutputs";
 import { KindTag, VerdictPill } from "./outputParts";
 import "./ArtifactPane.css";
 
@@ -133,6 +139,11 @@ export function TicketOutputs({ ticketId, isActive }: { ticketId: string; isActi
   }
 
   const filtering = kind !== "all" || search.trim() !== "";
+  const searching = search.trim() !== "";
+  // Counted over the rows the query actually left on screen: a count over the
+  // whole feed would apologise for rows the search never looked at, and a note
+  // that counts the wrong rows reintroduces the problem with a number on it.
+  const shortenedShown = rows.filter((row) => row.item.content_truncated).length;
   const toggleSort = (key: SortKey) =>
     setSort((cur) =>
       cur.key === key
@@ -148,7 +159,7 @@ export function TicketOutputs({ ticketId, isActive }: { ticketId: string; isActi
           className="out-search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search titles and content"
+          placeholder="Search titles, kinds and stages"
           aria-label="Search outputs"
         />
         <Select aria-label="Filter by kind" value={kind} onChange={(event) => setKind(event.target.value)}>
@@ -177,6 +188,13 @@ export function TicketOutputs({ ticketId, isActive }: { ticketId: string; isActi
         </div>
       ) : null}
 
+      {searching && shortenedShown > 0 ? (
+        <div className="out-note" role="status">
+          {shortenedShown} of these rows were searched only to the part of them shown in this table — open a
+          row to search the whole of it.
+        </div>
+      ) : null}
+
       {rows.length === 0 ? (
         <div className="ap-state ap-state--inline">
           <div className="ap-state-body">
@@ -196,7 +214,9 @@ export function TicketOutputs({ ticketId, isActive }: { ticketId: string; isActi
           ) : null}
         </div>
       ) : (
-        <table className="out-table">
+        <table
+          className={`out-table${shortenedShown > 0 ? " out-table--partial" : ""}`}
+        >
           <thead>
             <tr>
               {COLUMNS.map((column) => (
@@ -226,13 +246,24 @@ export function TicketOutputs({ ticketId, isActive }: { ticketId: string; isActi
                   <KindTag item={item} />
                 </td>
                 <td className="out-col-title">
-                  <Button variant="plain" className="out-title" onClick={() => openOutput(item, stage)}>
+                  <Button
+                    variant="plain"
+                    className="out-title"
+                    onClick={() => openOutput(item, { ticketId, stage })}
+                  >
                     <span className="out-title-text">{outputTitle(item)}</span>
                     <VerdictPill item={item} />
                   </Button>
                 </td>
                 <td className="out-col-stage">{stage || "—"}</td>
-                <td className="out-col-size">{formatBytes(item.content_bytes)}</td>
+                <td className="out-col-size">
+                  {formatBytes(item.content_bytes)}
+                  {item.content_truncated ? (
+                    <span className="out-partial" aria-label={partialTagLabel(item)}>
+                      partial
+                    </span>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

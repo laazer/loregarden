@@ -473,6 +473,27 @@ def get_ticket_operator_questions(
     )
 
 
+@router.get("/{ticket_id}/artifacts/{artifact_id}", response_model=dict)
+def get_ticket_artifact_detail(
+    ticket_id: str,
+    artifact_id: str,
+    session: Session = Depends(get_session),
+) -> dict:
+    """One artifact of this ticket, with the whole of its content.
+
+    The feed bounds each row's content so a polled response cannot carry a failing
+    suite's entire output; this is where the rest of it is read from, so no
+    `land_verification` row loses its evidence. The row comes back in the same
+    item shape as a feed row and without the shortened markers, because this is
+    the whole of it.
+    """
+    return run_rest_operation(
+        session,
+        OperationId.ARTIFACT_DETAIL,
+        {"ticket_id": ticket_id, "artifact_id": artifact_id},
+    )
+
+
 @router.patch("/{ticket_id}", response_model=TicketDetail)
 def update_ticket(
     ticket_id: str,

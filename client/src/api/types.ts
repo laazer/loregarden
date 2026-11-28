@@ -385,8 +385,17 @@ export interface TicketArtifactItem {
   evidence_kind: string;
   commit_sha: string;
   created_at: string | null;
+  /** The FULL stored size, even when `content` below is only the head of it. */
   content_bytes: number;
   content: unknown;
+  /**
+   * Present, and only present, when the feed shortened this row's `content` to
+   * stay under its per-row bound. The single-artifact read path
+   * (`api.ticketArtifact`) returns the whole of it, unmarked.
+   */
+  content_truncated?: boolean;
+  /** UTF-8 size of the shortened `content`, beside `content_bytes` for the whole. */
+  content_shown_bytes?: number;
 }
 
 export interface TicketArtifactsFeed {

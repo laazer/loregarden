@@ -21,6 +21,10 @@ from loregarden.models.domain import (
     TicketState,
     Workspace,
 )
+from loregarden.services.artifact_content_bound import (
+    bound_feed_content,
+    feed_content_bytes,
+)
 from loregarden.services.artifact_records import is_system_record
 from loregarden.services.block_classification import BLOCKING_POINTER_PHRASE
 from loregarden.services.block_settlement import settle_block
@@ -1213,30 +1217,89 @@ def list_ticket_artifacts(
         .order_by(Artifact.created_at.desc())
         .limit(limit)
     ).all()
-    items: list[dict[str, Any]] = []
-    for art, run_code, run_stage_key in rows:
-        raw = art.content_json or "{}"
-        try:
-            content = json.loads(raw)
-        except json.JSONDecodeError:
-            # silent-ok: unparseable content is handed to the caller verbatim under _raw
-            content = {"_raw": raw}
-        items.append(
-            {
-                "id": art.id,
-                "kind": art.kind,
-                "title": art.title,
-                "run_id": art.run_id,
-                "stage_key": run_stage_key or _content_stage_key(content),
-                "system": is_system_record(kind=art.kind, title=art.title, run_code=run_code),
-                "evidence_kind": art.evidence_kind,
-                "commit_sha": art.commit_sha,
-                "created_at": art.created_at.isoformat() if art.created_at else None,
-                "content_bytes": len(raw.encode("utf-8")),
-                "content": content,
-            }
-        )
+    items = [
+        _artifact_item(art, run_code, run_stage_key, bound=True)
+        for art, run_code, run_stage_key in rows
+    ]
     return {"items": items, "total": len(items)}
+
+
+def get_ticket_artifact(
+    session: Session,
+    ticket_id: str,
+    artifact_id: str,
+) -> dict[str, Any] | None:
+    """One artifact of one ticket, with the WHOLE parsed content (lg-milestone-that-1424 AC5).
+
+    The other half of the feed's bound: a feed row carries the head of a long
+    output so the reader opens on something, and this is where the rest of it is
+    read from. The row is never marked as shortened, because this IS the whole of
+    it — lg-milestone-that-1419 AC9 requires the full output on the receipt, and
+    that stays true only because some read path hands it back whole.
+
+    Returns None when no artifact of that id belongs to this ticket, so the route
+    refuses with a 404 rather than serving another ticket's evidence: the id alone
+    is enough to fetch a row, which would make the ticket in the path decoration.
+    """
+    row = session.exec(
+        select(Artifact, AgentRun.run_code, AgentRun.stage_key)
+        .join(AgentRun, Artifact.run_id == AgentRun.id, isouter=True)
+        .where(Artifact.id == artifact_id, Artifact.ticket_id == ticket_id)
+    ).first()
+    if not row:
+        return None
+    art, run_code, run_stage_key = row
+    return _artifact_item(art, run_code, run_stage_key, bound=False)
+
+
+def _artifact_item(
+    art: Artifact,
+    run_code: str | None,
+    run_stage_key: str | None,
+    *,
+    bound: bool,
+) -> dict[str, Any]:
+    """One row of the artifact feed's item shape, bounded or whole.
+
+    `content_bytes` is the FULL stored size either way, so the Size column still
+    sorts and the reader's subtitle still says how much there is to read. The two
+    marker keys are present only on a row actually shortened: a universal
+    `content_truncated: false` would restate every row for nothing, and on the
+    whole-content path it would be the client's cue to keep saying "showing the
+    first N" about a complete read.
+    """
+    raw = art.content_json or "{}"
+    try:
+        content = json.loads(raw)
+    except json.JSONDecodeError:
+        # silent-ok: unparseable content is handed to the caller verbatim under _raw
+        content = {"_raw": raw}
+    item = {
+        "id": art.id,
+        "kind": art.kind,
+        "title": art.title,
+        "run_id": art.run_id,
+        "stage_key": run_stage_key or _content_stage_key(content),
+        "system": is_system_record(kind=art.kind, title=art.title, run_code=run_code),
+        "evidence_kind": art.evidence_kind,
+        "commit_sha": art.commit_sha,
+        "created_at": art.created_at.isoformat() if art.created_at else None,
+        "content_bytes": len(raw.encode("utf-8")),
+        "content": content,
+    }
+    if not bound:
+        return item
+    # The decision is taken on the re-encoded size of what the response would
+    # carry, not on `content_bytes`: agents attach with `indent=2`, so whitespace
+    # alone can put a row's stored text over the limit while its content is well
+    # within it, and marking that row would send the operator to the reader for a
+    # rest that does not exist.
+    bounded, shortened = bound_feed_content(content)
+    if shortened:
+        item["content"] = bounded
+        item["content_truncated"] = True
+        item["content_shown_bytes"] = feed_content_bytes(bounded)
+    return item
 
 
 class _StageTagged(BaseModel):
