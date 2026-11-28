@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from loregarden.cli.errors import UsageError
+from loregarden.cli.main_build import run_on_main_build
+from loregarden.config import settings
 from loregarden.db import session as db_session
 from loregarden.db.migrations import MIGRATIONS
 from loregarden.db.migrations_runner import unknown_migration_ids
@@ -168,6 +170,18 @@ def _is_read_only(name: str) -> bool:
         return False
 
 
+class StaleBuildError(UsageError):
+    """A write refused because this build does not know every migration the database has.
+
+    `refusal` is the reason without the remedy, which depends on who catches it:
+    `mcp call` hands the call to main's build, anything else reports it.
+    """
+
+    def __init__(self, message: str, refusal: str) -> None:
+        super().__init__(message)
+        self.refusal = refusal
+
+
 def refuse_stale_write(name: str, *, allow_stale: bool, supervised: bool) -> None:
     """Refuse a write from a build older than the database it would write to.
 
@@ -204,15 +218,17 @@ def refuse_stale_write(name: str, *, allow_stale: bool, supervised: bool) -> Non
         "current code cannot spell."
     )
     if supervised:
-        raise UsageError(
+        raise StaleBuildError(
             f"{detail} --allow-stale does not apply to a supervised run, and this "
             "run cannot fix the build: report this refusal in your stage output so "
             "the operator can update the checkout that runs this CLI. Read-only "
-            "tools still work."
+            "tools still work.",
+            detail,
         )
-    raise UsageError(
+    raise StaleBuildError(
         f"{detail} Update this checkout, or pass --allow-stale if you have "
-        "confirmed the write is unaffected."
+        "confirmed the write is unaffected.",
+        detail,
     )
 
 
@@ -230,7 +246,13 @@ def _run_tool(
         db_session.open_db_for_read()
     else:
         db_session.init_db()
-    refuse_stale_write(name, allow_stale=allow_stale, supervised=orchestrated)
+    try:
+        refuse_stale_write(name, allow_stale=allow_stale, supervised=orchestrated)
+    except StaleBuildError as stale:
+        # Main's build knows every migration the database can have; see `main_build`.
+        return run_on_main_build(
+            settings.repo_root, name, arguments, orchestrated=orchestrated, why=stale.refusal
+        )
     with Session(db_session.engine) as session:
         return execute_tool(
             session,
