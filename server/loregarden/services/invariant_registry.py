@@ -101,6 +101,7 @@ from loregarden.services.start_key_invariants import (
     UNSTARTED_RUNS_HOLD_NO_START_KEY,
 )
 from loregarden.services.stopped_run_invariant import STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT
+from loregarden.services.stranded_resolver_pins import LANDING_RESOLVERS_HAVE_A_LOOP
 from loregarden.services.symbol_map.partitions import (
     orphaned_partitions,
     retire_orphaned_partitions,
@@ -1284,6 +1285,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     FOLLOW_UPS_LEAVE_THEIR_SOURCE,
     RUN_FILINGS_ARE_FINDINGS,
     LANDINGS_SURVIVE_THEIR_BRANCH,
+    LANDING_RESOLVERS_HAVE_A_LOOP,
     LANDING_BLOCKS_CLEAR,
     REFUSED_LANDINGS_WAIT_FOR_A_CHANGE,
     PUBLISH_CARDS_CLOSE,

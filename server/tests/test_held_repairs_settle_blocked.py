@@ -24,10 +24,12 @@ from loregarden.models.domain import (
 from loregarden.services import queue_lanes
 from loregarden.services.builtin_orchestrator import BuiltinOrchestrator
 from loregarden.services.invariant_registry import SETTLED_HOLDS_READ_BLOCKED
+from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.queue_lanes import QueueLaneService
 from loregarden.services.queue_repair import REPAIR_ATTEMPT_CAP, REPAIR_WALL_CLOCK
 from loregarden.services.queue_repair_settle import settled_holds_left_rearmed
+from loregarden.services.requeue import requeue_stage
 from sqlmodel import Session, select
 from tests.test_block_repair import (  # noqa: F401 - fixtures are used by name
     WORKER,
@@ -178,6 +180,31 @@ def test_a_ticket_requeued_after_its_hold_settled_is_not_reported(db_session, ti
         )
     )
     db_session.commit()
+
+    assert SETTLED_HOLDS_READ_BLOCKED.detect(db_session) == []
+
+
+def test_a_ticket_requeued_by_the_tool_after_its_hold_settled_is_not_reblocked(
+    db_session, ticket, monkeypatch
+):
+    """`requeue_stage` adds no queue entry, so the settled hold stayed the newest
+    one and the invariant re-blocked the requeue it could not see: 12s after
+    lg-milestone-that-1424 was requeued on 2026-11-28."""
+    lanes, entry = _held(db_session, ticket, monkeypatch)
+    _spend_attempts(db_session, entry)
+    with mock.patch.object(queue_lanes, "reblock_settled", return_value=False):
+        lanes.reconcile_lanes()
+    assert SETTLED_HOLDS_READ_BLOCKED.detect(db_session), "the fixture must leave a violation"
+
+    requeue_stage(
+        db_session,
+        OrchestrationService(db_session),
+        ticket,
+        stage_key=ticket.workflow_stage_key,
+        reason="fixed on the branch; land it again",
+        actor="operator",
+        state=TicketState.IN_PROGRESS,
+    )
 
     assert SETTLED_HOLDS_READ_BLOCKED.detect(db_session) == []
 

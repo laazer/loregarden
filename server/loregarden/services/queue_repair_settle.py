@@ -15,6 +15,8 @@ existed falls back to classifying the block message.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from loregarden.models.domain import (
     BlockKind,
     OrchestrationRun,
@@ -27,6 +29,7 @@ from loregarden.models.domain import (
 )
 from loregarden.services.block_classification import classify_block_message
 from loregarden.services.parallel_queue import tickets_holding_lanes
+from loregarden.services.requeue import requeued_since
 from loregarden.services.ticket_rollup import reconcile_ancestors
 from loregarden.services.workflow_service import resolve_ticket_stages, workflow_instance_for
 from loregarden.services.workflow_state import parse_stage_map, set_stage_status
@@ -140,5 +143,24 @@ def settled_holds_left_rearmed(session: Session) -> list[tuple[QueuedRun, Ticket
             continue
         if _has_live_work(session, ticket, ignoring=entry.id):
             continue
+        # A person requeued the stage after this hold: the PENDING stage is their
+        # decision, not the hold's leftover re-arm. Re-blocking it undid
+        # lg-milestone-that-1424's requeue 12s after it was made (2026-11-28).
+        if requeued_since(session, ticket, ticket.workflow_stage_key, _settled_at(entry)):
+            continue
         found.append((entry, ticket))
     return found
+
+
+def _settled_at(entry: QueuedRun) -> datetime:
+    """The latest moment this hold is known to have acted on the ticket."""
+    return max(
+        moment
+        for moment in (
+            entry.created_at,
+            entry.started_at,
+            entry.repairing_since,
+            entry.last_failed_at,
+        )
+        if moment is not None
+    )
