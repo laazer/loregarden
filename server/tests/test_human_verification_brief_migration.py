@@ -23,11 +23,11 @@ SKILL_PATH = "agent_context/skills/human-verification-brief/SKILL.md"
 def _seed_agent(conn, *, slug: str, version: int, creators: list[str]) -> None:
     conn.execute(
         text(
-            "INSERT INTO studio_agents (id, slug, name, description, role_body, adapter, "
+            "INSERT INTO studio_agents (id, slug, name, description, role_body, "
             "default_model, timeout, default_skill, mcp_enabled, mcp_tools_json, "
             "gate_checks_json, handoff_checks_json, tool_grants_json, version, built_in, "
             "created_at, updated_at) VALUES (:id, :slug, :slug, '', 'old body', "
-            "'claude', '', 900, '', 1, '[]', '[]', '[]', '{}', :version, 1, "
+            "'', 900, '', 1, '[]', '[]', '[]', '{}', :version, 1, "
             "'2026-01-01', '2026-01-01')"
         ),
         {"id": f"agent-{slug}", "slug": slug, "version": version},

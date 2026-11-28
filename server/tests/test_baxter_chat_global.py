@@ -55,11 +55,11 @@ def captured_turn(monkeypatch) -> dict[str, object]:
         return "ok"
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "cursor")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "cursor")
     monkeypatch.setattr(
         baxter_chat_service,
         "get_agent",
-        lambda _id: {"adapter": "cursor", "mcp_tools": ["loregarden_get_ticket"]},
+        lambda _id: {"mcp_tools": ["loregarden_get_ticket"]},
     )
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
     return captured

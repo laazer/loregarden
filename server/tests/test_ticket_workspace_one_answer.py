@@ -113,12 +113,16 @@ MIN_FILES_SCANNED = 500
 #: 33 of 33 resolved, 0 nullable-keyed, and the other 32 sites unchanged, so this is
 #: package growth, not reach.
 #:
-#: 34 at `22ebddf8` (2026-11-27): one site added, `mcp/memory_tools.py:171`, an
-#: `AgentRun` receiver (`workspace_id: str`, `models/domain/tables.py:373`, not
-#: nullable). 34 of 34 resolved, 0 nullable-keyed, and the other 33 sites match
-#: `origin/main`'s list exactly, so this is package growth, not reach.
+#: 35 after merging `lg-protocol-executors-1612`: two sites added, both on
+#: `AgentRun` (`workspace_id: str`, not nullable): `run_steering._selected_adapter`
+#: and `run_resupervise` resolve a run's harness from the run's own workspace
+#: instead of the agent's registry entry. Package growth, not reach.
+#:
+#: 34 at `22ebddf8` on main (2026-11-27): one site added, `mcp/memory_tools.py:171`,
+#: an `AgentRun` receiver (`workspace_id: str`, `models/domain/tables.py:373`, not
+#: nullable). Package growth, not reach.
 #: Move this number only with that distinction measured and written down.
-NON_NULLABLE_RECEIVER_LOOKUPS = 34
+NON_NULLABLE_RECEIVER_LOOKUPS = 36
 
 #: Receiver prefixes the walk must see through, because real sites use them.
 #: Spelled as a comment rather than a list: `self.ticket`, `orch.ticket` and

@@ -1,8 +1,7 @@
-"""A provider pin above the agent replaces its adapter and drops its model pin.
+"""Override warning fires only when a model pin was dropped. Spec R4.
 
-That is deliberate, and invisible: a blobert Learning run declared claude, the
-workspace pinned cursor, the claude model pin was discarded, and cursor-agent
-ran with no --model on a capped "Auto" tier. The run log said nothing.
+A higher-tier harness pin with no role/stage model is silent. The old trigger
+('declares adapter' / pin-the-ticket copy) is gone.
 """
 
 from unittest import mock
@@ -10,7 +9,7 @@ from unittest import mock
 import pytest
 from loregarden.agents.cli_adapters import CliInvocation
 from loregarden.agents.executors.dispatch_warnings import maybe_warn_adapter_override
-from loregarden.models.domain import AgentRun, Workspace, WorkspaceRuntimeSettings
+from loregarden.models.domain import AgentRun, Workspace
 from loregarden.services.cli_settings import adapter_override_warning, adapter_pin_source
 
 
@@ -24,70 +23,61 @@ def _no_env_adapter_pin(monkeypatch):
 def _warn(**overrides) -> str:
     args = {
         "agent_id": "learning",
-        "agent_adapter": "claude",
         "selected_adapter": "cursor",
-        "pin_source": "workspace",
         "dropped_model": "",
-        "model": "",
     }
     return adapter_override_warning(**{**args, **overrides})
 
 
-def test_names_the_declared_and_selected_adapter_and_the_tier():
-    message = _warn()
-
-    assert "'learning' declares adapter 'claude'" in message
-    assert "workspace's provider setting pins 'cursor'" in message
-    assert "cursor's own default model" in message
+def test_silent_when_dropped_model_is_empty(monkeypatch):
+    """R4.1 — workspace pins cursor, role has no model pin → silent."""
+    assert _warn(dropped_model="") == ""
+    assert _warn(dropped_model="", selected_adapter="local") == ""
 
 
-def test_names_the_model_pin_it_dropped():
-    assert "'opus' does not apply to cursor and was dropped" in _warn(dropped_model="opus")
+def test_silent_when_pins_apply():
+    """R4.1 — Claude pin on a Claude run is not a drop."""
+    assert _warn(dropped_model="opus", selected_adapter="claude") == ""
 
 
-def test_names_the_model_the_run_uses_when_one_is_pinned():
-    message = _warn(model="gpt-5")
+def test_names_the_dropped_pin_and_selected_harness_only():
+    """R4.2"""
+    message = _warn(dropped_model="opus", selected_adapter="cursor")
 
-    assert "Model: gpt-5." in message
-    assert "own default" not in message
-
-
-@pytest.mark.parametrize(
-    ("agent_adapter", "selected_adapter", "pin_source"),
-    [
-        ("claude", "claude", "workspace"),  # got what it declared
-        ("", "cursor", "workspace"),  # declares nothing
-        ("default", "cursor", "workspace"),  # declares nothing
-        ("claude", "local", ""),  # no tier pinned it (command override)
-    ],
-)
-def test_silent_when_the_agent_was_not_overridden(agent_adapter, selected_adapter, pin_source):
-    assert (
-        _warn(agent_adapter=agent_adapter, selected_adapter=selected_adapter, pin_source=pin_source)
-        == ""
+    assert message == (
+        "Agent 'learning' model pin 'opus' does not apply to cursor and was dropped."
     )
 
 
-def test_pin_source_walks_env_then_ticket_then_workspace():
+def test_does_not_tell_the_operator_to_pin_a_declared_cli():
+    """R4.3"""
+    message = _warn(dropped_model="opus", selected_adapter="cursor")
+
+    assert "declares adapter" not in message
+    assert "To run this agent as declared" not in message
+    assert "Model:" not in message
+    assert "own default" not in message
+
+
+def test_pin_source_last_tier_is_process():
+    """R6.1 — empty string is gone; inherit is process."""
     ws = Workspace(slug="ws", name="ws", cli_adapter="cursor")
 
     assert adapter_pin_source(workspace=ws) == "workspace"
     assert adapter_pin_source(workspace=ws, ticket_adapter="claude") == "ticket"
-    assert adapter_pin_source(workspace=Workspace(slug="ws", name="ws")) == ""
+    assert adapter_pin_source(workspace=Workspace(slug="ws", name="ws")) == "process"
     with mock.patch.dict("os.environ", {"LOREGARDEN_CLI_ADAPTER": "local"}):
         assert adapter_pin_source(workspace=ws, ticket_adapter="claude") == "env"
 
 
-def test_executor_writes_the_warning_into_the_run_log():
+def test_executor_writes_the_drop_warning_into_the_run_log():
     streamer = mock.Mock()
     run = AgentRun(run_code="r-1", ticket_id="t", workspace_id="w", agent_id="learning")
 
     maybe_warn_adapter_override(
         streamer=streamer,
         run=run,
-        agent={"adapter": "claude", "default_model": "opus"},
-        workspace=Workspace(slug="ws", name="ws", cli_adapter="cursor"),
-        ticket_runtime=WorkspaceRuntimeSettings(),
+        agent={"default_model": "opus"},
         stage_def=None,
         invocation=CliInvocation(argv=["cursor-agent"], adapter="cursor"),
     )
@@ -95,4 +85,38 @@ def test_executor_writes_the_warning_into_the_run_log():
     streamer.append.assert_called_once()
     level, message = streamer.append.call_args.args
     assert level == "WARN"
-    assert "'opus' does not apply to cursor" in message
+    assert message == (
+        "Agent 'learning' model pin 'opus' does not apply to cursor and was dropped."
+    )
+
+
+def test_executor_is_silent_when_the_role_has_no_model_pin():
+    """R4.1 / R4.4 — trigger is the drop, not a higher-tier harness replacement."""
+    streamer = mock.Mock()
+    run = AgentRun(run_code="r-1", ticket_id="t", workspace_id="w", agent_id="learning")
+
+    maybe_warn_adapter_override(
+        streamer=streamer,
+        run=run,
+        agent={"default_model": ""},
+        stage_def=None,
+        invocation=CliInvocation(argv=["cursor-agent"], adapter="cursor"),
+    )
+
+    streamer.append.assert_not_called()
+
+
+def test_maybe_warn_does_not_read_agent_adapter():
+    """R4.4 — leftover agent['adapter'] must not become the trigger."""
+    streamer = mock.Mock()
+    run = AgentRun(run_code="r-1", ticket_id="t", workspace_id="w", agent_id="learning")
+
+    maybe_warn_adapter_override(
+        streamer=streamer,
+        run=run,
+        agent={"adapter": "claude", "default_model": ""},
+        stage_def=None,
+        invocation=CliInvocation(argv=["cursor-agent"], adapter="cursor"),
+    )
+
+    streamer.append.assert_not_called()

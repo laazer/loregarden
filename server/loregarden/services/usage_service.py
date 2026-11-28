@@ -1369,7 +1369,7 @@ def get_usage_snapshot() -> dict[str, Any]:
             _fetch_codex_usage(client, cache.get("codex")),
         ]
 
-    active_adapter = resolve_effective_adapter(agent_adapter="", workspace=None)
+    active_adapter = resolve_effective_adapter(workspace=None)
 
     updated_cache = dict(cache)
     resolved_providers: list[ProviderUsage] = []
@@ -1414,7 +1414,7 @@ def snapshot_from_stored_cache() -> dict[str, Any] | None:
     ]
     if not providers:
         return None
-    active_adapter = resolve_effective_adapter(agent_adapter="", workspace=None)
+    active_adapter = resolve_effective_adapter(workspace=None)
     for provider in providers:
         provider.from_cache = True
         _apply_configured_model(provider, active_adapter)

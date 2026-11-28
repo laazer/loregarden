@@ -50,7 +50,7 @@ def hanging_turn_fixture(tmp_path: Path):
         invocation = CliInvocation(argv=_hanging_cli(first_line), cwd=str(repo))
         with (
             mock.patch.object(cli_agent_runner, "resolve_workspace_root", return_value=repo),
-            mock.patch.object(cli_agent_runner, "get_agent", return_value={"adapter": "claude"}),
+            mock.patch.object(cli_agent_runner, "get_agent", return_value={"timeout": 1}),
             mock.patch.object(cli_agent_runner, "build_triage_invocation", return_value=invocation),
             mock.patch.object(
                 cli_agent_runner, "resolve_agent_timeout", return_value=TURN_TIMEOUT_SECONDS

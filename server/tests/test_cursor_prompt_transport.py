@@ -67,7 +67,6 @@ def _cursor_stage_invocation(prompt: str = STAGE_PROMPT):
     with patch("loregarden.agents.cli_adapters.resolve_effective_adapter", return_value="cursor"):
         return resolve_cli_invocation(
             agent_id="ticket_scoper",
-            adapter="cursor",
             prompt=prompt,
             prompt_file=PROMPT_FILE,
             skill_name="",
@@ -80,7 +79,6 @@ def _cursor_handoff_invocation(prompt: str = STAGE_PROMPT):
     with patch("loregarden.agents.cli_adapters.resolve_effective_adapter", return_value="cursor"):
         return resolve_terminal_handoff_invocation(
             agent_id="ticket_scoper",
-            adapter="cursor",
             prompt=prompt,
             prompt_file=PROMPT_FILE,
             skill_name="",

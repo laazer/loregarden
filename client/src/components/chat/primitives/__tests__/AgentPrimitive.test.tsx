@@ -84,3 +84,34 @@ describe("the agent card's role pane", () => {
     expect(screen.getByText("This agent has no role text yet.")).toBeInTheDocument();
   });
 });
+
+
+function wrap(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
+
+describe("AgentPrimitive (R8 / R11)", () => {
+  it("does not copy a draft adapter onto a Provider row", () => {
+    wrap(
+      <AgentPrimitive
+        part={{
+          primitive: "agent",
+          title: "Draft role",
+          draft: {
+            name: "Draft role",
+            adapter: "cursor",
+            provider: "cursor",
+            description: "A draft",
+            default_skill: "review",
+            timeout: 600,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Draft role").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Provider")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cursor Agent")).not.toBeInTheDocument();
+  });
+});

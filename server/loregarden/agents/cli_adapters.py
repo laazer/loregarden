@@ -491,7 +491,6 @@ def _claude_terminal_handoff_invocation(
 def resolve_terminal_handoff_invocation(
     *,
     agent_id: str,
-    adapter: str,
     prompt: str,
     prompt_file: Path,
     skill_name: str,
@@ -516,7 +515,7 @@ def resolve_terminal_handoff_invocation(
     if override is not None:
         return override
 
-    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    selected = resolve_effective_adapter(workspace=workspace)
     model = resolve_model_for_adapter(selected, workspace)
     effort = resolve_effort_for_adapter(selected, workspace)
 
@@ -1059,7 +1058,6 @@ def _lmstudio_invocation(
 def resolve_cli_invocation(
     *,
     agent_id: str,
-    adapter: str,
     prompt: str,
     prompt_file: Path,
     skill_name: str,
@@ -1094,11 +1092,9 @@ def resolve_cli_invocation(
     if override is not None:
         return _as_supervised(override, run_id)
 
-    selected = resolve_effective_adapter(
-        agent_adapter=adapter, workspace=workspace, ticket_adapter=ticket_adapter
-    )
+    selected = resolve_effective_adapter(workspace=workspace, ticket_adapter=ticket_adapter)
     _warn_if_stash_unguarded(selected)
-    pins_apply = adapter_model_pins_apply(agent_adapter=adapter, selected_adapter=selected)
+    pins_apply = adapter_model_pins_apply(pin_adapter=CliAdapter.CLAUDE, selected_adapter=selected)
     model = resolve_model_for_adapter(
         selected,
         workspace,
@@ -1332,10 +1328,10 @@ def build_triage_invocation(
     if override is not None:
         return override
 
-    selected = resolve_effective_adapter(agent_adapter=adapter, workspace=workspace)
+    selected = (adapter or "").strip() or resolve_effective_adapter(workspace=workspace)
     _warn_if_stash_unguarded(selected)
-    # Workspace already carries any triage/studio runtime overrides. Stage/agent
-    # pins are not a one-shot concern — same resolver, empty pin tiers.
+    # `adapter` is the already-selected harness (chat callers resolve first).
+    # Empty means re-resolve: env → ticket → workspace → process default.
     model = resolve_model_for_adapter(selected, workspace)
     effort = resolve_effort_for_adapter(selected, workspace)
     triage_user_prompt = user_prompt or os.environ.get(

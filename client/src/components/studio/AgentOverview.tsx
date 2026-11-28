@@ -17,7 +17,6 @@ import { describeError } from "../../state/toastStore";
 import { Button } from "../ui/Button";
 import { PaneSkeleton } from "../ui/PaneSkeleton";
 import { AgentVersionHistory } from "./AgentVersionHistory";
-import { ADAPTERS } from "./studioAgentMeta";
 import "./AgentOverview.css";
 
 export type AgentTab = "overview" | "instructions" | "runtime" | "prompt";
@@ -128,14 +127,11 @@ function RecentRuns({ record }: { record: AgentRunRecord }) {
 }
 
 function Configuration({ agent, onEdit }: { agent: StudioAgent; onEdit: Props["onEdit"] }) {
-  const provider = ADAPTERS.find((option) => option.id === agent.adapter)?.label ?? agent.adapter;
   return (
     <>
       <dl className="studio-record-dl">
-        <dt>Provider</dt>
-        <dd>{provider || "—"}</dd>
         <dt>Model</dt>
-        <dd>{agent.default_model || "provider default"}</dd>
+        <dd>{agent.default_model || "harness default"}</dd>
         <dt>Skill</dt>
         <dd>{agent.default_skill || "—"}</dd>
         <dt>Timeout</dt>

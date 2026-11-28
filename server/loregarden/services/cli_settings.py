@@ -223,7 +223,6 @@ def workspace_cli_settings(workspace: Workspace | None) -> WorkspaceCliSettings:
 
 def resolve_effective_adapter(
     *,
-    agent_adapter: str,
     workspace: Workspace | None,
     ticket_adapter: str = "default",
 ) -> str:
@@ -238,12 +237,12 @@ def resolve_effective_adapter(
     if ws.cli_adapter and ws.cli_adapter != CliAdapter.DEFAULT:
         return ws.cli_adapter
 
-    return agent_adapter or settings.cli_adapter
+    return settings.cli_adapter
 
 
 def adapter_pin_source(*, workspace: Workspace | None, ticket_adapter: str = "default") -> str:
-    """Which tier above the agent pinned the adapter, or "" when the agent's own
-    declared adapter decides. Walks the same chain as ``resolve_effective_adapter``.
+    """Which tier pinned the adapter. Walks the same chain as
+    ``resolve_effective_adapter``. Last tier is ``process`` (settings.cli_adapter).
     """
     if os.environ.get("LOREGARDEN_CLI_ADAPTER"):
         return "env"
@@ -252,60 +251,38 @@ def adapter_pin_source(*, workspace: Workspace | None, ticket_adapter: str = "de
     ws = workspace_cli_settings(workspace)
     if ws.cli_adapter and ws.cli_adapter != CliAdapter.DEFAULT:
         return "workspace"
-    return ""
-
-
-_PIN_SOURCE_LABEL = {
-    "env": "the LOREGARDEN_CLI_ADAPTER environment variable",
-    "ticket": "this ticket's Model settings",
-    "workspace": "the workspace's provider setting",
-}
+    return "process"
 
 
 def adapter_override_warning(
     *,
     agent_id: str,
-    agent_adapter: str,
     selected_adapter: str,
-    pin_source: str,
     dropped_model: str,
-    model: str,
 ) -> str:
-    """Say, in a run's log, that a higher tier replaced the agent's declared adapter.
+    """Say, in a run's log, that a Claude-authored model pin was dropped.
 
-    The replacement is deliberate, but its side effect is not visible anywhere
-    else: the agent's model pin belongs to the declared provider and is dropped
-    (``adapter_model_pins_apply``), so a run can land on the new provider's own
-    default — a capped "Auto" tier, say — with nothing in the log to say why.
-    Returns "" when the agent declares nothing, got what it declared, or no tier
-    pinned the adapter (a command override replaces the whole invocation).
+    Remaining ``default_model`` / stage ``model`` / ``claude_model`` pins are
+    Claude-authored until lg-protocol-executors-981: they apply iff the selected
+    harness is claude. Silent when nothing was dropped or the pin still applies.
     """
-    if not pin_source or adapter_model_pins_apply(
-        agent_adapter=agent_adapter, selected_adapter=selected_adapter
+    if not dropped_model or adapter_model_pins_apply(
+        pin_adapter=CliAdapter.CLAUDE, selected_adapter=selected_adapter
     ):
         return ""
-    tier = _PIN_SOURCE_LABEL[pin_source]
-    parts = [
-        f"Agent '{agent_id}' declares adapter '{agent_adapter}', but {tier} pins "
-        f"'{selected_adapter}', so this run uses {selected_adapter}."
-    ]
-    if dropped_model:
-        parts.append(
-            f"Its {agent_adapter} model pin '{dropped_model}' does not apply to "
-            f"{selected_adapter} and was dropped."
-        )
-    if model:
-        parts.append(f"Model: {model}.")
-    else:
-        parts.append(
-            f"No {selected_adapter} model is pinned, so the run is on {selected_adapter}'s "
-            "own default model."
-        )
-    parts.append("To run this agent as declared, set the provider in this ticket's Model settings.")
-    return " ".join(parts)
+    return (
+        f"Agent '{agent_id}' model pin '{dropped_model}' does not apply to "
+        f"{selected_adapter} and was dropped."
+    )
 
 
-def resolve_chat_adapter(*, agent_adapter: str, override_json: str = "") -> str:
+#: Interactive chat rails do not inherit ``workspace.cli_adapter``. Callers pass
+#: this as ``surface_default`` so an unpinned Home / branch-triage / ticket-triage
+#: session stays on Claude rather than the pipeline process default (local).
+CHAT_SURFACE_DEFAULT = CliAdapter.CLAUDE
+
+
+def resolve_chat_adapter(*, surface_default: str, override_json: str = "") -> str:
     """The adapter for an interactive chat surface — the workspace pipeline
     adapter deliberately does not reach it.
 
@@ -319,15 +296,15 @@ def resolve_chat_adapter(*, agent_adapter: str, override_json: str = "") -> str:
 
     Only an explicit, deliberate override reaches chat: the global
     ``LOREGARDEN_CLI_ADAPTER`` env pin, or the surface's own runtime override
-    blob (a ticket's ``triage_runtime_json``). Otherwise the chat agent's own
-    declared adapter wins.
+    blob (a ticket's ``triage_runtime_json``). Otherwise ``surface_default``
+    wins (callers pass ``CHAT_SURFACE_DEFAULT``).
     """
     env_override = os.environ.get("LOREGARDEN_CLI_ADAPTER")
     if env_override:
         return env_override
 
     return (
-        pinned_adapter(json.loads(override_json or "{}")) or agent_adapter or settings.cli_adapter
+        pinned_adapter(json.loads(override_json or "{}")) or surface_default or settings.cli_adapter
     )
 
 
@@ -349,17 +326,16 @@ def _first_set(*values: str) -> str:
     return ""
 
 
-def adapter_model_pins_apply(*, agent_adapter: str, selected_adapter: str) -> bool:
-    """Whether agent/stage model pins belong to the selected provider.
+def adapter_model_pins_apply(*, pin_adapter: str, selected_adapter: str) -> bool:
+    """Whether a model pin was authored against the selected harness.
 
-    Those pins are authored against the agent's declared adapter (Claude aliases
-    vs Cursor ids vs an LM Studio load name). When workspace/ticket/env overrides
-    the provider, forwarding them would send the wrong namespace to the CLI.
+    Remaining ``default_model`` / stage ``model`` / ``claude_model`` pins are
+    Claude-authored until lg-protocol-executors-981; callers pass
+    ``CliAdapter.CLAUDE``. Empty or inherit (``default``) is not a pin.
     """
-    declared = agent_adapter or ""
-    if not declared or declared == CliAdapter.DEFAULT:
-        return True
-    return declared == selected_adapter
+    return (
+        bool(pin_adapter) and pin_adapter != CliAdapter.DEFAULT and pin_adapter == selected_adapter
+    )
 
 
 def ticket_model_for_adapter(
@@ -778,23 +754,7 @@ def resolve_runtime_effective(
     ws = workspace_cli_settings(workspace)
 
     adapter_source = adapter_pin_source(workspace=workspace, ticket_adapter=ticket.cli_adapter)
-    if not adapter_source:
-        # Nothing above the agent pins a provider, so each stage runs on its own
-        # agent's declared adapter and model — which one depends on the stage, and
-        # naming the global setting here would claim a provider no run uses.
-        return {
-            "cli_adapter": "",
-            "cli_adapter_source": "agent",
-            "model": "",
-            "model_source": "agent",
-            "effort": "",
-            "effort_source": "agent",
-            "supports_model": False,
-            "supports_effort": False,
-        }
-    adapter = resolve_effective_adapter(
-        agent_adapter="", workspace=workspace, ticket_adapter=ticket.cli_adapter
-    )
+    adapter = resolve_effective_adapter(workspace=workspace, ticket_adapter=ticket.cli_adapter)
 
     model = resolve_model_for_adapter(
         adapter,

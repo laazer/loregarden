@@ -174,7 +174,6 @@ class TestWarnings:
         assert (
             analyze_tool_grants(
                 StudioAgentToolGrants(),
-                adapter="claude",
                 mcp_tools=MCP_TOOLS,
                 mcp_enabled=True,
                 registered_servers=frozenset(),
@@ -182,30 +181,30 @@ class TestWarnings:
             == []
         )
 
-    def test_non_claude_adapter_is_told_the_grant_does_nothing(self):
-        warnings = analyze_tool_grants(
-            _allowlist(),
-            adapter="cursor",
-            mcp_tools=MCP_TOOLS,
-            mcp_enabled=True,
-            registered_servers=frozenset(),
-        )
-        assert ToolGrantWarningCode.ADAPTER_IGNORES_GRANTS in _codes(warnings)
+    def test_analyze_tool_grants_has_no_adapter_parameter(self):
+        """R12 — harness is not a property of the role, so the editor cannot know."""
+        import inspect
 
-    def test_claude_adapter_does_not_get_the_adapter_warning(self):
+        params = inspect.signature(analyze_tool_grants).parameters
+        assert "adapter" not in params
+
+    def test_edit_time_warnings_do_not_include_adapter_ignores_grants(self):
+        """R12 — enum member is gone; allowlist no longer warns about a role CLI."""
+        assert getattr(ToolGrantWarningCode, "ADAPTER_IGNORES_GRANTS", None) is None
         warnings = analyze_tool_grants(
             _allowlist(),
-            adapter="claude",
             mcp_tools=MCP_TOOLS,
             mcp_enabled=True,
             registered_servers=frozenset(),
         )
-        assert ToolGrantWarningCode.ADAPTER_IGNORES_GRANTS not in _codes(warnings)
+        assert "adapter_ignores_grants" not in {w.code.value for w in warnings}
+        for warning in warnings:
+            assert "until the agent's provider is Claude" not in warning.message
+            assert "Only the Claude provider" not in warning.message
 
     def test_unregistered_server_grant_is_flagged(self):
         warnings = analyze_tool_grants(
             _allowlist(mcp_servers=["ghost"]),
-            adapter="claude",
             mcp_tools=MCP_TOOLS,
             mcp_enabled=True,
             registered_servers=frozenset({"github"}),
@@ -220,7 +219,6 @@ class TestWarnings:
                 disallowed_tools=[],
                 mcp_servers=[],
             ),
-            adapter="claude",
             mcp_tools=["loregarden_get_ticket"],
             mcp_enabled=False,  # MCP off drops the granted tools from the allowlist
             registered_servers=frozenset(),
@@ -232,7 +230,6 @@ class TestWarnings:
     def test_losing_all_mcp_is_flagged(self):
         warnings = analyze_tool_grants(
             _allowlist(),
-            adapter="claude",
             mcp_tools=[],
             mcp_enabled=True,
             registered_servers=frozenset(),
@@ -242,7 +239,6 @@ class TestWarnings:
     def test_an_allowlist_resolving_to_nothing_is_flagged(self):
         warnings = analyze_tool_grants(
             _allowlist(disallowed_tools=list(CliTool)),
-            adapter="claude",
             mcp_tools=[],
             mcp_enabled=False,
             registered_servers=frozenset(),

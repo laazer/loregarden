@@ -653,7 +653,6 @@ def _m_definition_versioning(conn: Connection) -> None:
         "name",
         "description",
         "role_body",
-        "adapter",
         "default_model",
         "timeout",
         "default_skill",

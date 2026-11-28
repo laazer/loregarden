@@ -15,7 +15,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 
-import type { StudioExitActionRequirementCatalog } from "../../../api/client";
+import type { RuntimeOptions, StudioExitActionRequirementCatalog } from "../../../api/client";
 import { StudioStagesCard } from "../StudioStagesCard";
 import { emptyStage, type StudioWorkflowDraft } from "../studioWorkflowHelpers";
 
@@ -27,9 +27,25 @@ const EXIT_ACTION_REQUIREMENTS: StudioExitActionRequirementCatalog = {
 };
 
 const AGENTS = [
-  { slug: "planner", name: "Planner", built_in: true, adapter: "claude" },
-  { slug: "backend_implementer", name: "Backend Implementer", built_in: true, adapter: "claude" },
+  { slug: "planner", name: "Planner", built_in: true, adapter: "cursor" },
+  { slug: "backend_implementer", name: "Backend Implementer", built_in: true, adapter: "cursor" },
 ] as never[];
+
+const CLAUDE_RUNTIME: RuntimeOptions = {
+  cli_adapters: [],
+  claude_models: [
+    { id: "", label: "Default (Claude Code profile)" },
+    { id: "claude-opus-5", label: "Claude Opus 5 (pinned)" },
+    { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+  ],
+  cursor_models: [
+    { id: "", label: "Default (Cursor profile)" },
+    { id: "gpt-5", label: "GPT-5" },
+  ],
+  codex_models: [],
+  lmstudio_models: [],
+  opencode_models: [],
+};
 
 function draftWith(...stages: StudioWorkflowDraft["stages"]): StudioWorkflowDraft {
   return { slug: "wf", name: "WF", description: "", stages, transitions: [] };
@@ -39,7 +55,11 @@ function draftWith(...stages: StudioWorkflowDraft["stages"]): StudioWorkflowDraf
  * The card with the draft state the page owns, so an edit is observed the way
  * the page observes it: through the setter, and back into the rendered form.
  */
-function renderCard(initial: StudioWorkflowDraft, readOnly = false) {
+function renderCard(
+  initial: StudioWorkflowDraft,
+  readOnly = false,
+  runtimeOptions: RuntimeOptions | undefined = undefined,
+) {
   const seen: StudioWorkflowDraft[] = [];
   function Host() {
     const [draft, setDraft] = useState(initial);
@@ -53,10 +73,9 @@ function renderCard(initial: StudioWorkflowDraft, readOnly = false) {
           id: a.slug,
           label: a.name,
         }))}
-        agents={AGENTS}
         skills={["plan", "implement"]}
         exitActionRequirements={EXIT_ACTION_REQUIREMENTS}
-        runtimeOptions={undefined}
+        runtimeOptions={runtimeOptions}
         skipConditions={["has_description", "routed_as_light_work"]}
         selectedWorkflow={null}
       />
@@ -129,5 +148,40 @@ describe("editing a stage", () => {
     await user.selectOptions(type as HTMLElement, "classify");
 
     expect(latest().stages[0].stage_type).toBe("classify");
+  });
+});
+
+describe("stage model override (R10)", () => {
+  it("is a Claude-family select even when runtimeOptions has not arrived", () => {
+    renderCard(draftWith(emptyStage(1)));
+    const model = screen.getByLabelText("Model override");
+    expect(model.tagName).toBe("SELECT");
+    expect(within(model).getByRole("option", { name: "— Agent default —" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Model id")).toBeNull();
+  });
+
+  it("uses the Claude family list, not cursor models and not the catalog empty-id row", () => {
+    renderCard(draftWith(emptyStage(1)), false, CLAUDE_RUNTIME);
+    const model = screen.getByLabelText("Model override");
+    const options = within(model).getAllByRole("option");
+    expect(options[0]).toHaveTextContent("— Agent default —");
+    expect(within(model).getByRole("option", { name: "Claude Opus 5 (pinned)" })).toBeInTheDocument();
+    expect(within(model).queryByRole("option", { name: "GPT-5" })).toBeNull();
+    expect(within(model).queryByRole("option", { name: "Default (Claude Code profile)" })).toBeNull();
+  });
+
+  it("keeps a stored value that is not yet in the catalog", () => {
+    const stage = { ...emptyStage(1), model: "claude-opus-legacy" };
+    renderCard(draftWith(stage), false, CLAUDE_RUNTIME);
+    const model = screen.getByLabelText("Model override");
+    expect(model).toHaveValue("claude-opus-legacy");
+    expect(within(model).getByRole("option", { name: "claude-opus-legacy" })).toBeInTheDocument();
+  });
+
+  it("hints that the pin applies only on a Claude harness", () => {
+    renderCard(draftWith(emptyStage(1)), false, CLAUDE_RUNTIME);
+    const model = screen.getByLabelText("Model override");
+    const hint = screen.getByText("Applies only when this stage's run harness is Claude.");
+    expect(model).toHaveAttribute("aria-describedby", hint.id);
   });
 });

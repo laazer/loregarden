@@ -85,7 +85,6 @@ def test_claude_invocation_carries_effort_flag(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -105,7 +104,6 @@ def test_ticket_effort_overrides_workspace_in_invocation(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -125,7 +123,6 @@ def test_claude_invocation_omits_flag_when_unset(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -143,7 +140,6 @@ def test_cursor_invocation_folds_effort_into_model_id(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="cursor",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -163,7 +159,6 @@ def test_lmstudio_invocation_passes_effort_argument(tmp_path):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="lmstudio",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -210,14 +205,13 @@ def test_effective_credits_the_ticket_tier_when_it_wins():
     assert effective["effort_source"] == "ticket"
 
 
-def test_effective_names_the_agent_tier_when_nothing_pins_a_provider():
-    """With no env/ticket/workspace pin each stage runs on its own agent's adapter;
-    reporting the global setting claimed a provider ("local") no run used."""
+def test_effective_names_process_default_when_nothing_pins_a_provider():
+    """R6 — inherit is settings.cli_adapter (local), source process — never agent."""
     effective = resolve_runtime_effective(_workspace(cli_adapter="default"))
 
-    assert effective["cli_adapter"] == ""
-    assert effective["cli_adapter_source"] == "agent"
-    assert effective["supports_model"] is False
+    assert effective["cli_adapter"] == "local"
+    assert effective["cli_adapter_source"] == "process"
+    assert effective["cli_adapter_source"] != "agent"
 
 
 def test_effective_credits_the_ticket_adapter_over_the_workspace_pin():

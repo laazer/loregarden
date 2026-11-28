@@ -76,6 +76,8 @@ describe("NewAgentDialog", () => {
         mcp_enabled: true,
       }),
     );
+    // A role declares no CLI: a leftover `adapter` on the draft is not sent.
+    expect(createAgent.mock.calls[0][0]).not.toHaveProperty("adapter");
   });
 
   it("keeps the fields and says why when the server refuses", async () => {

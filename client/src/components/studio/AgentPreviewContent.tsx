@@ -20,25 +20,9 @@ function sectionActive(sectionKey: string, sections: string[] | undefined): bool
   return sections.includes(sectionKey);
 }
 
-function formatProviderLabel(provider: string): string {
-  switch (provider) {
-    case "claude":
-      return "Claude Code";
-    case "cursor":
-      return "Cursor Agent";
-    case "lmstudio":
-      return "LM Studio";
-    case "local":
-      return "Local runner";
-    default:
-      return provider || "—";
-  }
-}
-
 function AgentPreviewIdentity({ preview }: { preview: StudioAgentPreview }) {
   const { profile } = preview;
   const metaItems = [
-    { label: "Provider", value: formatProviderLabel(profile.provider) },
     { label: "Skill", value: profile.default_skill || "—", mono: true },
     ...(profile.model ? [{ label: "Model", value: profile.model, mono: true }] : []),
     ...(profile.timeout ? [{ label: "Timeout", value: `${profile.timeout}s`, mono: true }] : []),

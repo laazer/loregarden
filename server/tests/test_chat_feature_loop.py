@@ -517,10 +517,8 @@ def test_the_turn_is_told_its_loop_and_granted_only_the_proposal_tool(
         return "ok"
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "cursor")
-    monkeypatch.setattr(
-        baxter_chat_service, "get_agent", lambda _id: {"adapter": "cursor", "mcp_tools": []}
-    )
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "cursor")
+    monkeypatch.setattr(baxter_chat_service, "get_agent", lambda _id: {"mcp_tools": []})
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
 
     client.post(f"{BASE}/{loop['id']}/messages", json={"content": "Add a toggle"})

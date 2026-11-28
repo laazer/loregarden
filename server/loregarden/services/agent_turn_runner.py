@@ -152,10 +152,8 @@ def adapter_capabilities(adapter: str) -> AdapterCapabilities:
     )
 
 
-def capabilities_for_workspace(
-    workspace: Workspace, *, agent_adapter: str = "claude"
-) -> AdapterCapabilities:
-    selected = resolve_effective_adapter(agent_adapter=agent_adapter, workspace=workspace)
+def capabilities_for_workspace(workspace: Workspace) -> AdapterCapabilities:
+    selected = resolve_effective_adapter(workspace=workspace)
     return adapter_capabilities(selected)
 
 
@@ -262,16 +260,15 @@ class AgentTurnResult:
 def run_agent_turn(request: AgentTurnRequest) -> AgentTurnResult:
     """Execute one turn with the shared adapter strategy map."""
     selected = (request.adapter or "").strip() or resolve_effective_adapter(
-        agent_adapter=request.agent.get("adapter", "claude"),
         workspace=request.workspace,
     )
     strategy = resolve_turn_strategy(selected, request.intent)
     if strategy == "permission_bridge":
         reply, run_id = _run_permission_bridge(request)
     elif strategy == "writable_oneshot":
-        reply, run_id = _run_oneshot(request, read_only=False)
+        reply, run_id = _run_oneshot(request, read_only=False, adapter=selected)
     else:
-        reply, run_id = _run_oneshot(request, read_only=True)
+        reply, run_id = _run_oneshot(request, read_only=True, adapter=selected)
     return AgentTurnResult(reply=reply, strategy=strategy, adapter=selected, run_id=run_id)
 
 
@@ -504,7 +501,7 @@ def _run_permission_bridge(request: AgentTurnRequest) -> tuple[str, str]:
         return reply, run.id
 
 
-def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, str]:
+def _run_oneshot(request: AgentTurnRequest, *, read_only: bool, adapter: str) -> tuple[str, str]:
     run: AgentRun | None = None
     run_id = request.run_id
     if request.manage_run and not read_only:
@@ -540,6 +537,7 @@ def _run_oneshot(request: AgentTurnRequest, *, read_only: bool) -> tuple[str, st
                 workspace_root=root,
                 surface=request.surface,
                 extra_dirs=request.extra_dirs,
+                adapter=adapter,
             )
         except Exception as exc:
             if run is not None:

@@ -148,18 +148,18 @@ test("an adapter that takes no pins reports only the adapter", () => {
   expect(summary).not.toHaveTextContent("cli-default");
 });
 
-test("with no provider pinned, the effective line credits each stage's agent", () => {
+test("with no provider pinned, the effective line names local process default", () => {
   renderFields(
     { cli_adapter: "default" },
     {
       ...OPTIONS,
       effective: {
-        cli_adapter: "",
-        cli_adapter_source: "agent",
+        cli_adapter: "local",
+        cli_adapter_source: "process",
         model: "",
-        model_source: "agent",
+        model_source: "cli-default",
         effort: "",
-        effort_source: "agent",
+        effort_source: "cli-default",
         supports_model: false,
         supports_effort: false,
       },
@@ -167,8 +167,9 @@ test("with no provider pinned, the effective line credits each stage's agent", (
   );
 
   const summary = screen.getByText(/Currently runs as:/);
-  expect(summary).toHaveTextContent("each stage's agent");
-  expect(summary).not.toHaveTextContent("global");
+  expect(summary).toHaveTextContent("local (process default)");
+  expect(summary).not.toHaveTextContent("each stage's agent");
+  expect(summary).not.toHaveTextContent("agent");
 });
 
 test("runtimeSettingsEqual notices an effort-only change", () => {

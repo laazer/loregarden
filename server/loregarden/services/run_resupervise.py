@@ -44,7 +44,6 @@ from loregarden.agents.executors.run_evidence import (
     run_context_artifacts,
     run_paths_before,
 )
-from loregarden.agents.registry import get_agent
 from loregarden.db import session as db_session_module
 from loregarden.dot_line import SYS
 from loregarden.models.domain import (
@@ -56,6 +55,11 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.cli_settings import (
+    get_ticket_orchestration_runtime,
+    resolve_effective_adapter,
+)
+from loregarden.services.exit_action_ledger import stored_run_adapter
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.parallel_stage import member_runs_and_results, reconcile_parallel_stage
 from loregarden.services.process_identity import liveness
@@ -76,6 +80,7 @@ from loregarden.services.run_output_files import (
 )
 from loregarden.services.studio_routing import is_parallel_stage, ticket_stage_definition
 from loregarden.services.workspace_paths import resolve_workspace_root
+from sqlalchemy.orm import object_session
 from sqlmodel import Session, col, update
 
 logger = logging.getLogger(__name__)
@@ -426,17 +431,30 @@ def _reconstructed_invocation(run: AgentRun) -> CliInvocation:
 
     The real one died with the process that built it. Only the adapter, model
     and effort are read downstream, and all three are recoverable: the adapter
-    from the agent's registry entry, the other two from what the run already
-    recorded. Anything the transcript does not carry stays unmeasured, which is
-    what a reattached run honestly is.
+    from the dispatch snapshot (or re-resolved from workspace+ticket), the other
+    two from what the run already recorded. Anything the transcript does not
+    carry stays unmeasured, which is what a reattached run honestly is.
     """
-    adapter = (get_agent(run.agent_id) or {}).get("adapter", "local")
     return CliInvocation(
         argv=[],
-        adapter=adapter,
+        adapter=_selected_adapter(run),
         model=run.model or "",
         effort=run.effort or "",
     )
+
+
+def _selected_adapter(run: AgentRun) -> str:
+    """The harness this run used: dispatch snapshot, else re-resolved."""
+    recorded = stored_run_adapter(run)
+    if recorded:
+        return recorded
+    session = object_session(run)
+    workspace = session.get(Workspace, run.workspace_id) if session and run.workspace_id else None
+    ticket = session.get(Ticket, run.ticket_id) if session and run.ticket_id else None
+    ticket_adapter = (
+        get_ticket_orchestration_runtime(ticket).cli_adapter if ticket is not None else "default"
+    )
+    return resolve_effective_adapter(workspace=workspace, ticket_adapter=ticket_adapter)
 
 
 def _delete_output_files(paths: RunOutputPaths) -> None:

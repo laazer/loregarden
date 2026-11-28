@@ -250,7 +250,6 @@ export function WorkflowEditor({ slug, workflows, agents }: Props) {
           setWorkflowDraft={setDraft}
           isWorkflowReadOnly={readOnly}
           agentOptions={agentOptions}
-          agents={agents}
           skills={skills.data ?? []}
           exitActionRequirements={exitActionRequirements.data}
           runtimeOptions={runtimeOptions.data}

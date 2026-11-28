@@ -62,7 +62,6 @@ def _agent(
         name=slug,
         description="",
         role_body="body",
-        adapter="claude",
         default_model="",
         timeout=600,
         default_skill="",

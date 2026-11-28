@@ -6,9 +6,9 @@ operator would be told their narrowing is safe while the subprocess enforces
 something else.
 
 The enforcement itself is Claude-only. Cursor, Codex and OpenCode have no
-equivalent flag, so a grant configured on those adapters cannot take effect —
-which is exactly the silent no-op this module refuses to ship, hence
-``ToolGrantWarningCode.ADAPTER_IGNORES_GRANTS``.
+equivalent flag, so a grant takes effect only on a Claude *run*. The editor
+cannot know the run harness (a role does not declare a CLI), so edit-time
+warnings do not guess.
 
 Distinct from ``services.tool_policy`` and ``mcp.tool_ids``' auto-approve sets:
 those decide whether a call runs unattended, this decides whether the tool is
@@ -28,7 +28,6 @@ from loregarden.agents.mcp_context import CLAUDE_MCP_TOOL_PREFIX
 from loregarden.mcp.tool_ids import AUTO_APPROVED_MCP_TOOLS
 from loregarden.models.domain.enums import (
     ChatSurface,
-    CliAdapter,
     ToolGrantWarningCode,
     ToolPosture,
 )
@@ -151,7 +150,6 @@ def claude_tool_flags(
 def analyze_tool_grants(
     grants: StudioAgentToolGrants,
     *,
-    adapter: str,
     mcp_tools: list[str],
     mcp_enabled: bool,
     registered_servers: frozenset[str],
@@ -161,25 +159,14 @@ def analyze_tool_grants(
 
     Advisory: narrowing on purpose is legitimate, so nothing here blocks a save.
     Pure — ``registered_servers`` is passed in rather than looked up, so the
-    caller resolves it once instead of once per agent in a list.
+    caller resolves it once instead of once per agent in a list. The run harness
+    is not a property of the role, so this does not take one.
     """
     warnings: list[ToolGrantWarning] = []
 
     if grants.posture is ToolPosture.INHERIT:
         # The default. Nothing is configured, so nothing can fail to apply.
         return warnings
-
-    if adapter != CliAdapter.CLAUDE:
-        warnings.append(
-            ToolGrantWarning(
-                code=ToolGrantWarningCode.ADAPTER_IGNORES_GRANTS,
-                message=(
-                    f"Tool grants are configured, but this agent runs on {adapter}, which has "
-                    "no tool-allowlist flag. These settings will have no effect until the "
-                    "agent's provider is Claude."
-                ),
-            )
-        )
 
     unknown = sorted(server for server in grants.mcp_servers if server not in registered_servers)
     if unknown:

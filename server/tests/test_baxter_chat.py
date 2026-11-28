@@ -280,7 +280,7 @@ def test_baxter_chat_prompt_includes_snapshot_and_stored_history(client: TestCli
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
     # Cursor is oneshot (not the Claude bridge). The prompt under test is the
     # execute prompt — Home chat writes on execute-capable adapters.
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "cursor")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "cursor")
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_run)
     client.post(
         f"/api/workspaces/loregarden/baxter-chat/sessions/{session_id}/messages",
@@ -535,7 +535,7 @@ def test_baxter_chat_interactive_prompt_grants_tools(client: TestClient, monkeyp
         )
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "claude")
     monkeypatch.setattr(agent_turn_runner, "run_agent_turn", fake_turn)
     monkeypatch.setattr(baxter_chat_service, "run_agent_turn", fake_turn)
 
@@ -583,7 +583,7 @@ def test_baxter_chat_execute_plan_uses_selected_codex_writable(
         raise AssertionError("Codex execute-plan must not use the Claude permission bridge")
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "codex")
     monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "codex")
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_oneshot)
     monkeypatch.setattr(agent_turn_runner, "_run_permission_bridge", fail_bridge)
@@ -684,7 +684,7 @@ def test_baxter_chat_execute_plan_continues_until_all_four_steps_complete(
         return next(replies)
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "codex")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "codex")
     monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "codex")
     monkeypatch.setattr(agent_turn_runner, "run_cli_agent_turn", fake_oneshot)
 
@@ -723,7 +723,7 @@ def test_baxter_chat_interactive_creates_workspace_scoped_run(
     from loregarden.services import agent_turn_runner, baxter_chat_service
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "claude")
     monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "claude")
     monkeypatch.setattr(
         agent_turn_runner,
@@ -791,7 +791,7 @@ def test_baxter_chat_conflict_when_turn_already_running(
     db_session.commit()
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "claude")
 
     session_id = _new_session(client)
     res = client.post(

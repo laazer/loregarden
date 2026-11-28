@@ -1352,7 +1352,6 @@ class ToolGrantWarningCode(StrEnum):
     otherwise accept a setting and change nothing.
     """
 
-    ADAPTER_IGNORES_GRANTS = "adapter_ignores_grants"
     AUTO_APPROVED_EXCLUDED = "auto_approved_excluded"
     ALL_MCP_EXCLUDED = "all_mcp_excluded"
     EMPTY_ALLOWLIST = "empty_allowlist"

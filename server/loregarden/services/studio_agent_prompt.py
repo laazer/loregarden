@@ -54,7 +54,6 @@ def _studio_agent_dict(agent: StudioAgent) -> dict:
         "tool_grants": parse_tool_grants(agent.tool_grants_json),
         "name": agent.name,
         "role_body": ensure_studio_role_preamble(agent.role_body),
-        "adapter": agent.adapter,
         "default_model": agent.default_model,
         "timeout": agent.timeout,
         "default_skill": agent.default_skill,
@@ -190,7 +189,6 @@ def _preview_agent_cfg(body: StudioAgentPreviewRequest) -> dict:
     return {
         "name": body.name,
         "role_body": ensure_studio_role_preamble(body.role_body),
-        "adapter": body.adapter,
         "timeout": body.timeout,
         "default_skill": body.default_skill,
         "mcp_enabled": body.mcp_enabled,
@@ -207,7 +205,6 @@ def preview_agent_markdown(body: StudioAgentPreviewRequest) -> StudioAgentPrevie
     metadata = StudioAgentPreviewProfile(
         description=role_frontmatter.get("description") or body.description.strip(),
         model=role_frontmatter.get("model") or "",
-        provider=body.adapter or "claude",
         default_skill=body.default_skill or "",
         timeout=body.timeout,
         always_apply=frontmatter_bool(role_frontmatter.get("alwaysApply")),

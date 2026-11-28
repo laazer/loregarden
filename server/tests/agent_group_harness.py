@@ -119,9 +119,7 @@ def seed_group_agents(session: Session) -> None:
     for key in GROUP_KEYS:
         slug = STEP_AGENTS[key]
         if session.exec(select(StudioAgent).where(StudioAgent.slug == slug)).first() is None:
-            session.add(
-                StudioAgent(slug=slug, name=slug, adapter="claude", role_body=STEP_ROLES[key])
-            )
+            session.add(StudioAgent(slug=slug, name=slug, role_body=STEP_ROLES[key]))
         skill = STEP_SKILLS[key]
         if session.exec(select(Skill).where(Skill.slug == skill)).first() is None:
             session.add(Skill(slug=skill, name=skill, body=STEP_SKILL_BODIES[key]))

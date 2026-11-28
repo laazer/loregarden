@@ -29,7 +29,7 @@ from loregarden.services.chat_mode import resolve_chat_mode
 from loregarden.services.chat_primitives import load_parts_json
 from loregarden.services.chat_wait import outstanding_for, thread_key, wait_payload
 from loregarden.services.cli_agent_runner import stub_response
-from loregarden.services.cli_settings import resolve_effective_adapter
+from loregarden.services.cli_settings import CHAT_SURFACE_DEFAULT, resolve_chat_adapter
 from loregarden.services.triage_service import (
     TRIAGE_AGENT_ID,
     TRIAGE_AGENT_NAME,
@@ -137,11 +137,10 @@ def branch_chat_snapshot(session: Session, workspace: Workspace, branch: str) ->
     # The checkout gate is knowable here, so the snapshot resolves it rather than
     # letting the UI promise a rail that will run read-only. The run-id gate is
     # not: there is no turn yet to have (or lack) a run.
-    agent = get_agent(TRIAGE_AGENT_ID) or {}
-    effective = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
     mode = resolve_chat_mode(
-        resolve_effective_adapter(
-            agent_adapter=agent.get("adapter", "claude"), workspace=effective
+        resolve_chat_adapter(
+            surface_default=CHAT_SURFACE_DEFAULT,
+            override_json=ticket.triage_runtime_json if ticket else "",
         ),
         branch_checked_out=resolve_branch_checkout(workspace, branch) is not None,
     )
@@ -279,9 +278,9 @@ def invoke_branch_triage_model(
     branch_entry = _branch_entry(session, workspace, branch)
     effective_workspace = apply_triage_runtime_overrides(workspace, ticket) if ticket else workspace
     agent = get_agent(TRIAGE_AGENT_ID) or {}
-    selected = resolve_effective_adapter(
-        agent_adapter=agent.get("adapter", "claude"),
-        workspace=effective_workspace,
+    selected = resolve_chat_adapter(
+        surface_default=CHAT_SURFACE_DEFAULT,
+        override_json=ticket.triage_runtime_json if ticket else "",
     )
     checkout_root = resolve_branch_checkout(workspace, branch)
     # One resolver decides the mode here and on the snapshot, so what the pill

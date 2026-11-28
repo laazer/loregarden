@@ -13,11 +13,11 @@ import logging
 
 from loregarden.agents.cli_adapters import CliInvocation
 from loregarden.models.domain import AgentRun, WorkflowStageDef, Workspace
+from loregarden.models.domain.enums import CliAdapter
 from loregarden.services.cli_settings import (
     WorkspaceRuntimeSettings,
     adapter_model_pins_apply,
     adapter_override_warning,
-    adapter_pin_source,
     resolve_model_for_adapter,
     weak_mcp_model_warning,
 )
@@ -53,8 +53,6 @@ def warn_before_run(
         streamer=streamer,
         run=run,
         agent=agent,
-        workspace=workspace,
-        ticket_runtime=ticket_runtime,
         stage_def=stage_def,
         invocation=invocation,
     )
@@ -101,26 +99,18 @@ def maybe_warn_adapter_override(
     streamer: RunLogStreamer,
     run: AgentRun,
     agent: dict,
-    workspace: Workspace,
-    ticket_runtime: WorkspaceRuntimeSettings,
     stage_def: WorkflowStageDef | None,
     invocation: CliInvocation,
 ) -> None:
-    """Say, in the run's own log, that the agent is not running as declared.
+    """Say, in the run's own log, that a Claude-authored model pin was dropped.
 
-    A workspace or ticket provider pin replaces the agent's adapter and drops
-    its model pin with it; without this line the run log opens like any
-    other and the operator hunts for why "the model I set" never applied.
+    Remaining role/stage pins apply only on a Claude harness. The trigger is
+    the drop, not a higher-tier harness replacement.
     """
     message = adapter_override_warning(
         agent_id=run.agent_id,
-        agent_adapter=agent.get("adapter", "local"),
         selected_adapter=invocation.adapter,
-        pin_source=adapter_pin_source(
-            workspace=workspace, ticket_adapter=ticket_runtime.cli_adapter
-        ),
         dropped_model=(stage_def.model if stage_def else "") or agent.get("default_model", ""),
-        model=invocation.model,
     )
     if not message:
         return
@@ -141,8 +131,8 @@ def maybe_warn_weak_mcp_model(
     if selected_adapter != "claude":
         return
     pins_apply = adapter_model_pins_apply(
-        agent_adapter=agent.get("adapter", "local"),
-        selected_adapter="claude",
+        pin_adapter=CliAdapter.CLAUDE,
+        selected_adapter=selected_adapter,
     )
     resolved_model = resolve_model_for_adapter(
         "claude",

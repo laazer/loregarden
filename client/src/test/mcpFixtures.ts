@@ -62,7 +62,6 @@ export function studioAgent(overrides: Partial<StudioAgent> = {}): StudioAgent {
     name: "Planner",
     description: "",
     role_body: "",
-    adapter: "claude",
     default_model: "",
     timeout: 600,
     default_skill: "",

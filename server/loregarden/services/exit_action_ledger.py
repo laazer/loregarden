@@ -215,6 +215,11 @@ def stored_run_snapshot(run: AgentRun) -> dict | None:
         return None
 
 
+def stored_run_adapter(run: AgentRun) -> str:
+    """The harness recorded at dispatch, or \"\" when the snapshot has none."""
+    return str((stored_run_snapshot(run) or {}).get("adapter") or "")
+
+
 def outstanding_exit_actions(
     session: Session, run: AgentRun | None, stage: WorkflowStageDef
 ) -> tuple[list[HumanRequiredExitAction], list[str]]:

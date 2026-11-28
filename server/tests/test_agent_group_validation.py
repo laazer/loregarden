@@ -1,7 +1,7 @@
 """Studio refuses an agent group the dispatcher could not run as one CLI turn.
 
 Spec lg-run-economics-2636 §3. AC2: a non-consecutive group (by order, and on
-the workflow's route), mixed adapters or models, a parallel step, exit actions,
+the workflow's route), mixed models, a parallel step, exit actions,
 and a classify route leaving the group from its middle are each refused, with a
 message naming the group and the offending steps. AC9: a terminal step, or a
 step with no agent, cannot join a group.
@@ -47,9 +47,9 @@ SIGN_OFF = [
 
 @pytest.fixture
 def svc(db_session: Session) -> StudioService:
-    """Agents whose adapter and default model the tests control."""
-    for slug, adapter in ((CLAUDE_ONE, "claude"), (CLAUDE_TWO, "claude"), (CURSOR, "cursor")):
-        db_session.add(StudioAgent(slug=slug, name=slug, adapter=adapter, default_model=""))
+    """Agents whose default model the tests control (an agent declares no adapter)."""
+    for slug in (CLAUDE_ONE, CLAUDE_TWO, CURSOR):
+        db_session.add(StudioAgent(slug=slug, name=slug, default_model=""))
     db_session.commit()
     return StudioService(db_session)
 
@@ -186,33 +186,6 @@ def test_a_transitions_only_update_is_checked_against_the_stored_groups(svc):
     with pytest.raises(ValueError) as exc:
         svc.update_workflow("route-update", StudioWorkflowUpdate(transitions=_skipping_route()))
     _assert_names(exc, "not consecutive on the workflow's route", "alpha", "charlie", "bravo")
-
-
-# ---- rule 7: one adapter ------------------------------------------------------------------
-
-
-def test_a_group_mixing_adapters_is_refused_naming_both_steps(svc):
-    stages = [
-        _stage("alpha", 1, agent_id=CLAUDE_ONE),
-        _stage("bravo", 2, agent_id=CURSOR),
-        _done(3),
-    ]
-    with pytest.raises(ValueError) as exc:
-        _create(svc, "mixed-adapter", stages)
-    _assert_names(exc, "mixes adapters", "alpha", "bravo")
-    assert "claude" in str(exc.value) and "cursor" in str(exc.value)
-
-
-def test_update_refuses_a_group_mixing_adapters(svc):
-    _create(svc, "mixed-adapter-update", _valid_pair())
-    stages = [
-        _stage("alpha", 1, agent_id=CLAUDE_ONE),
-        _stage("bravo", 2, agent_id=CURSOR),
-        _done(3),
-    ]
-    with pytest.raises(ValueError) as exc:
-        svc.update_workflow("mixed-adapter-update", StudioWorkflowUpdate(stages=stages))
-    _assert_names(exc, "mixes adapters", "alpha", "bravo")
 
 
 # ---- rule 8: one model ---------------------------------------------------------------------
@@ -377,17 +350,17 @@ def test_a_group_containing_a_step_with_no_agent_is_refused(svc):
 # ---- test-break: what a lazy implementation would get past --------------------------------
 
 
-def test_a_middle_member_on_another_adapter_is_refused_and_every_member_listed(svc):
+def test_a_middle_member_on_another_model_is_refused_and_every_member_listed(svc):
     """First and last agree; only the middle differs. Comparing the ends is not enough."""
     stages = [
-        _stage("alpha", 1, agent_id=CLAUDE_ONE),
-        _stage("bravo", 2, agent_id=CURSOR),
-        _stage("charlie", 3, agent_id=CLAUDE_TWO),
+        _stage("alpha", 1, agent_id=CLAUDE_ONE, model="claude-opus-5"),
+        _stage("bravo", 2, agent_id=CURSOR, model="claude-sonnet-5"),
+        _stage("charlie", 3, agent_id=CLAUDE_TWO, model="claude-opus-5"),
         _done(4),
     ]
     with pytest.raises(ValueError) as exc:
-        _create(svc, "mixed-adapter-middle", stages)
-    _assert_names(exc, "mixes adapters", "alpha", "bravo", "charlie")
+        _create(svc, "mixed-model-every-member", stages)
+    _assert_names(exc, "mixes models", "alpha", "bravo", "charlie")
 
 
 def test_a_middle_member_on_another_model_is_refused(svc):
@@ -402,8 +375,12 @@ def test_a_middle_member_on_another_model_is_refused(svc):
     _assert_names(exc, "mixes models", "bravo")
 
 
-def test_a_classify_members_route_agents_count_toward_the_groups_adapter(svc):
-    """Rule 7: a classify step has no agent_id; its adapters are its routes' agents."""
+def test_a_classify_members_route_agents_count_toward_the_groups_model(svc, db_session):
+    """A classify step has no agent_id; its models are its routes' agents' models."""
+    agent = db_session.exec(select(StudioAgent).where(StudioAgent.slug == CURSOR)).one()
+    agent.default_model = "claude-haiku-5"
+    db_session.add(agent)
+    db_session.commit()
     sorter = _stage(
         "sorter",
         1,
@@ -413,9 +390,9 @@ def test_a_classify_members_route_agents_count_toward_the_groups_adapter(svc):
     )
     stages = [sorter, _stage("closing", 2), _stage("following", 3, group=""), _done(4)]
     with pytest.raises(ValueError) as exc:
-        _create(svc, "classify-adapter", stages)
-    _assert_names(exc, "mixes adapters", "sorter", "closing")
-    assert "cursor" in str(exc.value) and "claude" in str(exc.value)
+        _create(svc, "classify-model", stages)
+    _assert_names(exc, "mixes models", "sorter", "closing")
+    assert "claude-haiku-5" in str(exc.value)
 
 
 def test_a_mid_group_classify_routing_back_before_the_group_is_refused(svc):
@@ -451,14 +428,14 @@ def test_every_group_is_validated_not_only_the_first(svc):
     stages = [
         _stage("alpha", 1, group="grp-a"),
         _stage("bravo", 2, group="grp-a", agent_id=CLAUDE_TWO),
-        _stage("charlie", 3, group="grp-z", agent_id=CLAUDE_ONE),
-        _stage("delta", 4, group="grp-z", agent_id=CURSOR),
+        _stage("charlie", 3, group="grp-z", agent_id=CLAUDE_ONE, model="claude-opus-5"),
+        _stage("delta", 4, group="grp-z", agent_id=CURSOR, model="claude-sonnet-5"),
         _done(5),
     ]
     with pytest.raises(ValueError) as exc:
         _create(svc, "two-groups", stages)
     message = str(exc.value)
-    assert "mixes adapters" in message and "'grp-z'" in message, message
+    assert "mixes models" in message and "'grp-z'" in message, message
     assert "charlie" in message and "delta" in message, message
 
 

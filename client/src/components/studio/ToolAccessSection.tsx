@@ -75,8 +75,7 @@ export function ToolAccessSection({
         )}
       </div>
       <p className="studio-card-hint">
-        What this agent may reach at all. Separate from approvals, which decide what runs
-        without asking. Only the Claude provider can enforce this.
+        Grants take effect only on a Claude run.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>

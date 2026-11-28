@@ -32,7 +32,6 @@ def _stage(tmp_path: Path, *, adapter: str, transport: str = "http", bypass: boo
     with patch.dict(os.environ, env):
         return resolve_cli_invocation(
             agent_id="implementer",
-            adapter=adapter,
             prompt="do the stage",
             prompt_file=tmp_path / "prompt.md",
             skill_name="implement",

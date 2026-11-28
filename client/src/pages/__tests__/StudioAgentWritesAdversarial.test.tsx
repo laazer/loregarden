@@ -39,7 +39,6 @@ const AGENT: StudioAgent = {
   description: "Migrates Godot scenes to the DDD layout.",
   role_body: "You migrate scenes.",
   role_file: "",
-  adapter: "claude",
   default_model: "",
   timeout: 600,
   default_skill: "",
@@ -127,7 +126,6 @@ beforeEach(() => {
     profile: {
       description: AGENT.description,
       model: "",
-      provider: "claude",
       default_skill: "",
       timeout: 600,
       always_apply: null,

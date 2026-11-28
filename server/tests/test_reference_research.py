@@ -125,7 +125,7 @@ def _turn(session, world, thread, adapter="claude"):
 
     with (
         mock.patch.object(baxter_chat_service, "run_agent_turn", side_effect=fake_run),
-        mock.patch.object(baxter_chat_service, "resolve_effective_adapter", return_value=adapter),
+        mock.patch.object(baxter_chat_service, "resolve_chat_adapter", return_value=adapter),
     ):
         outcome = invoke_baxter_chat_model(
             session, workspace, content="find auto-riggers", chat_session=thread

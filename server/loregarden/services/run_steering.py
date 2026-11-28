@@ -20,8 +20,13 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from loregarden.agents.registry import get_agent
-from loregarden.models.domain import AgentRun, RunMessage, RunStatus
+from loregarden.models.domain import AgentRun, RunMessage, RunStatus, Ticket, Workspace
+from loregarden.services.cli_settings import (
+    get_ticket_orchestration_runtime,
+    resolve_effective_adapter,
+)
+from loregarden.services.exit_action_ledger import stored_run_adapter
+from sqlalchemy.orm import object_session
 from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
@@ -78,13 +83,27 @@ def steer_refusal(run: AgentRun | None) -> str:
             f"This run is detached on {run.agent_transport.value}, which has no stdin "
             "to write into, so it cannot be steered."
         )
-    adapter = (get_agent(run.agent_id) or {}).get("adapter", "")
+    adapter = _selected_adapter(run)
     if adapter not in STEERABLE_ADAPTERS:
         return (
             f"The {run.agent_id} agent runs on the {adapter or 'local'} adapter, "
             "which cannot receive input once started."
         )
     return ""
+
+
+def _selected_adapter(run: AgentRun) -> str:
+    """The harness this run used: dispatch snapshot, else re-resolved."""
+    recorded = stored_run_adapter(run)
+    if recorded:
+        return recorded
+    session = object_session(run)
+    workspace = session.get(Workspace, run.workspace_id) if session and run.workspace_id else None
+    ticket = session.get(Ticket, run.ticket_id) if session and run.ticket_id else None
+    ticket_adapter = (
+        get_ticket_orchestration_runtime(ticket).cli_adapter if ticket is not None else "default"
+    )
+    return resolve_effective_adapter(workspace=workspace, ticket_adapter=ticket_adapter)
 
 
 def queue_message(session: Session, run: AgentRun, content: str) -> RunMessage:

@@ -43,9 +43,7 @@ class TestSnapshotFieldPartition:
 
 
 def _create(service: StudioService, slug: str = "grant-test") -> str:
-    service.create_agent(
-        StudioAgentCreate(slug=slug, name="Grant Test", role_body="Body", adapter="claude")
-    )
+    service.create_agent(StudioAgentCreate(slug=slug, name="Grant Test", role_body="Body"))
     return slug
 
 

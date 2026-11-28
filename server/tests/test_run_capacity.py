@@ -31,8 +31,9 @@ from loregarden.models.domain import (
     DockerLeaseStatus,
     RunStatus,
     WorkflowStageDef,
+    Workspace,
 )
-from loregarden.services import docker_leases, docker_reaper, run_capacity
+from loregarden.services import docker_leases, docker_reaper
 from loregarden.services.docker_ledger import load_pool
 from loregarden.services.run_capacity import (
     RUNTIME_WEIGHTS,
@@ -182,9 +183,13 @@ def test_the_reaper_keeps_a_live_runs_lease_and_reclaims_a_dead_ones(session, po
 def test_the_runtime_is_resolved_the_way_the_executor_resolves_it(
     session, run, monkeypatch
 ) -> None:
-    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER")
-    with mock.patch.object(run_capacity, "get_agent", return_value={"adapter": "lmstudio"}):
-        assert runtime_for_run(session, run) is CliAdapter.LMSTUDIO
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    workspace = session.get(Workspace, run.workspace_id)
+    assert workspace is not None
+    workspace.cli_adapter = CliAdapter.LMSTUDIO
+    session.add(workspace)
+    session.commit()
+    assert runtime_for_run(session, run) is CliAdapter.LMSTUDIO
 
 
 def test_the_ledger_switches_turn_it_off(session, pools, run, monkeypatch) -> None:

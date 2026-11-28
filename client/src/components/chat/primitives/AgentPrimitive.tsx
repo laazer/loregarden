@@ -15,7 +15,6 @@ function draftPreview(part: AgentPart): StudioAgentPreview {
     profile: {
       description: String(draft.description ?? ""),
       model: String(draft.model ?? ""),
-      provider: String(draft.adapter ?? draft.provider ?? ""),
       default_skill: String(draft.default_skill ?? ""),
       timeout: Number(draft.timeout ?? 600),
       always_apply: null,
@@ -62,11 +61,6 @@ export function AgentPrimitive({ part }: { part: AgentPart }) {
       meta={
         profile ? (
           <>
-            {profile.provider ? (
-              <span className="lg-primitive-fact">
-                Provider <b>{profile.provider}</b>
-              </span>
-            ) : null}
             {profile.model ? (
               <span className="lg-primitive-fact">
                 Model <b>{profile.model}</b>

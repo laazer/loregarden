@@ -29,7 +29,10 @@ def _run(
     status=RunStatus.RUNNING,
     stage_key="plan",
     run_code="run_btw",
+    adapter="claude",
 ) -> AgentRun:
+    """A run on a recorded harness. Steerability follows the selected harness and
+    not the agent — a role declares no CLI — so escalation needs one pinned here."""
     run = AgentRun(
         run_code=run_code,
         ticket_id=ticket.id,
@@ -37,6 +40,7 @@ def _run(
         agent_id=agent_id,
         stage_key=stage_key,
         status=status,
+        runtime_exit_action_snapshot_json=json.dumps({"adapter": adapter}) if adapter else "",
     )
     session.add(run)
     session.commit()
@@ -170,7 +174,7 @@ def test_escalation_writes_the_question_into_the_running_agent(db_session: Sessi
 def test_escalation_is_refused_with_steering_own_reason(db_session: Session):
     """One reason string, so the API and the card cannot disagree."""
     ticket = _ticket(db_session)
-    _run(db_session, ticket, agent_id="backend_implementer")
+    _run(db_session, ticket, agent_id="backend_implementer", adapter="cursor")
     exchange = btw_service.ask(db_session, ticket, "why?")
 
     with pytest.raises(ValueError, match="cannot receive input"):
@@ -245,7 +249,7 @@ def test_asking_over_the_api_while_a_run_is_active(client, db_session: Session):
 
 def test_escalating_a_refused_run_over_the_api_is_a_conflict(client, db_session: Session):
     ticket = _ticket(db_session)
-    _run(db_session, ticket, agent_id="backend_implementer")
+    _run(db_session, ticket, agent_id="backend_implementer", adapter="cursor")
     exchange = btw_service.ask(db_session, ticket, "why?")
 
     response = client.post(f"/api/tickets/{ticket.id}/btw/{exchange.id}/escalate")

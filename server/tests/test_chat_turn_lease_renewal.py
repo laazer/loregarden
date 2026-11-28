@@ -68,7 +68,7 @@ def test_a_home_chat_turn_is_renewed_while_the_bridge_runs(
         return BridgeResult(status=RunStatus.SUCCEEDED, stdout="done", stderr="")
 
     monkeypatch.delenv("LOREGARDEN_BAXTER_CHAT_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(baxter_chat_service, "resolve_effective_adapter", lambda **_: "claude")
+    monkeypatch.setattr(baxter_chat_service, "resolve_chat_adapter", lambda **_: "claude")
     monkeypatch.setattr(agent_turn_runner, "resolve_effective_adapter", lambda **_: "claude")
     monkeypatch.setattr(
         agent_turn_runner,
@@ -130,7 +130,7 @@ def test_a_one_shot_turn_renews_the_run_it_was_handed(
         intent="advisory",
         run_id=run.id,
     )
-    reply, run_id = agent_turn_runner._run_oneshot(request, read_only=True)
+    reply, run_id = agent_turn_runner._run_oneshot(request, read_only=True, adapter="claude")
 
     assert (reply, run_id) == ("answered", run.id)
     assert observed == {"expired": False}, (

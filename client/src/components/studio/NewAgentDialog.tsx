@@ -22,7 +22,6 @@ const SPEC: StudioCreateSpec<StudioGeneratedAgent> = {
       ...(draft
         ? {
             role_body: draft.role_body,
-            ...(draft.adapter ? { adapter: draft.adapter } : {}),
             default_skill: draft.default_skill,
             ...(draft.mcp_tools.length ? { mcp_tools: draft.mcp_tools, mcp_enabled: true } : {}),
           }

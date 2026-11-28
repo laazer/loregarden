@@ -155,7 +155,6 @@ def test_the_command_claude_is_given_denies(settings_json):
 def _cursor_stage(prompt: Path, root: Path) -> list[str]:
     return resolve_cli_invocation(
         agent_id="qa",
-        adapter="cursor",
         prompt="p",
         prompt_file=prompt,
         skill_name="",
