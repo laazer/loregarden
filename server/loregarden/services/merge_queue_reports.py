@@ -3,7 +3,8 @@
 An entry that fails, times out or is refused leaves the queue — the candidate
 behind it must not wait on it — and its reason goes on the ticket as an inbox
 card naming the PR, the reason and the command that retries it. The card
-closes when the entry merges or is retried.
+closes when the entry merges, or when its PR is retried or queued again
+(`merge_queue_cards.close_card`).
 
 A conflict only a person can resolve also gets a durable artifact: a bug
 ticket naming the PR, the base, the conflicted paths and git's words, whose
@@ -31,7 +32,11 @@ from loregarden.models.domain import (
     TicketState,
     WorkItemType,
     Workspace,
-    utcnow,
+)
+from loregarden.services.merge_queue_cards import (
+    RESOLVED_BY_QUEUE,
+    pending_cards,
+    queue_card_title,
 )
 from loregarden.services.prepared_action import PreparedAction
 from loregarden.services.ticket_service import TicketService
@@ -39,34 +44,11 @@ from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-#: Every queue card's title starts with this.
-QUEUE_CARD_PREFIX = "Merge queue stopped: "
-RESOLVED_BY_QUEUE = "merge_queue"
-
-
-def queue_card_title(entry: MergeQueueEntry) -> str:
-    return f"{QUEUE_CARD_PREFIX}PR #{entry.pr_number}"
-
 
 def retry_command(entry: MergeQueueEntry) -> str:
     return (
         "./scripts/loregarden-cli.sh mcp call loregarden_dequeue_merge "
         f"entry_id={entry.id} action=retry"
-    )
-
-
-def _pending(session: Session, entry: MergeQueueEntry) -> list[Approval]:
-    return list(
-        session.exec(
-            select(Approval).where(
-                # By workspace, not ticket: a PR admitted by number has none,
-                # and `ticket_id == NULL` matches no row. The title names the PR.
-                Approval.workspace_id == entry.workspace_id,
-                Approval.kind == ApprovalKind.HUMAN_ACTION,
-                Approval.status == ApprovalStatus.PENDING,
-                Approval.title == queue_card_title(entry),
-            )
-        ).all()
     )
 
 
@@ -93,7 +75,7 @@ def report_stopped(session: Session, entry: MergeQueueEntry) -> Approval:
         entry.state.value,
         entry.detail,
     )
-    existing = _pending(session, entry)
+    existing = pending_cards(session, entry)
     if existing:
         card = existing[0]
         if card.impact != impact:
@@ -124,27 +106,6 @@ def report_stopped(session: Session, entry: MergeQueueEntry) -> Approval:
         payload={"approval_id": card.id, "merge_queue_entry": entry.id},
     )
     return card
-
-
-def close_card(session: Session, entry: MergeQueueEntry, *, reason: str) -> int:
-    cards = _pending(session, entry)
-    for card in cards:
-        card.status = ApprovalStatus.APPROVED
-        card.resolved_by = RESOLVED_BY_QUEUE
-        card.resolved_at = utcnow()
-        session.add(card)
-    if not cards:
-        return 0
-    session.commit()
-    for card in cards:
-        event_bus.publish(
-            session,
-            EventType.APPROVAL_RESOLVED,
-            workspace_id=entry.workspace_id,
-            ticket_id=entry.ticket_id,
-            payload={"approval_id": card.id, "reason": reason},
-        )
-    return len(cards)
 
 
 def file_conflict_artifact(

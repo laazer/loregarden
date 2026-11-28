@@ -104,6 +104,7 @@ from loregarden.services.invariant_registry import (
     RUNS_COMPLETE_ONCE,
     SETTLED_HOLDS_READ_BLOCKED,
     STALE_PARKS_ARE_CLOSED,
+    STOPPED_CARDS_CLOSE_WHEN_QUEUED_AGAIN,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
     STOPPED_RUNS_DO_NOT_STAY_IN_FLIGHT,
     SURVEY_CARDS_CLOSE,
@@ -461,6 +462,8 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # queue after its entry stopped leaves nothing for anyone to do
     # (lg-milestone-that-2641).
     _invariant(STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR, at_startup=False),
+    # A stopped card whose PR was queued again (lg-milestone-that-2821). DB only.
+    _invariant(STOPPED_CARDS_CLOSE_WHEN_QUEUED_AGAIN),
     # A queued entry still naming a head that left the line (lg-milestone-that-2808).
     # DB only; at startup too, so labels a dead process left behind are right at boot.
     _invariant(QUEUED_ENTRIES_NAME_THE_CURRENT_HEAD),
