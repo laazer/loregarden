@@ -505,7 +505,6 @@ DISTINCT_VALUES: dict[str, object] = {
     "name": "Renamed Probe",
     "description": "A different one-line description.",
     "role_body": "You now do an entirely different thing.",
-    "adapter": "cursor",
     "default_model": "opus",
     "timeout": 1234,
     # Replaced per-run with a skill this database actually has: the skills

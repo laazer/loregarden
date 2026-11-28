@@ -70,7 +70,7 @@ def test_image_attachment_grants_its_directory_on_claude(client: TestClient, mon
         patch("loregarden.services.baxter_chat_service.run_agent_turn", turn),
         # The suite pins every workspace to the `local` adapter.
         patch(
-            "loregarden.services.baxter_chat_service.resolve_effective_adapter",
+            "loregarden.services.baxter_chat_service.resolve_chat_adapter",
             return_value="claude",
         ),
     ):
@@ -93,7 +93,7 @@ def test_image_on_a_non_claude_adapter_is_refused_at_send(client: TestClient):
     attachment = _upload(client, session_id, "shot.png", PNG, "image/png").json()
 
     with patch(
-        "loregarden.services.baxter_chat_service.resolve_effective_adapter",
+        "loregarden.services.baxter_chat_service.resolve_chat_adapter",
         return_value="cursor",
     ):
         res = client.post(

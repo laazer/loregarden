@@ -924,7 +924,6 @@ class StudioAgent(SQLModel, table=True):
     name: str
     description: str = ""
     role_body: str = ""
-    adapter: str = "claude"
     default_model: str = ""
     timeout: int = Field(default=600, ge=30)
     default_skill: str = ""

@@ -18,7 +18,6 @@ def test_resolve_local_adapter(tmp_path):
     prompt_file.write_text("hello", encoding="utf-8")
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="local",
         prompt="hello",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -39,7 +38,6 @@ def test_resolve_claude_adapter(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -69,7 +67,6 @@ def test_resolve_claude_adapter_text_skips_streaming_flags(tmp_path, monkeypatch
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -93,7 +90,6 @@ def test_resolve_claude_model_from_workspace(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -120,7 +116,6 @@ def test_resolve_lmstudio_adapter(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="implement feature",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -154,7 +149,6 @@ def test_resolve_lmstudio_adapter_can_disable_stream(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="implement feature",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -178,7 +172,6 @@ def test_resolve_cursor_adapter(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="cursor",
         prompt=prompt,
         prompt_file=prompt_file,
         skill_name="implement",
@@ -209,7 +202,6 @@ def test_resolve_codex_adapter(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="cursor",
         prompt=prompt,
         prompt_file=prompt_file,
         skill_name="implement",
@@ -242,7 +234,6 @@ def test_resolve_cursor_adapter_text_skips_partial_stream(tmp_path, monkeypatch)
 
     inv = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="cursor",
         prompt=prompt,
         prompt_file=prompt_file,
         skill_name="implement",
@@ -271,7 +262,6 @@ def test_resolve_cursor_adapter_carries_prompt_without_bypass(tmp_path, monkeypa
 
     inv = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="cursor",
         prompt=prompt,
         prompt_file=prompt_file,
         skill_name="implement",
@@ -307,7 +297,6 @@ def test_resolve_adapter_env_override(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="hello",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -316,12 +305,12 @@ def test_resolve_adapter_env_override(tmp_path, monkeypatch):
     assert "local_runner" in " ".join(inv.argv)
 
 
-def test_agent_registry_cli_adapters():
+def test_agent_registry_has_no_cli_adapter():
+    """R1.1 — a role is role_file + timeout (+ default_model). No declared CLI."""
     from loregarden.agents.registry import AGENTS
 
-    assert AGENTS["planner"]["adapter"] == "claude"
-    assert AGENTS["backend_implementer"]["adapter"] == "cursor"
-    assert AGENTS["frontend_implementer"]["adapter"] == "cursor"
+    for agent_id, cfg in AGENTS.items():
+        assert "adapter" not in cfg, f"{agent_id} still declares a CLI"
 
 
 def test_resolve_claude_model_precedence(tmp_path, monkeypatch):
@@ -338,7 +327,6 @@ def test_resolve_claude_model_precedence(tmp_path, monkeypatch):
     def model_for(**overrides):
         inv = resolve_cli_invocation(
             agent_id="planner",
-            adapter="claude",
             prompt="stage task",
             prompt_file=prompt_file,
             skill_name="plan",
@@ -363,7 +351,7 @@ def test_resolve_claude_model_precedence(tmp_path, monkeypatch):
 
 
 def test_resolve_cursor_model_precedence(tmp_path, monkeypatch):
-    """Mirrors test_resolve_claude_model_precedence for the cursor adapter."""
+    """Ticket/workspace cursor pins still apply. Role/stage pins are Claude-authored until 981."""
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "cursor")
     monkeypatch.setenv("LOREGARDEN_ALLOW_PERMISSION_BYPASS", "1")
     monkeypatch.setenv("LOREGARDEN_CURSOR_BIN", "cursor-agent")
@@ -376,7 +364,6 @@ def test_resolve_cursor_model_precedence(tmp_path, monkeypatch):
     def model_for(**overrides):
         inv = resolve_cli_invocation(
             agent_id="backend_implementer",
-            adapter="cursor",
             prompt="stage task",
             prompt_file=prompt_file,
             skill_name="implement",
@@ -388,8 +375,8 @@ def test_resolve_cursor_model_precedence(tmp_path, monkeypatch):
         return inv.argv[idx + 1]
 
     assert model_for() == "workspace-model"
-    assert model_for(agent_model="agent-model") == "agent-model"
-    assert model_for(agent_model="agent-model", stage_model="stage-model") == "stage-model"
+    assert model_for(agent_model="agent-model") == "workspace-model"
+    assert model_for(agent_model="agent-model", stage_model="stage-model") == "workspace-model"
     assert (
         model_for(
             agent_model="agent-model",
@@ -413,7 +400,6 @@ def test_cross_adapter_model_pins_are_dropped(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="plan",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -427,7 +413,7 @@ def test_cross_adapter_model_pins_are_dropped(tmp_path, monkeypatch):
 
 
 def test_resolve_lmstudio_model_precedence(tmp_path, monkeypatch):
-    """LM Studio shares the same pin precedence as claude/cursor."""
+    """Ticket/workspace LM Studio pins still apply. Role/stage pins are Claude-authored until 981."""
     monkeypatch.setenv("LOREGARDEN_CLI_ADAPTER", "lmstudio")
     prompt_file = tmp_path / "prompt.md"
     prompt_file.write_text("plan", encoding="utf-8")
@@ -443,7 +429,6 @@ def test_resolve_lmstudio_model_precedence(tmp_path, monkeypatch):
     def model_for(**overrides):
         inv = resolve_cli_invocation(
             agent_id="planner",
-            adapter="lmstudio",
             prompt="plan",
             prompt_file=prompt_file,
             skill_name="plan",
@@ -454,8 +439,8 @@ def test_resolve_lmstudio_model_precedence(tmp_path, monkeypatch):
         return inv.argv[inv.argv.index("--model") + 1]
 
     assert model_for() == "workspace-local"
-    assert model_for(agent_model="agent-local") == "agent-local"
-    assert model_for(agent_model="agent-local", stage_model="stage-local") == "stage-local"
+    assert model_for(agent_model="agent-local") == "workspace-local"
+    assert model_for(agent_model="agent-local", stage_model="stage-local") == "workspace-local"
     assert (
         model_for(
             agent_model="agent-local",
@@ -478,7 +463,6 @@ def test_resolve_codex_model_precedence(tmp_path, monkeypatch):
     def model_for(**overrides):
         inv = resolve_cli_invocation(
             agent_id="planner",
-            adapter="codex",
             prompt="plan",
             prompt_file=prompt_file,
             skill_name="plan",
@@ -489,8 +473,8 @@ def test_resolve_codex_model_precedence(tmp_path, monkeypatch):
         return inv.argv[inv.argv.index("--model") + 1]
 
     assert model_for() == "workspace-codex"
-    assert model_for(agent_model="agent-codex") == "agent-codex"
-    assert model_for(agent_model="agent-codex", stage_model="stage-codex") == "stage-codex"
+    assert model_for(agent_model="agent-codex") == "workspace-codex"
+    assert model_for(agent_model="agent-codex", stage_model="stage-codex") == "workspace-codex"
     assert (
         model_for(
             agent_model="agent-codex",
@@ -514,7 +498,7 @@ def test_build_triage_invocation_uses_shared_cursor_model(tmp_path, monkeypatch)
 
     inv = build_triage_invocation(
         agent_id="ticket_scoper",
-        adapter="claude",
+        adapter="cursor",
         prompt="triage",
         prompt_file=prompt_file,
         skill_name="",
@@ -537,7 +521,7 @@ def test_read_only_triage_invocation_removes_cursor_force(tmp_path, monkeypatch)
 
     inv = build_triage_invocation(
         agent_id="triage",
-        adapter="claude",
+        adapter="cursor",
         prompt="advice only",
         prompt_file=prompt_file,
         skill_name="",
@@ -586,7 +570,7 @@ def test_read_only_triage_invocation_uses_codex_read_only_sandbox(tmp_path, monk
 
     inv = build_triage_invocation(
         agent_id="triage",
-        adapter="claude",
+        adapter="codex",
         prompt="advice only",
         prompt_file=prompt_file,
         skill_name="",
@@ -613,7 +597,7 @@ def test_writable_triage_invocation_uses_codex_workspace_write_sandbox(tmp_path,
 
     inv = build_triage_invocation(
         agent_id="triage",
-        adapter="claude",
+        adapter="codex",
         prompt="execute the plan",
         prompt_file=prompt_file,
         skill_name="",
@@ -642,7 +626,6 @@ def test_resolve_adapter_ticket_override(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="hello",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -792,7 +775,6 @@ def test_cli_executor_threads_model_precedence_into_invocation(
             slug="model-pin-agent",
             name="Model Pin Agent",
             role_body="Do a focused thing.",
-            adapter="claude",
             default_model="agent-pin",
         )
         session.add(agent)

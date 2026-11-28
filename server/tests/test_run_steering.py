@@ -13,6 +13,7 @@ from loregarden.models.domain import (
     RunMessage,
     RunStatus,
     Ticket,
+    Workspace,
 )
 from loregarden.services.run_steering import (
     MAX_MESSAGE_CHARS,
@@ -37,7 +38,14 @@ class _FakeClock:
         self.now += seconds
 
 
-def _run(session: Session, ticket: Ticket, *, agent_id="planner", status=RunStatus.RUNNING):
+def _run(
+    session: Session,
+    ticket: Ticket,
+    *,
+    agent_id="planner",
+    status=RunStatus.RUNNING,
+    adapter="claude",
+):
     run = AgentRun(
         run_code="run_steer",
         ticket_id=ticket.id,
@@ -45,6 +53,7 @@ def _run(session: Session, ticket: Ticket, *, agent_id="planner", status=RunStat
         agent_id=agent_id,
         stage_key="plan",
         status=status,
+        runtime_exit_action_snapshot_json=json.dumps({"adapter": adapter}) if adapter else "",
     )
     session.add(run)
     session.commit()
@@ -52,8 +61,13 @@ def _run(session: Session, ticket: Ticket, *, agent_id="planner", status=RunStat
     return run
 
 
-def test_a_running_claude_agent_accepts_a_message(db_session: Session):
+def test_a_running_claude_agent_accepts_a_message(db_session: Session, monkeypatch):
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
     ticket = db_session.exec(select(Ticket)).first()
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    workspace.cli_adapter = "claude"
+    db_session.add(workspace)
+    db_session.commit()
     run = _run(db_session, ticket)
 
     assert steer_refusal(run) == ""
@@ -71,18 +85,46 @@ def test_a_finished_run_cannot_be_steered(db_session: Session):
         queue_message(db_session, run, "too late")
 
 
-def test_a_cursor_agent_is_refused_with_the_reason(db_session: Session):
-    """cursor-agent exposes stream-json output but no --input-format, so there
-    is no channel to write into a run it is executing. Saying so beats
-    accepting a message that would never arrive."""
+def test_a_cursor_selected_run_is_refused_with_the_reason(db_session: Session, monkeypatch):
+    """R7.2 — steerability follows the selected harness, not get_agent().adapter."""
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
     ticket = db_session.exec(select(Ticket)).first()
-    run = _run(db_session, ticket, agent_id="backend_implementer")
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    workspace.cli_adapter = "cursor"
+    db_session.add(workspace)
+    db_session.commit()
+    run = _run(db_session, ticket, agent_id="planner", adapter="cursor")
 
     refusal = steer_refusal(run)
     assert "cursor" in refusal
     assert "cannot receive input" in refusal
     with pytest.raises(ValueError):
         queue_message(db_session, run, "stop touching that file")
+
+
+def test_a_claude_selected_run_stays_steerable(db_session: Session, monkeypatch):
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    ticket = db_session.exec(select(Ticket)).first()
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    workspace.cli_adapter = "claude"
+    db_session.add(workspace)
+    db_session.commit()
+    run = _run(db_session, ticket, agent_id="planner")
+    assert steer_refusal(run) == ""
+
+
+def test_an_unpinned_inherit_run_is_unsteerable_as_local(db_session: Session, monkeypatch):
+    """R7.2 — process default local is not in STEERABLE_ADAPTERS. Not a leftover empty string."""
+    monkeypatch.delenv("LOREGARDEN_CLI_ADAPTER", raising=False)
+    ticket = db_session.exec(select(Ticket)).first()
+    workspace = db_session.get(Workspace, ticket.workspace_id)
+    workspace.cli_adapter = "default"
+    db_session.add(workspace)
+    db_session.commit()
+    run = _run(db_session, ticket, agent_id="planner", adapter="")
+    refusal = steer_refusal(run)
+    assert "cannot receive input" in refusal
+    assert "local" in refusal
 
 
 def test_an_empty_message_is_rejected(db_session: Session):
@@ -222,7 +264,7 @@ def test_a_broken_stdin_does_not_kill_the_run(db_session: Session):
 
 def test_the_api_reports_why_a_run_cannot_be_steered(client, db_session: Session):
     ticket = db_session.exec(select(Ticket)).first()
-    run = _run(db_session, ticket, agent_id="backend_implementer")
+    run = _run(db_session, ticket, agent_id="backend_implementer", adapter="cursor")
 
     listing = client.get(f"/api/runs/{run.id}/messages")
     assert listing.status_code == 200

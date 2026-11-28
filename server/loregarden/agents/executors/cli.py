@@ -324,7 +324,6 @@ class CliAgentExecutor:
             try:
                 invocation = resolve_cli_invocation(
                     agent_id=run.agent_id,
-                    adapter=agent.get("adapter", "local"),
                     prompt=prompt,
                     prompt_file=prompt_file,
                     skill_name=run.skill_name,
@@ -651,7 +650,6 @@ class CliAgentExecutor:
         prompt_file = prompt_dir / "prompt.md"
         invocation = resolve_terminal_handoff_invocation(
             agent_id=run.agent_id,
-            adapter=agent.get("adapter", "local"),
             prompt=prompt,
             prompt_file=prompt_file,
             skill_name=run.skill_name,
@@ -998,7 +996,6 @@ class CliAgentExecutor:
         ac = json.loads(ticket.acceptance_criteria_json or "[]")
 
         adapter = resolve_effective_adapter(
-            agent_adapter=agent.get("adapter", "local"),
             workspace=workspace,
             ticket_adapter=get_ticket_orchestration_runtime(ticket).cli_adapter,
         )

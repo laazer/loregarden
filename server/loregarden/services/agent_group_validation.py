@@ -1,9 +1,11 @@
 """Refuse an agent group the dispatcher could not run as one CLI turn.
 
 A group (`WorkflowStageDef.agent_group`) is dispatched as one run of one agent
-CLI, on one adapter and one model, walking its steps in order, with its gates
+CLI, on one model, walking its steps in order, with its gates
 deferred to its end. Each rule below refuses a shape that would break one of
-those promises at run time instead of at save time. Run on Studio create,
+those promises at run time instead of at save time. There is no adapter rule:
+an agent declares no provider, so every step of a run resolves the same one
+(ticket, workspace, global or process default). Run on Studio create,
 update (stages or transitions) and publish, after `validate_stage_agent_ids`.
 """
 
@@ -11,7 +13,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from loregarden.agents.registry import AGENTS
 from loregarden.core.state_machine import StateMachine
 from loregarden.models.domain import StudioAgent, StudioWorkflowStage, WorkflowStageDef
 from loregarden.services.studio_routing import (
@@ -128,19 +129,8 @@ def _check_one_value(
         )
 
 
-def _check_adapters_and_models(
-    session: Session, group: str, members: list[StudioWorkflowStage]
-) -> None:
+def _check_models(session: Session, group: str, members: list[StudioWorkflowStage]) -> None:
     rows = _studio_agents(session, members)
-
-    def adapter_of(agent_id: str) -> str:
-        row = rows.get(agent_id)
-        if row is not None:
-            return row.adapter
-        return str(AGENTS.get(agent_id, {}).get("adapter", ""))
-
-    def adapters(member: StudioWorkflowStage) -> list[str]:
-        return list(dict.fromkeys(adapter_of(agent_id) for agent_id in _member_agent_ids(member)))
 
     def models(member: StudioWorkflowStage) -> list[str]:
         if member.model:
@@ -151,7 +141,6 @@ def _check_adapters_and_models(
         ]
         return list(dict.fromkeys(found)) or [_DEFAULT_MODEL_LABEL]
 
-    _check_one_value(group, members, adapters, "adapter")
     _check_one_value(group, members, models, "model")
 
 
@@ -195,5 +184,5 @@ def validate_agent_groups(
         _check_exit_actions(group, members)
         _check_consecutive_by_order(group, members, ordered)
         _check_consecutive_on_route(group, members, defs, transitions)
-        _check_adapters_and_models(session, group, members)
+        _check_models(session, group, members)
         _check_classify_exits(group, members, ordered)

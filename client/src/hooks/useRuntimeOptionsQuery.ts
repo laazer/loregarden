@@ -43,6 +43,7 @@ export function useRuntimeOptionsQuery({
     queryKey,
     queryFn: () => api.runtimeOptions(params),
     ...(enabled === undefined ? {} : { enabled }),
+    meta: { errorTitle: "Load runtime options" },
     refetchInterval: (query) =>
       Object.values(query.state.data?.model_discovery ?? {}).some(
         (entry) => entry?.status === "probing",

@@ -61,7 +61,6 @@ AGENT_GENERATE_JSON_SCHEMA = """```json
   "slug": "localization-reviewer",
   "description": "One line — when the orchestrator should reach for this agent",
   "role_body": "Detailed role instructions, constraints, and output expectations",
-  "adapter": "claude",
   "default_skill": "plan",
   "mcp_tools": ["loregarden_get_ticket", "loregarden_attach_artifact"]
 }
@@ -150,7 +149,6 @@ def build_agent_generate_prompt(
             "",
             "## Task",
             "Draft a custom agent definition from the operator description.",
-            "Choose adapter from: claude, cursor, lmstudio, local.",
             "Pick MCP tools appropriate to the role; prefer loregarden_get_ticket for stage agents.",
             "Write concrete role_body instructions with constraints and expected outputs.",
             "Do not include the Loregarden MCP/memory preamble — the studio adds that automatically.",
@@ -214,9 +212,6 @@ def parse_agent_generate_payload(
     if not name:
         return None
     slug = slugify(str(payload.get("slug") or name))
-    adapter = str(payload.get("adapter") or "claude").strip().lower()
-    if adapter not in {"claude", "cursor", "lmstudio", "local"}:
-        adapter = "claude"
     tools_raw = payload.get("mcp_tools") or []
     mcp_tools = [str(item).strip() for item in tools_raw if str(item).strip()]
     known_tools = set(tool_names())
@@ -231,7 +226,6 @@ def parse_agent_generate_payload(
         slug=slug,
         description=str(payload.get("description") or "").strip(),
         role_body=str(payload.get("role_body") or "").strip(),
-        adapter=adapter,
         default_skill=default_skill,
         mcp_tools=mcp_tools,
     )

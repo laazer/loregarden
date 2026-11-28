@@ -27,7 +27,6 @@ export interface StudioAgent {
   description: string;
   role_body: string;
   role_file?: string;
-  adapter: string;
   default_model: string;
   timeout: number;
   default_skill: string;
@@ -61,7 +60,6 @@ export interface StudioAgentUpdateBody {
   name?: string;
   description?: string;
   role_body?: string;
-  adapter?: string;
   default_model?: string;
   timeout?: number;
   default_skill?: string;
@@ -119,7 +117,6 @@ export interface StudioMcpToolGuide {
 export interface StudioAgentPreviewProfile {
   description: string;
   model: string;
-  provider: string;
   default_skill: string;
   timeout: number;
   always_apply: boolean | null;
@@ -208,7 +205,6 @@ export interface StudioGeneratedAgent {
   slug: string;
   description: string;
   role_body: string;
-  adapter: string;
   default_skill: string;
   mcp_tools: string[];
 }

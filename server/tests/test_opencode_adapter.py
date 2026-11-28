@@ -59,7 +59,6 @@ def _workspace(**kwargs) -> Workspace:
 def _stage_invocation(tmp_path: Path, workspace: Workspace) -> CliInvocation:
     return resolve_cli_invocation(
         agent_id="implementer",
-        adapter="opencode",
         prompt="do the stage",
         prompt_file=tmp_path / "prompt.md",
         skill_name="implement",
@@ -222,7 +221,6 @@ def test_terminal_handoff_attaches_the_prompt_file_and_carries_its_env(tmp_path)
 
     invocation = resolve_terminal_handoff_invocation(
         agent_id="implementer",
-        adapter="opencode",
         prompt="do the stage",
         prompt_file=prompt_file,
         skill_name="implement",

@@ -730,9 +730,7 @@ def test_branch_chat_uses_permission_bridge_for_checked_out_branch(
 
     captured: dict[str, object] = {}
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(
-        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "claude"
-    )
+    monkeypatch.setattr(branch_triage_chat_service, "resolve_chat_adapter", lambda **_: "claude")
     monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
 
     def fake_invocation(**kwargs):
@@ -793,9 +791,7 @@ def test_branch_chat_stays_advisory_without_a_checkout(
 
     captured: dict[str, str] = {}
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(
-        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "claude"
-    )
+    monkeypatch.setattr(branch_triage_chat_service, "resolve_chat_adapter", lambda **_: "claude")
     monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
 
     def fake_one_shot(_profile, *, prompt, **_kwargs):
@@ -831,9 +827,7 @@ def test_branch_chat_codex_executes_on_checked_out_branch(
 
     captured: dict[str, object] = {}
     monkeypatch.delenv("LOREGARDEN_TRIAGE_STUB_RESPONSE", raising=False)
-    monkeypatch.setattr(
-        branch_triage_chat_service, "resolve_effective_adapter", lambda **_: "codex"
-    )
+    monkeypatch.setattr(branch_triage_chat_service, "resolve_chat_adapter", lambda **_: "codex")
     monkeypatch.setattr(branch_triage_chat_service, "_branch_entry", lambda *_: None)
 
     def fake_turn(request):

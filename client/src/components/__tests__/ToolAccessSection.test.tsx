@@ -42,6 +42,13 @@ describe("ToolAccessSection", () => {
     expect(screen.getByText("Unrestricted")).toBeInTheDocument();
   });
 
+  it("says grants take effect only on a Claude run, not that the role has a provider", () => {
+    renderSection(INHERIT);
+    expect(screen.getByText("Grants take effect only on a Claude run.")).toBeInTheDocument();
+    expect(screen.queryByText(/Only the Claude provider can enforce this/)).toBeNull();
+    expect(screen.queryByText(/until the agent's provider is Claude/)).toBeNull();
+  });
+
   it("renders warnings with the offending tool names", () => {
     renderSection(ALLOWLIST, [WARNING]);
     expect(screen.getByText(WARNING.message)).toBeInTheDocument();

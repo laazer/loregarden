@@ -125,7 +125,6 @@ _AGENT_SNAPSHOT_FIELDS = (
     "name",
     "description",
     "role_body",
-    "adapter",
     "default_model",
     "timeout",
     "default_skill",
@@ -156,7 +155,6 @@ _AGENT_UPDATE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("name", "name"),
     ("description", "description"),
     ("role_body", "role_body"),
-    ("adapter", "adapter"),
     ("default_model", "default_model"),
     ("timeout", "timeout"),
     ("default_skill", "default_skill"),
@@ -390,7 +388,6 @@ def seed_builtin_agents(session: Session) -> list[str]:
             name=str(cfg.get("name", slug)),
             description=excerpt or "",
             role_body=role_body,
-            adapter=str(cfg.get("adapter", "claude")),
             # Registry pins model under `claude_model` (e.g. triage→haiku); wire it
             # into default_model, which is the key the executor actually reads.
             default_model=str(cfg.get("claude_model", "") or cfg.get("default_model", "")),
@@ -637,7 +634,6 @@ class StudioService:
             name=body.name.strip(),
             description=body.description.strip(),
             role_body=ensure_studio_role_preamble(body.role_body),
-            adapter=body.adapter or "claude",
             default_model=body.default_model,
             timeout=body.timeout,
             default_skill=body.default_skill,

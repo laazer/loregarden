@@ -363,7 +363,6 @@ def _stage(tmp_path: Path, adapter: str):
     with _running(adapter):
         return resolve_cli_invocation(
             agent_id="qa",
-            adapter=adapter,
             prompt="p",
             prompt_file=_prompt(tmp_path),
             skill_name="",

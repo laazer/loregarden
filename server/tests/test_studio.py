@@ -516,7 +516,10 @@ def test_studio_agent_preview(client: TestClient):
     body = res.json()
     assert body["name"] == "Preview Bot"
     assert body["profile"]["description"] == "Test preview"
-    assert body["profile"]["provider"] == "claude"
+    assert "provider" not in body["profile"]
+    assert body["profile"]["default_skill"] == ""
+    assert body["profile"]["model"] == ""
+    assert body["profile"]["timeout"] == 600
     assert "loregarden_get_ticket" in body["markdown"]
     assert "memory_protocol_v1.md" in body["markdown"]
     assert "Finish cleanly." in body["markdown"]

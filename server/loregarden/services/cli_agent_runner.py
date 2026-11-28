@@ -35,6 +35,7 @@ from loregarden.agents.tool_grants import agent_tool_grants
 from loregarden.config import settings
 from loregarden.models.domain import ChatSurface, Workspace
 from loregarden.services.cli_output import extract_triage_reply
+from loregarden.services.cli_settings import resolve_effective_adapter
 from loregarden.services.run_stream_sink import RunStreamSink
 from loregarden.services.subprocess_lines import SubprocessLineReader
 from loregarden.services.workspace_paths import resolve_workspace_root
@@ -220,6 +221,7 @@ def run_cli_agent_turn(
     thinking_sink: RunStreamSink | None = None,
     workspace_root: Path | None = None,
     surface: ChatSurface = ChatSurface.HOME,
+    adapter: str = "",
 ) -> str:
     """Run one turn to completion and return the assistant's reply.
 
@@ -254,9 +256,10 @@ def run_cli_agent_turn(
     with tempfile.TemporaryDirectory(prefix=profile.tmp_prefix) as tmp:
         prompt_file = Path(tmp) / "prompt.md"
         prompt_file.write_text(prompt, encoding="utf-8")
+        selected = (adapter or "").strip() or resolve_effective_adapter(workspace=workspace)
         invocation = build_triage_invocation(
             agent_id=profile.agent_id,
-            adapter=agent.get("adapter", "claude"),
+            adapter=selected,
             prompt=prompt,
             prompt_file=prompt_file,
             skill_name="",

@@ -902,7 +902,6 @@ class StudioAgentCreate(SQLModel):
     name: str
     description: str = ""
     role_body: str = ""
-    adapter: str = "claude"
     default_model: str = ""
     timeout: int = 600
     default_skill: str = ""
@@ -930,7 +929,6 @@ class StudioAgentUpdate(SQLModel):
     name: str | None = None
     description: str | None = None
     role_body: str | None = None
-    adapter: str | None = None
     default_model: str | None = None
     timeout: int | None = None
     default_skill: str | None = None
@@ -949,7 +947,6 @@ class StudioAgentView(SQLModel):
     description: str
     role_body: str
     role_file: str = ""
-    adapter: str
     default_model: str = ""
     timeout: int
     default_skill: str
@@ -1046,7 +1043,6 @@ class StudioMcpToolGuide(SQLModel):
 class StudioAgentPreviewProfile(SQLModel):
     description: str = ""
     model: str = ""
-    provider: str = ""
     default_skill: str = ""
     timeout: int = 0
     always_apply: bool | None = None
@@ -1064,7 +1060,6 @@ class StudioAgentPreviewRequest(SQLModel):
     name: str = "Preview Agent"
     description: str = ""
     role_body: str = ""
-    adapter: str = "claude"
     timeout: int = 600
     default_skill: str = ""
     mcp_enabled: bool = True
@@ -1163,7 +1158,6 @@ class StudioGeneratedAgent(SQLModel):
     slug: str = ""
     description: str = ""
     role_body: str = ""
-    adapter: str = "claude"
     default_skill: str = ""
     mcp_tools: list[str] = Field(default_factory=list)
 

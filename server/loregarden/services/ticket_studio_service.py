@@ -7,9 +7,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from loregarden.agents.cli_adapters import resolve_effective_adapter
 from loregarden.agents.mcp_context import resolve_mcp_url
-from loregarden.agents.registry import get_agent
 from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
 from loregarden.mcp.tool_ids import TICKET_STUDIO_MCP_TOOLS, mcp_tool_values
 from loregarden.models.domain import (
@@ -42,6 +40,7 @@ from loregarden.services.cli_settings import (
     VALID_CLI_ADAPTERS,
     apply_runtime_overrides,
     parse_runtime_settings,
+    resolve_effective_adapter,
 )
 from loregarden.services.draft_hierarchy import (
     DraftHierarchyError,
@@ -709,10 +708,7 @@ def _assert_adapter_can_read_extra_dirs(workspace: Workspace) -> None:
     Without this the survey still runs, reads nothing outside the workspace, and
     reports confident findings invented from the repo name alone.
     """
-    agent = get_agent(TICKET_STUDIO_AGENT_ID) or {}
-    adapter = resolve_effective_adapter(
-        agent_adapter=agent.get("adapter", "claude"), workspace=workspace
-    )
+    adapter = resolve_effective_adapter(workspace=workspace)
     if adapter != "claude":
         raise ValueError(
             f"Reference repos need the claude CLI adapter to be readable (this session "

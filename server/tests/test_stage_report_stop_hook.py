@@ -258,7 +258,6 @@ def test_every_claude_stage_run_carries_the_hook(tmp_path, bypass):
             os.environ["LOREGARDEN_ALLOW_PERMISSION_BYPASS"] = bypass
         inv = resolve_cli_invocation(
             agent_id="backend_implementer",
-            adapter="claude",
             prompt="stage task",
             prompt_file=prompt_file,
             skill_name="",

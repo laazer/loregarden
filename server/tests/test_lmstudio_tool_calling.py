@@ -266,7 +266,6 @@ def test_the_invocation_carries_the_run_context(tmp_path, monkeypatch):
     )
     invocation = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="lmstudio",
         prompt="hi",
         prompt_file=prompt_file,
         skill_name="",
@@ -301,7 +300,6 @@ def test_a_run_without_context_gets_no_tool_flags(tmp_path, monkeypatch):
     )
     invocation = resolve_cli_invocation(
         agent_id="backend_implementer",
-        adapter="lmstudio",
         prompt="hi",
         prompt_file=prompt_file,
         skill_name="",
@@ -331,7 +329,7 @@ def test_triage_lmstudio_invocation_carries_run_mcp(tmp_path, monkeypatch):
     )
     inv = build_triage_invocation(
         agent_id="triage",
-        adapter="claude",
+        adapter="lmstudio",
         prompt="triage",
         prompt_file=prompt_file,
         skill_name="",

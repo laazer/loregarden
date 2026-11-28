@@ -676,7 +676,6 @@ def test_every_writable_field_arrives_when_they_are_sent_together(client: TestCl
         "name": "All At Once",
         "description": "Every field in one request.",
         "role_body": "You do all of it at once.",
-        "adapter": "cursor",
         "default_model": "opus",
         "timeout": 4321,
         "mcp_enabled": True,
@@ -698,7 +697,6 @@ def test_every_writable_field_arrives_when_they_are_sent_together(client: TestCl
     assert stored["name"] == payload["name"]
     assert stored["description"] == payload["description"]
     assert payload["role_body"] in stored["role_body"]
-    assert stored["adapter"] == "cursor"
     assert stored["default_model"] == "opus"
     assert stored["timeout"] == 4321
     assert set(payload["mcp_tools"]) <= set(stored["mcp_tools"])

@@ -92,7 +92,7 @@ def m_agent_tool_grants(conn: Connection) -> None:
     snapshot = (
         conn.execute(
             text(
-                "SELECT slug, name, description, adapter, default_model, timeout, default_skill, "
+                "SELECT slug, name, description, default_model, timeout, default_skill, "
                 "mcp_enabled, mcp_tools_json, gate_checks_json, handoff_checks_json, "
                 "tool_grants_json, built_in FROM studio_agents WHERE id = :id"
             ),

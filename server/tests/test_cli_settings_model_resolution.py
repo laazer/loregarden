@@ -8,14 +8,15 @@ from loregarden.services.cli_settings import (
 )
 
 
-def test_adapter_model_pins_apply_matches_declared_adapter():
-    assert adapter_model_pins_apply(agent_adapter="claude", selected_adapter="claude")
-    assert adapter_model_pins_apply(agent_adapter="cursor", selected_adapter="cursor")
-    assert adapter_model_pins_apply(agent_adapter="codex", selected_adapter="codex")
-    assert adapter_model_pins_apply(agent_adapter="", selected_adapter="cursor")
-    assert adapter_model_pins_apply(agent_adapter="default", selected_adapter="lmstudio")
-    assert not adapter_model_pins_apply(agent_adapter="claude", selected_adapter="cursor")
-    assert not adapter_model_pins_apply(agent_adapter="claude", selected_adapter="lmstudio")
+def test_adapter_model_pins_apply_classifies_the_pin_not_the_agent():
+    """R3 — empty/default is False (the landmine). Parameter is pin_adapter."""
+    assert adapter_model_pins_apply(pin_adapter="claude", selected_adapter="claude")
+    assert adapter_model_pins_apply(pin_adapter="cursor", selected_adapter="cursor")
+    assert adapter_model_pins_apply(pin_adapter="codex", selected_adapter="codex")
+    assert not adapter_model_pins_apply(pin_adapter="", selected_adapter="cursor")
+    assert not adapter_model_pins_apply(pin_adapter="default", selected_adapter="claude")
+    assert not adapter_model_pins_apply(pin_adapter="claude", selected_adapter="cursor")
+    assert not adapter_model_pins_apply(pin_adapter="claude", selected_adapter="lmstudio")
 
 
 def test_ticket_model_for_adapter_picks_matching_field():

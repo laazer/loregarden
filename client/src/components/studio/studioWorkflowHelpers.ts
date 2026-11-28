@@ -23,7 +23,7 @@ export interface StudioWorkflowDraft {
   transitions: WorkflowTransition[];
 }
 
-/** Model dropdown options for the agent's declared adapter. */
+/** Catalog lookup by adapter. Role/stage pins call this with `"claude"` until 981. */
 export function modelOptionsForAdapter(
   adapter: string,
   options:
@@ -44,6 +44,26 @@ export function modelOptionsForAdapter(
     return models && models.length > 1 ? models : undefined;
   }
   return undefined;
+}
+
+export const ROLE_DEFAULT_MODEL_EMPTY_LABEL = "No pin — run uses the selected harness default";
+export const ROLE_DEFAULT_MODEL_HINT = "Applies only when a run's harness is Claude.";
+export const STAGE_MODEL_EMPTY_LABEL = "— Agent default —";
+export const STAGE_MODEL_HINT = "Applies only when this stage's run harness is Claude.";
+
+/** Claude-family pin list until 981. Empty option is this row's label, not the catalog's. */
+export function claudePinModelOptions(
+  options: Parameters<typeof modelOptionsForAdapter>[1],
+  storedValue: string,
+  emptyLabel: string,
+): { id: string; label: string }[] {
+  const catalog = modelOptionsForAdapter("claude", options) ?? [];
+  const named = catalog.filter((opt) => opt.id !== "");
+  const rows = [{ id: "", label: emptyLabel }, ...named];
+  if (storedValue && !rows.some((opt) => opt.id === storedValue)) {
+    rows.push({ id: storedValue, label: storedValue });
+  }
+  return rows;
 }
 
 /** A new stage, at `order`, with the defaults the editor opens it on. */

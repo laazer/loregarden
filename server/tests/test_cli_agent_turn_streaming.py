@@ -103,7 +103,7 @@ def stub_turn_fixture(tmp_path, monkeypatch):
         "resolve_workspace_root",
         lambda _workspace: Path(repo),
     )
-    monkeypatch.setattr(cli_agent_runner, "get_agent", lambda _id: {"adapter": "claude"})
+    monkeypatch.setattr(cli_agent_runner, "get_agent", lambda _id: {"timeout": 1})
     monkeypatch.setattr(
         cli_agent_runner,
         "build_triage_invocation",
@@ -192,7 +192,7 @@ def test_streamed_turn_survives_closed_stdin_prompt(tmp_path, monkeypatch, db_se
         "resolve_workspace_root",
         lambda _workspace: Path(repo),
     )
-    monkeypatch.setattr(cli_agent_runner, "get_agent", lambda _id: {"adapter": "codex"})
+    monkeypatch.setattr(cli_agent_runner, "get_agent", lambda _id: {"timeout": 1})
     monkeypatch.setattr(
         cli_agent_runner,
         "build_triage_invocation",

@@ -13,9 +13,8 @@
  * `removeParallelAgent`) had no other caller, so they belong here rather than
  * being passed down as four props. `stageTypeClass` and the two option lists
  * are likewise used nowhere else. What stayed shared — `emptyStage` and
- * `modelOptionsForAdapter`, which the page still calls — moved to
- * `studioWorkflowHelpers`, because importing them back out of the page would be
- * a cycle.
+ * `claudePinModelOptions` — moved to `studioWorkflowHelpers`, because importing
+ * them back out of the page would be a cycle.
  *
  * ## What did not change
  *
@@ -30,7 +29,6 @@ import type {
   ClassifyRoute,
   ParallelAgentSpec,
   RuntimeOptions,
-  StudioAgent,
   StudioExitAction,
   StudioExitActionRequirementCatalog,
   StudioExitActionRequirement,
@@ -43,9 +41,11 @@ import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { SkillSelect } from "./SkillSelect";
 import {
+  claudePinModelOptions,
   emptyStage,
   exitActionKeyFromLabel,
-  modelOptionsForAdapter,
+  STAGE_MODEL_EMPTY_LABEL,
+  STAGE_MODEL_HINT,
   type StudioWorkflowDraft,
 } from "./studioWorkflowHelpers";
 
@@ -64,7 +64,6 @@ export interface StudioStagesCardProps {
   setWorkflowDraft: Dispatch<SetStateAction<StudioWorkflowDraft>>;
   isWorkflowReadOnly: boolean;
   agentOptions: { id: string; label: string }[];
-  agents: StudioAgent[];
   /** Skill names, as `/api/agents/skills` returns them. */
   skills: string[];
   exitActionRequirements: StudioExitActionRequirementCatalog | undefined;
@@ -85,7 +84,6 @@ export function StudioStagesCard({
   setWorkflowDraft,
   isWorkflowReadOnly,
   agentOptions,
-  agents,
   skills,
   exitActionRequirements,
   runtimeOptions,
@@ -630,43 +628,30 @@ export function StudioStagesCard({
                         </div>
                         <div>
                           <label htmlFor={`${fieldId}-${index}-model`} className="studio-stage-field-label">Model override</label>
-                          {(() => {
-                            const stageAgent = agents?.find((a) => a.slug === stage.agent_id);
-                            const modelOptions = modelOptionsForAdapter(
-                              stageAgent?.adapter ?? "claude",
+                          <Select
+                            id={`${fieldId}-${index}-model`}
+                            className="studio-stage-select mono"
+                            value={stage.model}
+                            disabled={isWorkflowReadOnly}
+                            aria-describedby={`${fieldId}-${index}-model-hint`}
+                            onChange={(e) => updateStage(index, { model: e.target.value })}
+                          >
+                            {claudePinModelOptions(
                               runtimeOptions,
-                            );
-                            if (modelOptions) {
-                              return (
-                                <Select
-                                  id={`${fieldId}-${index}-model`}
-                                  className="studio-stage-select mono"
-                                  value={stage.model}
-                                  disabled={isWorkflowReadOnly}
-                                  onChange={(e) => updateStage(index, { model: e.target.value })}
-                                >
-                                  <option value="">— Agent default —</option>
-                                  {modelOptions
-                                    .filter((opt) => opt.id)
-                                    .map((opt) => (
-                                      <option key={opt.id} value={opt.id}>
-                                        {opt.label}
-                                      </option>
-                                    ))}
-                                </Select>
-                              );
-                            }
-                            return (
-                              <Input
-                                id={`${fieldId}-${index}-model`}
-                                className="studio-stage-select mono"
-                                placeholder="Model id"
-                                value={stage.model}
-                                readOnly={isWorkflowReadOnly}
-                                onChange={(e) => updateStage(index, { model: e.target.value })}
-                              />
-                            );
-                          })()}
+                              stage.model,
+                              STAGE_MODEL_EMPTY_LABEL,
+                            ).map((opt) => (
+                              <option key={opt.id || "default"} value={opt.id}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </Select>
+                          <div
+                            id={`${fieldId}-${index}-model-hint`}
+                            style={{ marginTop: 4, fontSize: "var(--fs-micro)", color: "var(--txl)" }}
+                          >
+                            {STAGE_MODEL_HINT}
+                          </div>
                         </div>
                       </div>
                     )}

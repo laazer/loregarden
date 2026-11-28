@@ -22,11 +22,11 @@ def _agent_row(conn, slug: str = "triage"):
 def _seed_agent(conn, *, version: int, creators: list[str], role_body: str = "old body") -> str:
     conn.execute(
         text(
-            "INSERT INTO studio_agents (id, slug, name, description, role_body, adapter, "
+            "INSERT INTO studio_agents (id, slug, name, description, role_body, "
             "default_model, timeout, default_skill, mcp_enabled, mcp_tools_json, "
             "gate_checks_json, handoff_checks_json, tool_grants_json, version, built_in, "
             "created_at, updated_at) VALUES ('agent-1', 'triage', 'Baxter', '', :body, "
-            "'claude', '', 1800, '', 1, '[]', '[]', '[]', '{}', :version, 1, "
+            "'', 1800, '', 1, '[]', '[]', '[]', '{}', :version, 1, "
             "'2026-01-01', '2026-01-01')"
         ),
         {"body": role_body, "version": version},

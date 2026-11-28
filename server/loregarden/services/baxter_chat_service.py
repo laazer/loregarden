@@ -55,7 +55,6 @@ from loregarden.services.agent_turn_runner import (
     AgentTurnRequest,
     AgentTurnResult,
     adapter_capabilities,
-    capabilities_for_workspace,
     resolve_chat_intent,
     run_agent_turn,
 )
@@ -107,10 +106,10 @@ from loregarden.services.chat_primitives import (
 from loregarden.services.chat_wait import outstanding_for, wait_payload
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_settings import (
+    CHAT_SURFACE_DEFAULT,
     VALID_CLI_ADAPTERS,
-    apply_runtime_overrides,
     parse_runtime_settings,
-    resolve_effective_adapter,
+    resolve_chat_adapter,
     validated_effort_pins,
 )
 from loregarden.services.run_concurrency import find_active_chat_thread_run
@@ -657,8 +656,7 @@ def chat_session_snapshot(session: Session, chat_session: BaxterChatSession) -> 
         "steer": True,
     }
     if workspace:
-        effective = apply_runtime_overrides(workspace, chat_session.runtime_json)
-        caps = capabilities_for_workspace(effective, agent_adapter="claude").as_dict()
+        caps = adapter_capabilities(home_chat_adapter(workspace, chat_session)).as_dict()
     return {
         "id": chat_session.id,
         "workspace_id": chat_session.workspace_id,
@@ -960,11 +958,15 @@ class BaxterChatConflictError(ValueError):
 
 
 def home_chat_adapter(workspace: Workspace, chat_session: BaxterChatSession) -> str:
-    """The adapter this conversation's next turn would run on."""
-    agent = get_agent(TRIAGE_AGENT_ID) or {}
-    return resolve_effective_adapter(
-        agent_adapter=agent.get("adapter", "claude"),
-        workspace=apply_runtime_overrides(workspace, chat_session.runtime_json),
+    """The adapter this conversation's next turn would run on.
+
+    ``workspace`` is the thread's host; chat does not inherit its pipeline
+    ``cli_adapter`` (see ``resolve_chat_adapter``).
+    """
+    _ = workspace
+    return resolve_chat_adapter(
+        surface_default=CHAT_SURFACE_DEFAULT,
+        override_json=chat_session.runtime_json,
     )
 
 
@@ -1039,8 +1041,9 @@ def invoke_baxter_chat_model(
         return ChatTurnOutcome(reply=stub, run_id="", acting=False)
 
     agent = get_agent(TRIAGE_AGENT_ID) or {}
-    selected = resolve_effective_adapter(
-        agent_adapter=agent.get("adapter", "claude"), workspace=workspace
+    selected = resolve_chat_adapter(
+        surface_default=CHAT_SURFACE_DEFAULT,
+        override_json=chat_session.runtime_json if chat_session else "",
     )
     caps = adapter_capabilities(selected)
     # Same as ticket triage: execute-capable adapters act. Cursor/Codex have no

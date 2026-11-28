@@ -43,6 +43,7 @@ from loregarden.services.cli_agent_runner import (
 )
 from loregarden.services.cli_auth_errors import format_agent_unavailable
 from loregarden.services.cli_settings import (
+    CHAT_SURFACE_DEFAULT,
     VALID_CLI_ADAPTERS,
     apply_runtime_overrides,
     parse_runtime_settings,
@@ -164,9 +165,8 @@ def resolve_chat_capabilities(override_json: str = "") -> tuple[AdapterCapabilit
     indistinguishable in the transcript until a turn fails to do the thing it
     was asked for.
     """
-    agent = get_agent(TRIAGE_AGENT_ID) or {}
     adapter = resolve_chat_adapter(
-        agent_adapter=agent.get("adapter", "claude"),
+        surface_default=CHAT_SURFACE_DEFAULT,
         override_json=override_json,
     )
     return adapter_capabilities(adapter), resolve_chat_intent(adapter)
@@ -311,6 +311,10 @@ def invoke_triage_model(
         agent=get_agent(TRIAGE_AGENT_ID) or {},
     )
     effective = apply_triage_runtime_overrides(workspace, ticket)
+    selected = resolve_chat_adapter(
+        surface_default=CHAT_SURFACE_DEFAULT,
+        override_json=ticket.triage_runtime_json,
+    )
     # The run is the turn here — `triage_run_status` publishes this same id as
     # `active_run_id`, which is what the panel watches.
     thinking = ChatTurnThinkingSink(run_id) if run_id else None
@@ -323,6 +327,7 @@ def invoke_triage_model(
             workspace_slug=effective.slug or workspace.slug or "",
             read_only=True,
             thinking_sink=thinking,
+            adapter=selected,
         )
     finally:
         if thinking:

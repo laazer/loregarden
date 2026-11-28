@@ -302,7 +302,6 @@ def test_the_invocation_records_the_effort_that_was_resolved_not_the_one_configu
     with patch.dict(os.environ, overrides, clear=False):
         invocation = resolve_cli_invocation(
             agent_id="backend_implementer",
-            adapter="claude",
             prompt="x",
             prompt_file=tmp_path / "prompt.md",
             skill_name="",

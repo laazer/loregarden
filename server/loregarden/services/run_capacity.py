@@ -44,7 +44,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from loregarden.agents.registry import get_agent
 from loregarden.config import settings
 from loregarden.models.domain import (
     AgentRun,
@@ -107,11 +106,9 @@ class HostCapacityUnavailable(CapacityUnavailable):
 
 def runtime_for_run(session: Session, run: AgentRun) -> CliAdapter:
     """The adapter this run will execute on, resolved the way the executor does."""
-    agent = get_agent(run.agent_id) or {}
     ticket = session.get(Ticket, run.ticket_id) if run.ticket_id else None
     workspace = session.get(Workspace, run.workspace_id) if run.workspace_id else None
     adapter = resolve_effective_adapter(
-        agent_adapter=agent.get("adapter", CliAdapter.LOCAL.value),
         workspace=workspace,
         ticket_adapter=(
             get_ticket_orchestration_runtime(ticket).cli_adapter

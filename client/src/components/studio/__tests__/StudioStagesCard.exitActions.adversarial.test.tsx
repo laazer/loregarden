@@ -56,7 +56,6 @@ function renderCard(initial: StudioWorkflowDraft, readOnly = false) {
           id: a.slug,
           label: a.name,
         }))}
-        agents={AGENTS}
         skills={["plan", "verify"]}
         exitActionRequirements={EXIT_ACTION_REQUIREMENTS}
         runtimeOptions={undefined}
@@ -146,7 +145,6 @@ describe("Studio exit-action authoring (AC-1/AC-2 UI)", () => {
             id: a.slug,
             label: a.name,
           }))}
-          agents={AGENTS}
           skills={["plan", "verify"]}
           exitActionRequirements={customCatalog}
           runtimeOptions={undefined}

@@ -26,122 +26,102 @@ AGENTS: dict[str, dict] = {
     "planner": {
         "name": "Planner Agent",
         "role_file": "agents/1_planner/planner_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "spec": {
         "name": "Spec Agent",
         "role_file": "agents/2_spec/spec_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "test_designer": {
         "name": "Test Designer Agent",
         "role_file": "agents/3_test_designer/test_designer_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "test_breaker": {
         "name": "Test Breaker Agent",
         "role_file": "agents/4_test_breaker/test_breaker_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "backend_implementer": {
         "name": "Backend Implementer Agent",
         "role_file": "agents/5_backend_implementer/backend_implementer_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "frontend_implementer": {
         "name": "Frontend Implementer Agent",
         "role_file": "agents/6_frontend_implementer/frontend_implementer_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "static_qa": {
         "name": "Static QA Agent",
         "role_file": "agents/9_static_qa/static_qa_v1.md",
-        "adapter": "claude",
         "timeout": 600,
         "claude_model": "sonnet",
     },
     "gatekeeper": {
         "name": "Acceptance Criteria Gatekeeper",
         "role_file": "agents/15_gatekeeper_review/gatekeeper_review_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "ac_gatekeeper": {
         "name": "AC Gatekeeper",
         "role_file": "agents/acceptance_criteria_gatekeeper.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "core_simulation": {
         "name": "Core Simulation Agent",
         "role_file": "agents/5_core_simulation/core_simulation_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "gameplay_systems": {
         "name": "Gameplay Systems Agent",
         "role_file": "agents/6_gameplay_systems/gameplay_systems_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "presentation": {
         "name": "Presentation Agent",
         "role_file": "agents/7_presentation/presentation_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "engine_integration": {
         "name": "Engine Integration Agent",
         "role_file": "agents/8_engine_integration/engine_integration_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "implementation_frontend": {
         "name": "Implementation Frontend Agent",
         "role_file": "agents/misc_agents/implementation_frontend_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "implementation_backend": {
         "name": "Implementation Backend Agent",
         "role_file": "agents/misc_agents/implementation_backend_v1.md",
-        "adapter": "cursor",
         "timeout": 1800,
     },
     "gdscript_reviewer": {
         "name": "GDScript Reviewer",
         "role_file": "agents/common_assets/gdscript_reviewer_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "python_reviewer": {
         "name": "Python Reviewer",
         "role_file": "agents/misc_agents/python_reviewer_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "verifier": {
         "name": "Verifier",
         "role_file": "agents/misc_agents/verifier_v1.md",
-        "adapter": "claude",
         "timeout": 900,
     },
     "architecture_reviewer": {
         "name": "Architecture Reviewer",
         "role_file": "agents/misc_agents/architecture_reviewer_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "visual_qa": {
         "name": "Visual QA",
         "role_file": "agents/misc_agents/visual_qa_v1.md",
-        "adapter": "claude",
         "timeout": 900,
     },
     # Hyphenated because the agent already existed under this slug in live
@@ -150,19 +130,16 @@ AGENTS: dict[str, dict] = {
     "ui-design-decision": {
         "name": "UI Design Decision Maker",
         "role_file": "agents/misc_agents/ui_design_decision_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "debugger": {
         "name": "Debugger",
         "role_file": "agents/misc_agents/debugger_v1.md",
-        "adapter": "claude",
         "timeout": 900,
     },
     "repair": {
         "name": "Repair",
         "role_file": "agents/misc_agents/repair_v1.md",
-        "adapter": "claude",
         # 20261021_repair_timeout_for_merges: a merge turn reads both sides'
         # history and runs the covering tests; 900s cut off two that had resolved.
         "timeout": 2400,
@@ -171,50 +148,42 @@ AGENTS: dict[str, dict] = {
     "security_reviewer": {
         "name": "Security Reviewer",
         "role_file": "agents/misc_agents/security_reviewer_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "learning": {
         "name": "Learning Agent",
         "role_file": "agents/9_learning/learning_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "blog_post": {
         "name": "Blog Post Agent",
         "role_file": "agents/10_blog_post/blog_post_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "reference_surveyor": {
         "name": "Reference Surveyor",
         "role_file": "agents/misc_agents/reference_surveyor_v1.md",
-        "adapter": "claude",
         "timeout": 3600,
     },
     "retriever": {
         "name": "Research Librarian",
         "role_file": "agents/misc_agents/research_librarian_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "triage": {
         "name": "Baxter",
         "role_file": "agents/misc_agents/baxter_v1.md",
-        "adapter": "claude",
         "timeout": 1800,
         "claude_model": "haiku",
     },
     "ticket_scoper": {
         "name": "Ticket Scoper",
         "role_file": "agents/misc_agents/ticket_scoper_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
     "initiative_planner": {
         "name": "Initiative Planner",
         "role_file": "agents/misc_agents/initiative_planner_v1.md",
-        "adapter": "claude",
         "timeout": 600,
     },
 }

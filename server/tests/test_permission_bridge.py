@@ -206,7 +206,6 @@ def test_resolve_claude_adapter_uses_permission_bridge(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",
@@ -234,7 +233,6 @@ def test_permission_bypass_restores_headless_print_mode(tmp_path, monkeypatch):
 
     inv = resolve_cli_invocation(
         agent_id="planner",
-        adapter="claude",
         prompt="stage task",
         prompt_file=prompt_file,
         skill_name="plan",

@@ -48,7 +48,7 @@ from loregarden.services.chat_wait import (
 )
 from loregarden.services.cli_agent_runner import stub_response
 from loregarden.services.cli_auth_errors import format_agent_unavailable
-from loregarden.services.cli_settings import resolve_chat_adapter
+from loregarden.services.cli_settings import CHAT_SURFACE_DEFAULT, resolve_chat_adapter
 from loregarden.services.interruption_messages import restart_interruption_message
 from loregarden.services.run_cancellation import request_cancel
 from loregarden.services.run_concurrency import (
@@ -208,7 +208,7 @@ class TriageTurnExecutor:
         # see `resolve_chat_adapter`. An operator who does want this rail on
         # another provider sets it per ticket via `triage_runtime_json`.
         selected = resolve_chat_adapter(
-            agent_adapter=agent.get("adapter", "claude"),
+            surface_default=CHAT_SURFACE_DEFAULT,
             override_json=ticket.triage_runtime_json,
         )
         # Capability map — not adapter name. Codex/Cursor/LM Studio execute via

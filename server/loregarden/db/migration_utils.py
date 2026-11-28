@@ -42,6 +42,21 @@ def add_columns_if_missing(conn: Connection, table: str, columns: dict[str, str]
             conn.execute(text(statement))
 
 
+def drop_columns_if_present(conn: Connection, table: str, columns: list[str]) -> None:
+    """Drop each named column that is still on ``table``.
+
+    SQLite ``ALTER TABLE DROP COLUMN`` — not a rebuild, not an empty UPDATE.
+    A no-op when the column is already gone (guarded by ``table_columns``).
+    """
+    if not table_exists(conn, table):
+        return
+    existing = table_columns(conn, table)
+    quoted_table = _quote(table)
+    for name in columns:
+        if name in existing:
+            conn.execute(text(f"ALTER TABLE {quoted_table} DROP COLUMN {_quote(name)}"))
+
+
 def column_is_nullable(conn: Connection, table: str, column: str) -> bool:
     for row in conn.execute(text(f"PRAGMA table_info({table})")).fetchall():
         if row[1] == column:

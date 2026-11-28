@@ -20,8 +20,11 @@ import { Textarea } from "../ui/Textarea";
 import type { AgentDraft } from "./agentDraft";
 import { GateHandoffEditor } from "./GateHandoffEditor";
 import { McpToolGuideSection } from "./McpToolGuideSection";
-import { ADAPTERS } from "./studioAgentMeta";
-import { modelOptionsForAdapter } from "./studioWorkflowHelpers";
+import {
+  claudePinModelOptions,
+  ROLE_DEFAULT_MODEL_EMPTY_LABEL,
+  ROLE_DEFAULT_MODEL_HINT,
+} from "./studioWorkflowHelpers";
 import { ToolAccessSection } from "./ToolAccessSection";
 
 interface DraftProps {
@@ -129,7 +132,11 @@ export function AgentRuntimeTab({
   defaults: StudioDefaults | undefined;
 }) {
   const fieldId = useId();
-  const modelOptions = modelOptionsForAdapter(draft.adapter, runtimeOptions);
+  const modelOptions = claudePinModelOptions(
+    runtimeOptions,
+    draft.default_model,
+    ROLE_DEFAULT_MODEL_EMPTY_LABEL,
+  );
   return (
     <>
       <section className="studio-record-section" aria-labelledby={`${fieldId}-runtime`}>
@@ -137,53 +144,6 @@ export function AgentRuntimeTab({
           Runtime
         </h3>
         <div className="studio-field-row agent-runtime-row">
-          <div className="studio-field">
-            <label htmlFor={`${fieldId}-provider`} className="studio-field-label">
-              Provider
-            </label>
-            <Select
-              id={`${fieldId}-provider`}
-              className="studio-select"
-              value={draft.adapter}
-              disabled={readOnly}
-              onChange={(e) => setDraft({ ...draft, adapter: e.target.value })}
-            >
-              {ADAPTERS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="studio-field">
-            <label htmlFor={`${fieldId}-model`} className="studio-field-label">
-              Default model
-            </label>
-            {modelOptions ? (
-              <Select
-                id={`${fieldId}-model`}
-                className="studio-select mono"
-                value={draft.default_model}
-                disabled={readOnly}
-                onChange={(e) => setDraft({ ...draft, default_model: e.target.value })}
-              >
-                {modelOptions.map((opt) => (
-                  <option key={opt.id || "default"} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
-            ) : (
-              <Input
-                id={`${fieldId}-model`}
-                className="studio-input mono"
-                placeholder="Model id"
-                value={draft.default_model}
-                readOnly={readOnly}
-                onChange={(e) => setDraft({ ...draft, default_model: e.target.value })}
-              />
-            )}
-          </div>
           <div className="studio-field">
             <label htmlFor={`${fieldId}-skill`} className="studio-field-label">
               Default skill
@@ -202,6 +162,28 @@ export function AgentRuntimeTab({
                 </option>
               ))}
             </Select>
+          </div>
+          <div className="studio-field">
+            <label htmlFor={`${fieldId}-model`} className="studio-field-label">
+              Default model
+            </label>
+            <Select
+              id={`${fieldId}-model`}
+              className="studio-select mono"
+              value={draft.default_model}
+              disabled={readOnly}
+              aria-describedby={`${fieldId}-model-hint`}
+              onChange={(e) => setDraft({ ...draft, default_model: e.target.value })}
+            >
+              {modelOptions.map((opt) => (
+                <option key={opt.id || "default"} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </Select>
+            <p id={`${fieldId}-model-hint`} className="studio-card-hint" style={{ margin: "4px 0 0" }}>
+              {ROLE_DEFAULT_MODEL_HINT}
+            </p>
           </div>
           <div className="studio-field">
             <label htmlFor={`${fieldId}-timeout`} className="studio-field-label">

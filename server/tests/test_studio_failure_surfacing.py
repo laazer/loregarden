@@ -70,42 +70,47 @@ class TestWarningsAreComputedOnRead:
         """Computed in the view, not on save, so a stale misconfiguration
         surfaces the moment someone looks at it."""
         service = StudioService(db_session)
-        service.create_agent(StudioAgentCreate(slug="warned", name="Warned", adapter="cursor"))
+        service.create_agent(StudioAgentCreate(slug="warned", name="Warned"))
         service.update_agent(
             "warned",
             StudioAgentUpdate(tool_grants=StudioAgentToolGrants(posture=ToolPosture.ALLOWLIST)),
         )
 
         # A fresh read, as if opening the agent in a later session.
-        codes = {w.code for w in StudioService(db_session).get_agent("warned").tool_grant_warnings}
-        assert ToolGrantWarningCode.ADAPTER_IGNORES_GRANTS in codes
+        view = StudioService(db_session).get_agent("warned")
+        codes = {w.code for w in view.tool_grant_warnings}
+        assert getattr(ToolGrantWarningCode, "ADAPTER_IGNORES_GRANTS", None) not in codes
+        for warning in view.tool_grant_warnings:
+            assert "until the agent's provider is Claude" not in warning.message
 
     def test_warnings_appear_in_the_list_view_too(self, db_session):
         service = StudioService(db_session)
-        service.create_agent(StudioAgentCreate(slug="listed", name="Listed", adapter="codex"))
+        service.create_agent(StudioAgentCreate(slug="listed", name="Listed"))
         service.update_agent(
             "listed",
             StudioAgentUpdate(tool_grants=StudioAgentToolGrants(posture=ToolPosture.ALLOWLIST)),
         )
         listed = next(a for a in service.list_agents() if a.slug == "listed")
-        assert listed.tool_grant_warnings
+        codes = {w.code for w in listed.tool_grant_warnings}
+        assert getattr(ToolGrantWarningCode, "ADAPTER_IGNORES_GRANTS", None) not in codes
 
     def test_a_default_agent_reports_an_empty_list_not_a_missing_one(self, db_session):
         service = StudioService(db_session)
-        service.create_agent(StudioAgentCreate(slug="plain", name="Plain", adapter="claude"))
+        service.create_agent(StudioAgentCreate(slug="plain", name="Plain"))
         view = service.get_agent("plain")
         assert view.tool_grant_warnings == []
 
     def test_warnings_never_block_a_save(self, db_session):
         """Narrowing on purpose is legitimate; the API must accept it."""
         service = StudioService(db_session)
-        service.create_agent(StudioAgentCreate(slug="narrow", name="Narrow", adapter="cursor"))
+        service.create_agent(StudioAgentCreate(slug="narrow", name="Narrow"))
         saved = service.update_agent(
             "narrow",
             StudioAgentUpdate(tool_grants=StudioAgentToolGrants(posture=ToolPosture.ALLOWLIST)),
         )
         assert saved.tool_grants.posture is ToolPosture.ALLOWLIST
-        assert saved.tool_grant_warnings
+        codes = {w.code for w in saved.tool_grant_warnings}
+        assert getattr(ToolGrantWarningCode, "ADAPTER_IGNORES_GRANTS", None) not in codes
 
 
 class TestGrantedServerFilteringIsAnnounced:
