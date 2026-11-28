@@ -133,6 +133,39 @@ def test_the_credential_reaches_the_subprocess_config(db_session: Session):
     assert entries["github"]["headers"] == {"Authorization": "Bearer tok"}
 
 
+def test_an_http_server_with_no_token_set_sends_no_authorization(db_session: Session):
+    create_server(db_session, _http(auth_env_var="GITHUB_MCP_TOKEN"))
+    create_server(db_session, _http(name="open"))
+    with patch.dict("os.environ", {}, clear=True):
+        entries = cli_server_entries(db_session)
+    assert entries["github"] == {"type": "http", "url": "https://mcp.example/sse"}
+    assert entries["open"] == {"type": "http", "url": "https://mcp.example/sse"}
+
+
+def test_a_stdio_server_is_launched_and_passed_its_credential_by_name(db_session: Session):
+    create_server(
+        db_session,
+        McpServerCreate(
+            name="local",
+            transport="stdio",
+            command="mcp-local",
+            args=["--port", "0"],
+            auth_env_var="LOCAL_MCP_TOKEN",
+        ),
+    )
+    create_server(db_session, McpServerCreate(name="plain", transport="stdio", command="mcp-plain"))
+    with patch.dict("os.environ", {"LOCAL_MCP_TOKEN": "tok"}):
+        entries = cli_server_entries(db_session)
+
+    assert entries["local"] == {
+        "type": "stdio",
+        "command": "mcp-local",
+        "args": ["--port", "0"],
+        "env": {"LOCAL_MCP_TOKEN": "tok"},
+    }
+    assert entries["plain"] == {"type": "stdio", "command": "mcp-plain", "args": []}
+
+
 def test_a_disabled_server_is_withheld_from_agents(db_session: Session):
     """Parked, not deleted — a misbehaving server keeps its configuration."""
     server = create_server(db_session, _http())

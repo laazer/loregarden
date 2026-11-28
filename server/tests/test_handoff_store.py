@@ -228,3 +228,19 @@ def test_the_boundary_survives_the_yaml_export(isolated_db, tmp_path):
 
     exported = yaml.safe_load((root / "t1-demo" / HANDOFF_FILENAME).read_text(encoding="utf-8"))
     assert boundary_from_doc(exported) == boundary
+
+
+def test_a_tracked_handoff_is_never_exported_in_place_of_a_stored_one(isolated_db, tmp_path):
+    """Absence is meaningful: with nothing stored, a stale tracked file must not stand in."""
+    repo = tmp_path / "repo"
+    ticket_dir = repo / CHECKPOINTS_SUBDIR / "t1-demo"
+    (ticket_dir / "nested").mkdir(parents=True)
+    (ticket_dir / HANDOFF_FILENAME).write_text("handoff: {from_agent: stale}\n", encoding="utf-8")
+    (ticket_dir / "todos-latest.json").write_text("{}", encoding="utf-8")
+
+    with Session(isolated_db) as session:
+        _, ticket = _seed(session, repo)
+        root = export_for_gate(session, ticket, repo_root=repo)
+
+    exported = root / "t1-demo"
+    assert sorted(p.name for p in exported.iterdir()) == ["todos-latest.json"]

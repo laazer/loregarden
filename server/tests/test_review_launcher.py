@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+import os
+import signal
+import subprocess
 import time
 from pathlib import Path
 from unittest import mock
 
 import pytest
 from loregarden.models.domain import Workspace
+from loregarden.services import review_launcher as review_launcher_module
 from loregarden.services.git_subprocess import run_git
 from loregarden.services.review_config import LaunchError, LaunchKind, config_status
 from loregarden.services.review_launcher import (
@@ -182,6 +187,83 @@ def test_stop_kills_a_running_build(repo: Path):
     state = _settle(launcher, "game")
 
     assert state.phase is LaunchPhase.STOPPED
+
+
+def test_stop_returns_once_its_sigterm_has_ended_the_build(repo: Path, caplog):
+    workspace = _workspace(repo, 'launch:\n  command: ["sleep", "60"]\n')
+    launcher = ReviewLauncher()
+    launcher.launch(workspace, ref="main")
+    _wait_for_pid(launcher, "game")
+    pid = launcher.status("game").pid
+
+    with caplog.at_level(logging.WARNING, logger=review_launcher_module.logger.name):
+        launcher.stop("game")
+
+    # Read at once, not polled: stop waited for the exit, so the build is at most
+    # a zombie its reaper has not collected yet.
+    assert _exited_now(pid)
+    assert not [r for r in caplog.records if r.name == review_launcher_module.logger.name], (
+        "the SIGKILL fallback was not needed"
+    )
+
+
+def test_a_build_that_ignores_sigterm_is_killed(repo: Path, caplog, request):
+    workspace = _workspace(
+        repo, 'launch:\n  command: ["sh", "-c", "trap \'\' TERM; while :; do sleep 0.1; done"]\n'
+    )
+    launcher = ReviewLauncher()
+    launcher.launch(workspace, ref="main")
+    _wait_for_pid(launcher, "game")
+    pid = launcher.status("game").pid
+    # A build that ignores SIGTERM outlives a failing run of this test; reap it.
+    request.addfinalizer(lambda: _kill_group(pid))
+    time.sleep(0.2)  # let the shell install its trap
+    real_wait = subprocess.Popen.wait
+
+    def wait(self, timeout=None):
+        if timeout == 10:  # stop's grace period: pretend it ran out
+            raise subprocess.TimeoutExpired(self.args, timeout)
+        return real_wait(self, timeout)
+
+    with (
+        mock.patch.object(subprocess.Popen, "wait", wait),
+        caplog.at_level(logging.WARNING, logger=review_launcher_module.logger.name),
+    ):
+        launcher.stop("game")
+    state = _settle(launcher, "game")
+
+    assert state.phase is LaunchPhase.STOPPED
+    assert not _alive(pid)
+    assert [r for r in caplog.records if r.name == review_launcher_module.logger.name]
+
+
+def test_stopping_a_workspace_with_no_launch_is_no_answer():
+    assert ReviewLauncher().stop("never-launched") is None
+
+
+def _exited_now(pid: int) -> bool:
+    """Gone, or a zombie: either way the process has ended."""
+    ps = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    stat = ps.stdout.strip()
+    return stat == "" or stat.startswith("Z")
+
+
+def _kill_group(pid: int) -> None:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:  # silent-ok: the test already stopped it, the usual case
+        pass
+
+
+def _alive(pid: int) -> bool:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def test_stop_kills_a_running_prepare(repo: Path):

@@ -13,6 +13,7 @@ go" is not a question a mock can answer.
 
 from __future__ import annotations
 
+import logging
 from unittest import mock
 
 import pytest
@@ -24,6 +25,7 @@ from loregarden.models.domain import (
     Worktree,
     WorktreeState,
 )
+from loregarden.services import chat_branch_sweep
 from loregarden.services.branch_names import chat_session_branch
 from loregarden.services.chat_branch_sweep import sweep_all_chat_branches, sweep_chat_branches
 from loregarden.services.chat_worktree import resolve_chat_execution_root
@@ -282,6 +284,40 @@ def test_one_unreadable_workspace_does_not_stop_the_others(session, workspace, r
 
     assert removed == 1
     assert branch not in git(repo, "branch", "--format=%(refname:short)").stdout
+
+
+def test_a_workspace_whose_sweep_raises_is_logged_and_the_rest_still_swept(
+    session, workspace, repo, pruning, caplog
+):
+    broken = Workspace(slug="raises", name="raises", repo_path=str(repo))
+    session.add(broken)
+    session.commit()
+    _, _, branch, _ = _thread_that_wrote(session, workspace, repo, landed=True)
+    real = chat_branch_sweep.sweep_chat_branches
+
+    def sweep(session, ws):
+        if ws.slug == "raises":
+            raise RuntimeError("repository unreadable")
+        return real(session, ws)
+
+    with (
+        mock.patch.object(chat_branch_sweep, "sweep_chat_branches", side_effect=sweep),
+        caplog.at_level(logging.WARNING, logger=chat_branch_sweep.logger.name),
+    ):
+        removed = sweep_all_chat_branches(session)
+
+    assert removed == 1
+    assert branch not in git(repo, "branch", "--format=%(refname:short)").stdout
+    own = [r for r in caplog.records if r.name == chat_branch_sweep.logger.name]
+    assert [r.levelno for r in own if r.exc_info] == [logging.ERROR], "the failure is logged"
+    assert any(r.levelno == logging.WARNING for r in own), "the removal is logged"
+
+
+def test_a_sweep_that_removes_nothing_logs_nothing(session, workspace, repo, pruning, caplog):
+    _thread_that_wrote(session, workspace, repo, landed=False)
+    with caplog.at_level(logging.WARNING, logger=chat_branch_sweep.logger.name):
+        assert sweep_all_chat_branches(session) == 0
+    assert not [r for r in caplog.records if r.name == chat_branch_sweep.logger.name]
 
 
 def test_two_threads_are_judged_independently(session, workspace, repo, remote, pruning):

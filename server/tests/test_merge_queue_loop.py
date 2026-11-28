@@ -29,6 +29,7 @@ from loregarden.models.domain import (
     utcnow,
 )
 from loregarden.services import merge_queue_github, merge_queue_loop
+from loregarden.services.git_automation import StepResult
 from loregarden.services.git_merge_noco import MergeOutcome
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.merge_queue import Candidate, enqueue, transition, withdraw
@@ -341,6 +342,57 @@ def test_a_staged_commit_whose_checks_pass_lands_its_own_tree(
     assert entry.merge_commit == landed
     assert entry.landed_tree == staged_tree == git(origin, "rev-parse", f"{landed}^{{tree}}")
     assert github.merges == [(7, entry.staged_sha)]
+
+
+def test_staging_names_the_staged_pr_in_the_cycle_report(session, workspace, github, entry):
+    report = _cycle(session, workspace, github)
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.TESTING
+    assert any(f"PR #{ENTRY_PR}" in action for action in report.actions)
+
+
+def test_a_failed_push_requeues_the_entry_and_counts_the_attempt(
+    session, workspace, origin, github, entry, caplog
+):
+    before = git(origin, "rev-parse", f"refs/heads/publish/{ENTRY_BRANCH}")
+    refused = StepResult(step="push", ok=False, detail="remote hung up")
+    with (
+        mock.patch.object(merge_queue_loop, "push_commit_as", return_value=refused),
+        caplog.at_level(logging.WARNING, logger=merge_queue_loop.logger.name),
+    ):
+        report = _cycle(session, workspace, github)
+
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.QUEUED
+    assert entry.attempts == 1
+    assert entry.staged_sha in ("", None), "nothing was staged for checks"
+    assert any(f"PR #{ENTRY_PR}" in error for error in report.errors)
+    assert [
+        r
+        for r in caplog.records
+        if r.name == merge_queue_loop.logger.name and r.levelno >= logging.WARNING
+    ]
+    assert git(origin, "rev-parse", f"refs/heads/publish/{ENTRY_BRANCH}") == before
+
+
+def test_an_entry_out_of_attempts_fails_without_staging_again(
+    session, workspace, origin, github, entry
+):
+    entry.attempts = 2
+    session.add(entry)
+    session.commit()
+    before = git(origin, "rev-parse", f"refs/heads/publish/{ENTRY_BRANCH}")
+
+    with (
+        mock.patch.object(merge_queue_loop.settings, "merge_queue_max_attempts", 2),
+        mock.patch.object(merge_queue_loop, "push_commit_as") as push,
+    ):
+        _cycle(session, workspace, github)
+
+    session.refresh(entry)
+    assert entry.state is MergeQueueState.FAILED
+    push.assert_not_called()
+    assert git(origin, "rev-parse", f"refs/heads/publish/{ENTRY_BRANCH}") == before
 
 
 def test_a_base_that_moves_after_staging_restages_instead_of_merging(
