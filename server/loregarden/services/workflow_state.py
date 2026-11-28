@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from loregarden.core.agent_groups import group_span
 from loregarden.core.stage_groups import emptied_groups
 from loregarden.models.domain import (
     ParallelAgentSpec,
@@ -392,9 +393,17 @@ def _views_from(
             stage_type=stage.stage_type or "agent",
             agents=_stage_agent_refs(stage),
             model=stage.model,
+            agent_group=stage.agent_group,
+            gates_at_group_end=_gates_at_group_end(stages, stage),
         )
         for stage in sorted(stages, key=lambda s: s.order)
     ]
+
+
+def _gates_at_group_end(stages: list[WorkflowStageDef], stage: WorkflowStageDef) -> bool:
+    """Whether `stage` is the last step of its agent group, where the group's gate runs."""
+    span = group_span(stages, stage.key)
+    return bool(span) and span[-1].key == stage.key
 
 
 def stage_views_readonly(

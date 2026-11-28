@@ -31,6 +31,7 @@ from loregarden.models.domain import (
     GateFixTier,
     GateOutcome,
     OrchestrationRun,
+    ReworkStopReason,
     Ticket,
     WorkflowInstance,
     WorkflowStageDef,
@@ -60,6 +61,10 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.orchestration_profile import OrchestrationProfile
 from loregarden.services.repair_brief import record_gate_fix_brief
+from loregarden.services.rework_feedback import (
+    record_reroute_exhausts_budget,
+    rework_reroute_count,
+)
 from loregarden.services.stage_retry_budget import (
     count_gate_fix_attempts,
     foreign_gate_failure_artifact_title,
@@ -186,6 +191,7 @@ class GateRecovery:
         *,
         from_stage: str,
         to_stage: str,
+        group_head: str = "",
     ) -> GateDecision:
         """Run the transition gate for a just-completed stage and, if it fails,
         try to fix it automatically before pulling in a human.
@@ -195,11 +201,20 @@ class GateRecovery:
         back to the stage's own agent for a bounded number of inline retries.
         Only once those are exhausted do we fall back to today's behaviour —
         reroute for rework and pause for a human.
+
+        `group_head` names the first step of an agent group whose combined
+        end-of-group gate this is (`agent_group_dispatch.settle_group`):
+        `stage_def` is then the union of the group's gates, missing union
+        evidence fails the gate too, and a failure sends the whole group back
+        from its head as one rework round (`_reroute_group`).
         """
         workspace = workspace_for_ticket(self.session, ticket)
         if not workspace:
             # Can't run gates without a workspace; don't wedge the pipeline over it.
             return GateDecision.PASS
+        group_evidence = (
+            self._missing_evidence_detail(ticket, stage_def, stages) if group_head else ""
+        )
 
         # Missing required evidence is a collect_signals input (stage_verdict),
         # settled by the write-path derive before DONE. It is not an independent
@@ -256,6 +271,7 @@ class GateRecovery:
             detail = clean_gate_detail(result)
         else:
             detail = ""
+        detail = _joined_detail(detail, group_evidence)
         if not detail:
             return GateDecision.PASS
 
@@ -291,15 +307,15 @@ class GateRecovery:
                     to_stage=to_stage,
                     fix_tier=GateFixTier.MECHANICAL,
                 )
-                if not residual:
+                if not residual and not group_evidence:
                     self._commit_autofix(
                         ticket, from_stage, autofix.output, repo_root=repo_root, before=footprint
                     )
                     return GateDecision.PASS
-                detail = residual
+                detail = _joined_detail(residual, group_evidence)
 
         return self._decide_unfixed_gate_failure(
-            ticket, instance, stages, orch_run, profile, from_stage, detail
+            ticket, instance, stages, orch_run, profile, from_stage, detail, group_head=group_head
         )
 
     def _decide_unfixed_gate_failure(
@@ -311,6 +327,8 @@ class GateRecovery:
         profile: OrchestrationProfile,
         from_stage: str,
         detail: str,
+        *,
+        group_head: str = "",
     ) -> GateDecision:
         """Who should look at a gate failure the fixers could not clear.
 
@@ -368,6 +386,19 @@ class GateRecovery:
             )
             detail = partition.in_scope_detail or detail
 
+        if group_head:
+            # A combined end-of-group gate: the group goes back as one unit,
+            # charged once to the rework cap and never to a member's gate-fix budget.
+            return self._reroute_group(
+                ticket,
+                instance,
+                stages,
+                orch_run,
+                head=group_head,
+                from_stage=from_stage,
+                detail=detail,
+            )
+
         # Route back to the stage's own agent with the gate errors in context,
         # up to a bounded number of tries — counted durably (see
         # count_gate_fix_attempts) so the budget can't be refreshed just by
@@ -390,6 +421,62 @@ class GateRecovery:
             agent_passes=profile.gates.autofix_agent_fallback,
         )
         return GateDecision.REROUTED if repair_pinned(ticket, from_stage) else GateDecision.BLOCKED
+
+    def _reroute_group(
+        self,
+        ticket: Ticket,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+        *,
+        head: str,
+        from_stage: str,
+        detail: str,
+    ) -> GateDecision:
+        """Send an agent group back from its head after its combined gate failed.
+
+        One rework feedback row, addressed to the head, counted once against
+        `MAX_REWORK_REROUTES`; at the cap (or when the finding repeats) the
+        ticket blocks and a REWORK_PAUSE is filed. No per-step gate-failure
+        artifact is written, so no member's gate-fix budget is charged; the
+        evaluation itself is already on the Timeline (`record_gate_evaluation`).
+        """
+        stop = record_reroute_exhausts_budget(
+            self.session,
+            ticket,
+            target_stage=head,
+            from_stage=from_stage,
+            context=(
+                f"The combined end-of-group gate after '{from_stage}' failed; the group from "
+                f"'{head}' is sent back as one unit.\n\n{detail}"
+            ),
+        )
+        if stop is not ReworkStopReason.NONE:
+            reason = _group_pause_reason(
+                stop, head, rework_reroute_count(self.session, ticket, head)
+            )
+            self.callbacks.pause_for_rework_decision(
+                orch_run, ticket, stage_key=from_stage, target_stage=head, message=reason
+            )
+            return GateDecision.BLOCKED
+        apply_stage_route(
+            ticket,
+            instance,
+            stages,
+            self.orch._resolve_transitions(ticket),
+            from_key=from_stage,
+            outcome="reject",
+            next_stage_key=head,
+            blocking_issues=(
+                f"The combined gate for the group from '{head}' failed. Fix these issues across "
+                f"the group's steps and report `pass`:\n\n{detail}"
+            ),
+            orch_run=orch_run,
+        )
+        self.session.add(ticket)
+        self.session.add(instance)
+        self.session.commit()
+        return GateDecision.REROUTED
 
     def _ticket_changed_paths(self, ticket: Ticket) -> list[str]:
         """Every path this ticket's runs have touched.
@@ -716,4 +803,23 @@ def _gate_repair_policy(
             f"The transition gate out of '{from_stage}' still fails after its automatic "
             f"fixes and agent retries. {GATE_FIX_AUTHORITY}\n\n{detail}"
         )
+    )
+
+
+def _joined_detail(*parts: str) -> str:
+    """The non-empty failure details, one paragraph each."""
+    return "\n\n".join(part for part in parts if part)
+
+
+def _group_pause_reason(stop: ReworkStopReason, head: str, count: int) -> str:
+    """Why a group's rework loop stopped for a person."""
+    if stop is ReworkStopReason.STUCK:
+        return (
+            f"Rework loop: agent group from '{head}' is not converging: the same combined-gate "
+            "finding against the same commit twice running. Paused for a human — see the "
+            "accumulated rework feedback."
+        )
+    return (
+        f"Rework loop: agent group from '{head}' has been rerouted {count}× without passing "
+        "its combined gate. Paused for a human — see the accumulated rework feedback."
     )

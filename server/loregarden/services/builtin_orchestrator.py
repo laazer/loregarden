@@ -25,6 +25,13 @@ from loregarden.models.domain import (
     WorkflowStageDef,
 )
 from loregarden.services import orchestration_capacity, reload_hold
+from loregarden.services.agent_group_dispatch import (
+    GroupSettlement,
+    dispatch_timeout_seconds,
+    effective_stage_key,
+    group_keys_for_dispatch,
+    settle_group,
+)
 from loregarden.services.block_repair import repair_pinned
 from loregarden.services.block_settlement import RepairPolicy
 from loregarden.services.child_readiness import (
@@ -72,6 +79,12 @@ from loregarden.services.run_lease import RunStoppedBeforeStart, supervised
 from loregarden.services.stage_retry_budget import (
     enforce_stage_retry_budget,
 )
+from loregarden.services.stage_timeouts import (  # re-exported: tests read them here
+    STAGE_TIMEOUT_BUDGETS as STAGE_TIMEOUT_BUDGETS,
+)
+from loregarden.services.stage_timeouts import (
+    stage_timeout_seconds as stage_timeout_seconds,
+)
 from loregarden.services.stage_transient_retry import (
     latest_run_for_stage,
     stage_rearmed_for_latest_run,
@@ -97,49 +110,6 @@ from sqlmodel import Session, select
 
 logger = logging.getLogger(__name__)
 
-#: Per-stage floors, calibrated 2026-09-11 against the 95th percentile of every
-#: SUCCEEDED run's wall clock, per stage, with the sample size beside each. The
-#: first version of this map (686) was sized by judgement; these are measured.
-#:
-#: Read the numbers with one caveat, which is why each floor sits *above* its
-#: p95 rather than at it: the sample is right-censored. Every run in it completed
-#: under the ceiling in force at the time — mostly 600s — so runs that needed
-#: longer are absent by construction, and the true distribution has a heavier
-#: tail than this one can show. A floor set exactly at a censored p95 would be
-#: too small by an unknown amount. Rounding up to the next 300s step is the
-#: margin for that, not padding.
-#:
-#: Raising a floor costs something real: `TIMEOUT_HARD_CAP_MULTIPLIER` is 4, so a
-#: genuinely hung stage now burns four times the number below before it is
-#: killed. That is the trade this map makes deliberately — a hang is rare and
-#: visible, while a stage killed mid-work parks a ticket and looks like a defect
-#: in the agent.
-STAGE_TIMEOUT_BUDGETS: dict[str, int] = {
-    # p95 2559s over 149 runs — the heaviest stage by a wide margin, and the one
-    # whose old 600s ceiling produced most of the recorded timeout deaths.
-    "implement": 2700,
-    # No measured sample of their own (the split implementers are newer than the
-    # runs here); they inherit `implement`'s shape, one scope narrower.
-    "backend-impl": 1800,
-    "frontend-impl": 1800,
-    # p95 1968s over 15 runs. Small sample, wide spread — a consultation reads
-    # far more than it writes.
-    "domain_consultation": 2100,
-    # p95 1811s over 8 runs. The smallest sample in this map; treat as
-    # provisional and re-measure once it has run more.
-    "branch-triage": 2100,
-    "verify": 1800,  # p95 1633s over 46 runs
-    "test-design": 1800,  # p95 1660s over 70 runs
-    "gate": 1800,  # p95 1622s over 23 runs
-    "test-break": 1500,  # p95 1343s over 75 runs
-    "review": 1200,  # p95 1159s over 114 runs
-    "plan": 1200,  # p95 997s over 113 runs
-    "script_review": 900,  # p95 859s over 125 runs
-    "learning": 900,  # p95 687s over 12 runs
-    "spec": 900,  # p95 641s over 59 runs
-    "triage": 900,  # p95 627s over 136 runs — p50 is 88s; the tail is the cost
-}
-
 
 def _pending_gate_approval(session: Session, ticket: Ticket) -> Approval | None:
     """This ticket's pending workflow gate, or None.
@@ -155,33 +125,6 @@ def _pending_gate_approval(session: Session, ticket: Ticket) -> Approval | None:
             Approval.status == ApprovalStatus.PENDING,
         )
     ).first()
-
-
-def stage_timeout_seconds(stage_def: WorkflowStageDef, run_default: int | None) -> int | None:
-    """This stage's agent budget: its own if it declares one, else a floor for
-    the heavy stages, else the run's.
-
-    One budget for every stage is why `implement` timed out at 600s while still
-    producing output — 35% of `implement` runs that DID succeed ran longer than
-    that, against 6% for `triage` (lg-workflow-integrity-686). The spread is
-    structural: the stages differ in how much work they are, not in how lucky
-    they got.
-
-    Resolved at dispatch rather than written into templates by a migration.
-    Every template in this installation that a run actually uses is
-    operator-authored (`built_in=0`), so a migration wide enough to help them
-    would rewrite operator data and bump a version pins refer to — which is what
-    `test_skill_migration_preserves_existing_non_skill_data` exists to catch.
-    A default costs no rows and covers templates authored after it lands.
-
-    The budget resizes a bound, never introduces one: a run with no timeout
-    keeps none, and a run whose own default is already larger keeps that.
-    """
-    if stage_def.timeout_seconds:
-        return stage_def.timeout_seconds
-    if run_default is None:
-        return None
-    return max(run_default, STAGE_TIMEOUT_BUDGETS.get(stage_def.key, 0))
 
 
 class BuiltinOrchestrator:
@@ -309,7 +252,9 @@ class BuiltinOrchestrator:
                     stage_def,
                     target_key,
                     auto_approve=auto_approve,
-                    timeout_seconds=stage_timeout_seconds(stage_def, agent_timeout),
+                    timeout_seconds=dispatch_timeout_seconds(
+                        ticket, stages, stage_map, stage_def, agent_timeout
+                    ),
                     stop_at_stage_key=stop_at_stage_key,
                     resuming=(target_key == recovered_stage_key),
                 )
@@ -540,7 +485,11 @@ class BuiltinOrchestrator:
 
         One predicate rather than two adjacent guards because `execute` is at its
         statement cap, and because the answer they compute is one question.
+
+        For a group run every question is asked of the step the run ended on,
+        not the one it was dispatched for (`effective_stage_key`).
         """
+        target_key = effective_stage_key(self.session, ticket, target_key)
         if ticket.scope_reroute_agent:
             return True
         # **A repair turn** (`block_repair`, 750): the stage blocked, the block
@@ -556,50 +505,9 @@ class BuiltinOrchestrator:
         # of a terminal stage, and the run closes SUCCEEDED over unlanded work —
         # exactly what a landing-conflict resolver's resolution hit
         # (lg-milestone-that-929).
-        if self._terminal_stage_owes_a_landing(ticket, target_key):
+        if _terminal_stage_owes_a_landing(self.session, self.orch, ticket, target_key):
             return True
         return stage_rearmed_for_latest_run(self.session, ticket, target_key)
-
-    def _terminal_stage_owes_a_landing(self, ticket: Ticket, target_key: str) -> bool:
-        """Whether a *passing* run left the terminal stage PENDING for the landing.
-
-        Narrow on purpose, because the re-attempt this authorises is what turns a
-        finished run into another pass of the loop. All of these must hold, and
-        each excludes a state that must NOT re-dispatch:
-
-        * it is this ticket's current stage and PENDING — a stage elsewhere in
-          the map is not this question;
-        * the stage is TERMINAL — an ordinary stage left PENDING is the loop's
-          own business and re-dispatching it would spin;
-        * the stage is AGENTLESS — the landing is owed by a terminal *marker*,
-          whose next pass finalizes through `_finish_workflow` and lands. A
-          terminal stage that names an agent of its own is PENDING after every
-          pass it makes, so without this the loop would re-dispatch that agent
-          until `max_stages` with nothing landed. No live template has one, but
-          `studio_workflow_validation` does not forbid authoring one;
-        * its most recent run SUCCEEDED — a cancelled run leaves the terminal
-          stage PENDING too, and re-dispatching there restarts work a human
-          stopped;
-        * that run reported no verdict worse than `pass` — a report of
-          `blocked`/`fail` sets the stage BLOCKED rather than PENDING, so an
-          agent that resolved the conflict and then reported `blocked` still
-          blocks instead of having its work landed over its own word.
-
-        The last is carried by the one before it: the only path that leaves a
-        terminal stage PENDING on a SUCCEEDED run is the pass branch in
-        `run_completion._advance_clean_exit`. The repair pin is consumed at
-        dispatch and asked before this predicate, so a resolver's own turn is
-        not the dispatch this clause authorises.
-        """
-        latest = latest_run_for_stage(self.session, ticket, target_key)
-        if latest is None or latest.status is not RunStatus.SUCCEEDED:
-            return False
-        # Resolved here rather than taken from the caller so the predicate
-        # cannot be told the wrong answer by a second call site.
-        stage_def = self.orch.stage_definition(ticket, target_key)
-        if stage_def is None or not is_terminal_stage(stage_def):
-            return False
-        return is_agentless_stage(stage_def)
 
     def _complete_run(self, orch_run: OrchestrationRun, ticket: Ticket) -> OrchestrationRun:
         """Close an orchestration run, deriving its status from the ticket's own
@@ -666,6 +574,8 @@ class BuiltinOrchestrator:
         """
         self.session.refresh(ticket)
         instance, stages = self.orch._resolve_stages(ticket)
+        if instance and stage_def.agent_group:
+            return self._settle_group(ticket, profile, stage_def, instance, stages, orch_run)
         stage_map = parse_stage_map(instance, stages) if instance else {}
         status_after = stage_map.get(target_key, ticket.workflow_stage_status)
 
@@ -711,6 +621,37 @@ class BuiltinOrchestrator:
             # GateDecision.PASS falls through to advance normally.
 
         if not next_key:
+            return self._pause_orchestration(orch_run, ticket)
+        return None
+
+    def _settle_group(
+        self,
+        ticket: Ticket,
+        profile: OrchestrationProfile,
+        stage_def: WorkflowStageDef,
+        instance: WorkflowInstance,
+        stages: list[WorkflowStageDef],
+        orch_run: OrchestrationRun,
+    ) -> OrchestrationRun | None:
+        """After a grouped step's run: the combined gate once the span is settled.
+
+        None continues the loop: an incomplete span re-picks its first
+        incomplete step, a passed gate advances, a failed one re-runs the group.
+        """
+        settlement = settle_group(
+            self.gates,
+            ticket,
+            profile,
+            stage_def,
+            instance,
+            stages,
+            orch_run,
+            transitions=self.orch._resolve_transitions(ticket),
+        )
+        if settlement is GroupSettlement.BLOCKED:
+            self.session.refresh(orch_run)
+            return orch_run
+        if settlement is GroupSettlement.NO_ROUTE:
             return self._pause_orchestration(orch_run, ticket)
         return None
 
@@ -971,12 +912,14 @@ class BuiltinOrchestrator:
         and return `orch_run` now (paused at `stop_at_stage_key`, or the
         sub-agent failed), False to keep processing this pass normally.
         """
+        covered = group_keys_for_dispatch(self.orch, ticket, target_key)
         agent_run = self.orch.start_run(
             ticket,
             stage_key=target_key,
             orchestration_run_id=orch_run.id,
             auto_approve=auto_approve,
             timeout_override_seconds=timeout_seconds,
+            group_stage_keys=covered,
         )
         try:
             with supervised(agent_run.id, run_capacity(self.session, agent_run)):
@@ -984,6 +927,8 @@ class BuiltinOrchestrator:
         except RunStoppedBeforeStart:
             completed = settle_stopped_before_start(self.session, agent_run)
         self.session.refresh(ticket)
+        # A group run's step moved with the agent: settle the one it ended on.
+        ended_on = completed.stage_key
 
         if completed.status == RunStatus.CANCELLED:
             # A stop is not a failure: completion left the stage PENDING with no
@@ -998,7 +943,7 @@ class BuiltinOrchestrator:
                 )
             return True
 
-        if stop_at_stage_key and target_key == stop_at_stage_key:
+        if stop_at_stage_key and stop_at_stage_key in {target_key, *covered}:
             self.callbacks.complete_orchestration(
                 orch_run,
                 ticket,
@@ -1027,11 +972,11 @@ class BuiltinOrchestrator:
             # stderr of a run that never reached the work — the ticket parked on
             # a server reload, which is what the retry exists to stop. Let the
             # pass continue; the loop re-dispatches.
-            if stage_rearmed_for_latest_run(self.session, ticket, target_key):
+            if stage_rearmed_for_latest_run(self.session, ticket, ended_on):
                 return False
             # `run_completion` classified the failure and, when it could, re-armed
             # the stage for its repair turn (750) — the loop re-runs it inline.
-            if repair_pinned(ticket, target_key):
+            if repair_pinned(ticket, ended_on):
                 return False
             self.callbacks.block_ticket(
                 orch_run,
@@ -1042,9 +987,9 @@ class BuiltinOrchestrator:
                 # hand and armed no repair, so its recorded reason stands; this is
                 # only reached unsettled if completion itself broke.
                 repair=RepairPolicy.withheld(
-                    f"The run on '{target_key}' failed and its completion re-armed nothing."
+                    f"The run on '{ended_on}' failed and its completion re-armed nothing."
                 ),
-                stage_key=target_key,
+                stage_key=ended_on,
                 message=completed.stderr or "Stage sub-agent failed",
             )
             return True
@@ -1174,6 +1119,50 @@ class BuiltinOrchestrator:
         self.session.add(instance)
         self.session.commit()
         return stage_key
+
+
+def _terminal_stage_owes_a_landing(
+    session: Session, orch: OrchestrationService, ticket: Ticket, target_key: str
+) -> bool:
+    """Whether a *passing* run left the terminal stage PENDING for the landing.
+
+    Narrow on purpose, because the re-attempt this authorises is what turns a
+    finished run into another pass of the loop. All of these must hold, and
+    each excludes a state that must NOT re-dispatch:
+
+    * it is this ticket's current stage and PENDING — a stage elsewhere in
+      the map is not this question;
+    * the stage is TERMINAL — an ordinary stage left PENDING is the loop's
+      own business and re-dispatching it would spin;
+    * the stage is AGENTLESS — the landing is owed by a terminal *marker*,
+      whose next pass finalizes through `_finish_workflow` and lands. A
+      terminal stage that names an agent of its own is PENDING after every
+      pass it makes, so without this the loop would re-dispatch that agent
+      until `max_stages` with nothing landed. No live template has one, but
+      `studio_workflow_validation` does not forbid authoring one;
+    * its most recent run SUCCEEDED — a cancelled run leaves the terminal
+      stage PENDING too, and re-dispatching there restarts work a human
+      stopped;
+    * that run reported no verdict worse than `pass` — a report of
+      `blocked`/`fail` sets the stage BLOCKED rather than PENDING, so an
+      agent that resolved the conflict and then reported `blocked` still
+      blocks instead of having its work landed over its own word.
+
+    The last is carried by the one before it: the only path that leaves a
+    terminal stage PENDING on a SUCCEEDED run is the pass branch in
+    `run_completion._advance_clean_exit`. The repair pin is consumed at
+    dispatch and asked before this predicate, so a resolver's own turn is
+    not the dispatch this clause authorises.
+    """
+    latest = latest_run_for_stage(session, ticket, target_key)
+    if latest is None or latest.status is not RunStatus.SUCCEEDED:
+        return False
+    # Resolved here rather than taken from the caller so the predicate
+    # cannot be told the wrong answer by a second call site.
+    stage_def = orch.stage_definition(ticket, target_key)
+    if stage_def is None or not is_terminal_stage(stage_def):
+        return False
+    return is_agentless_stage(stage_def)
 
 
 def _orchestrate_incomplete_children(

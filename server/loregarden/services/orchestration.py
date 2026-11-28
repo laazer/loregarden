@@ -1,5 +1,6 @@
 import logging
 import secrets
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -29,6 +30,7 @@ from loregarden.models.domain import (
     Workspace,
 )
 from loregarden.services import ticket_manual_edit
+from loregarden.services.agent_group_runs import group_run_stamp
 from loregarden.services.approval_answers import record_approval_answer
 from loregarden.services.approval_ignore import ignore_approval
 from loregarden.services.approval_resolution import (
@@ -869,6 +871,7 @@ class OrchestrationService:
         force: bool = False,
         dispatch_surface: DispatchSurface = DispatchSurface.HTTP,
         dispatch_lane: str = "",
+        group_stage_keys: Sequence[str] = (),
     ) -> AgentRun:
         template = self.get_template_for_ticket(ticket)
         if not template:
@@ -877,6 +880,8 @@ class OrchestrationService:
         target = self._resolve_run_target(ticket, stage_key)
         instance = target.instance
         target_key = target.target_key
+        # Raises before any write when the keys are not a run of the target's group.
+        group_key, covered_json = group_run_stamp(target.stages, target.stage_def, group_stage_keys)
 
         # Every refusal is settled before a single write. `_prepare_stage_start`
         # clears blocking text and can flip the ticket to IN_PROGRESS, and a
@@ -1011,6 +1016,8 @@ class OrchestrationService:
             dispatch_waiver_approval_id=waiver_approval_id,
             dispatch_key=key,
             started_at=datetime.now(timezone.utc),
+            agent_group_key=group_key,
+            covered_stage_keys_json=covered_json,
         )
         self.session.add(run)
         if (
@@ -1043,6 +1050,12 @@ class OrchestrationService:
         stored = self.session.get(AgentRun, run.id)
         if not stored:
             return run
+        # A group run's step moves under `complete_stage`, possibly in another
+        # process (the agent's own MCP call); settle the step it is on now.
+        # Without autoflush: a caller's unflushed edit (its status) must reach the
+        # completion guard below unwritten, or the guard refuses this completion.
+        with self.session.no_autoflush:
+            self.session.refresh(stored, attribute_names=["stage_key"])
         run = stored
         if not claim_completion(self.session, run.id, status):
             return refuse_late_completion(self.session, run, status=status)

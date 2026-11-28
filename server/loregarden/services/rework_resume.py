@@ -21,6 +21,11 @@ finding as the session's next turn (`follow_up`). It runs fresh, recording why
   delivered twice resumes once: a second round on it starts from a clean slate,
   since the resumed one did not settle it.
 
+An agent-group run (`agent_group_runs`) is scoped by its group rather than its
+step: its earlier run is the group's, its finding may be addressed to any step
+it covers, and a group run that ended before its last step is continued in the
+same session once (a continuation round, with no finding).
+
 A resumed claude round runs under the system prompt the earlier run's session
 started under (`session_prompt`), not a freshly rendered one: a changed system
 prompt invalidates the cached history, which made every resume re-write it. What
@@ -33,14 +38,23 @@ rows, so whether resuming pays is a query, not a claim.
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from loregarden.agents.cli_adapters import session_resume_unsupported
-from loregarden.models.domain import AgentRun, Artifact, CliAdapter, Ticket
+from loregarden.core.agent_groups import group_span
+from loregarden.models.domain import (
+    AgentRun,
+    Artifact,
+    CliAdapter,
+    StageStatus,
+    Ticket,
+    WorkflowInstance,
+)
 from loregarden.models.domain.enums import ReworkArtifactKind
 from loregarden.services.rework_feedback import (
     render_rework_feedback,
@@ -48,6 +62,8 @@ from loregarden.services.rework_feedback import (
 )
 from loregarden.services.session_prompt import read_session_prompt
 from loregarden.services.stage_report import REPORT_BLOCK_REMINDER, result_envelope
+from loregarden.services.workflow_service import resolve_ticket_stages
+from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session, col, select
 
 logger = logging.getLogger(__name__)
@@ -83,11 +99,30 @@ def session_id_of(run: AgentRun) -> str:
     return envelope.session_id if envelope is not None else ""
 
 
+@dataclass(frozen=True)
+class ResumeScope:
+    """What a run answers for: the steps it covers, and its group ("" when ungrouped)."""
+
+    stage_keys: tuple[str, ...]
+    group_key: str
+
+
+def _scope_of(run: AgentRun) -> ResumeScope:
+    if run.agent_group_key:
+        return ResumeScope(tuple(json.loads(run.covered_stage_keys_json)), run.agent_group_key)
+    return ResumeScope((run.stage_key,), "")
+
+
 def _prior_run(session: Session, run: AgentRun) -> AgentRun | None:
+    same_scope = (
+        AgentRun.agent_group_key == run.agent_group_key
+        if run.agent_group_key
+        else AgentRun.stage_key == run.stage_key
+    )
     return session.exec(
         select(AgentRun)
         .where(AgentRun.ticket_id == run.ticket_id)
-        .where(AgentRun.stage_key == run.stage_key)
+        .where(same_scope)
         .where(AgentRun.id != run.id)
         .where(col(AgentRun.created_at) <= run.created_at)
         .order_by(col(AgentRun.created_at).desc())
@@ -96,13 +131,14 @@ def _prior_run(session: Session, run: AgentRun) -> AgentRun | None:
 
 
 def _newest_feedback(
-    session: Session, ticket: Ticket, stage_key: str, since: datetime | None
+    session: Session, ticket: Ticket, stage_keys: Sequence[str], since: datetime | None
 ) -> Artifact | None:
+    titles = [rework_feedback_artifact_title(key) for key in stage_keys]
     query = (
         select(Artifact)
         .where(Artifact.ticket_id == ticket.id)
         .where(Artifact.kind == ReworkArtifactKind.FEEDBACK)
-        .where(Artifact.title == rework_feedback_artifact_title(stage_key))
+        .where(col(Artifact.title).in_(titles))
     )
     if since is not None:
         query = query.where(col(Artifact.created_at) > since)
@@ -156,20 +192,64 @@ def follow_up_prompt(
     )
 
 
+def continuation_prompt(session: Session, ticket: Ticket, run: AgentRun) -> str:
+    """A group session's next turn after it ended before its last step."""
+    covered = list(_scope_of(run).stage_keys)
+    done = _done_group_keys(session, ticket, run)
+    return (
+        "Your earlier turn on this group ended before every step was complete. Steps "
+        f"already complete: {', '.join(done) or 'none'}. Continue from step "
+        f"'{run.stage_key}' (remaining: {', '.join(covered)}). Other stages may have changed "
+        "the tree since your turn: re-read any file before you rely on what you remember "
+        "of it. Then " + REPORT_BLOCK_REMINDER
+    )
+
+
+def _done_group_keys(session: Session, ticket: Ticket, run: AgentRun) -> list[str]:
+    """The group's steps already DONE on this ticket, in template order."""
+    _, stages = resolve_ticket_stages(session, ticket)
+    instance = session.exec(
+        select(WorkflowInstance).where(WorkflowInstance.ticket_id == ticket.id)
+    ).first()
+    if instance is None:
+        return []
+    stage_map = parse_stage_map(instance, stages)
+    return [
+        member.key
+        for member in group_span(stages, run.stage_key)
+        if stage_map.get(member.key) is StageStatus.DONE
+    ]
+
+
+def _is_continuation(run: AgentRun, prior: AgentRun | None) -> bool:
+    """Whether `run` picks up a group run that ended at or before `run`'s step."""
+    if prior is None or not run.agent_group_key:
+        return False
+    covered = list(_scope_of(prior).stage_keys)
+    if run.stage_key not in covered or prior.stage_key not in covered:
+        return False
+    return covered.index(run.stage_key) >= covered.index(prior.stage_key)
+
+
 def _skip_reason(
     session: Session,
     ticket: Ticket,
     run: AgentRun,
     *,
     prior: AgentRun | None,
-    feedback: Artifact,
+    feedback: Artifact | None,
     adapter: str,
     repo_root: Path,
 ) -> str:
-    """Why this round cannot resume `prior`'s session, or "" when it can."""
+    """Why this round cannot resume `prior`'s session, or "" when it can.
+
+    `feedback` None is a group continuation round (`_is_continuation`).
+    """
     if prior is None:
         return "no earlier run at this stage to resume"
-    if prior.agent_id != run.agent_id:
+    # A group's session is the group's: its steps' agents differ by design, and
+    # validation guarantees they share one adapter.
+    if not run.agent_group_key and prior.agent_id != run.agent_id:
         return f"the earlier run {prior.run_code} was agent {prior.agent_id}, not {run.agent_id}"
     unsupported = session_resume_unsupported(adapter)
     if unsupported:
@@ -186,6 +266,13 @@ def _skip_reason(
             f"the spec changed since the earlier run {prior.run_code} read it; "
             "its session holds the old description, criteria or documents"
         )
+    if feedback is None:
+        if prior.resumed_from_run_id and not prior.rework_feedback_id:
+            return (
+                f"the earlier run {prior.run_code} already continued a session once after "
+                "an early end"
+            )
+        return ""
     earlier = _already_resumed_for(session, ticket, feedback)
     if earlier is not None:
         return f"this finding already resumed a session once, in run {earlier.run_code}"
@@ -205,26 +292,34 @@ def plan_rework_resume(
 
     A run is a rework round when a finding for its stage arrived after the
     stage's previous run (or, with no previous run, when one exists at all).
-    The plan is recorded on the run before it is returned. `turn_context` is
-    called only when the round resumes.
+    The plan is recorded on the run before it is returned. A group run with no
+    finding that picks up where its group's earlier run ended is a continuation
+    round (`feedback_id == ""`). `turn_context` is called only when the round
+    resumes on a finding.
     """
     prior = _prior_run(session, run)
+    scope = _scope_of(run)
     feedback = _newest_feedback(
-        session, ticket, run.stage_key, prior.created_at if prior is not None else None
+        session, ticket, scope.stage_keys, prior.created_at if prior is not None else None
     )
-    if feedback is None:
+    if feedback is None and not _is_continuation(run, prior):
         return None
     reason = _skip_reason(
         session, ticket, run, prior=prior, feedback=feedback, adapter=adapter, repo_root=repo_root
     )
+    feedback_id = feedback.id if feedback is not None else ""
     if reason or prior is None:
-        plan = ResumePlan(feedback_id=feedback.id, skip_reason=reason)
+        plan = ResumePlan(feedback_id=feedback_id, skip_reason=reason)
     else:
         plan = ResumePlan(
-            feedback_id=feedback.id,
+            feedback_id=feedback_id,
             prior_run_id=prior.id,
             session_id=session_id_of(prior),
-            follow_up=follow_up_prompt(session, ticket, run.stage_key, turn_context),
+            follow_up=(
+                follow_up_prompt(session, ticket, _feedback_key(feedback, scope), turn_context)
+                if feedback is not None
+                else continuation_prompt(session, ticket, run)
+            ),
             session_prompt=read_session_prompt(prior) if adapter == CliAdapter.CLAUDE else "",
         )
     run.rework_feedback_id = plan.feedback_id
@@ -233,6 +328,13 @@ def plan_rework_resume(
     session.add(run)
     session.commit()
     return plan
+
+
+def _feedback_key(feedback: Artifact, scope: ResumeScope) -> str:
+    """The covered step `feedback` is addressed to."""
+    return next(
+        key for key in scope.stage_keys if rework_feedback_artifact_title(key) == feedback.title
+    )
 
 
 def record_resume_fallback(session: Session, run: AgentRun, reason: str) -> None:

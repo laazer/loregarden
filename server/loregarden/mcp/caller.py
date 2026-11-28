@@ -22,6 +22,9 @@ ORCHESTRATED_HEADER = "X-Loregarden-Orchestrated"
 RUN_ID_HEADER = "X-Loregarden-Run"
 ORCHESTRATED_ENV = "LOREGARDEN_MCP_ORCHESTRATED"
 RUN_ID_ENV = "LOREGARDEN_MCP_RUN_ID"
+#: Comma-separated step keys an agent-group run covers, in order (unset when ungrouped).
+#: The stop hook lets the turn end only once the last one is reported.
+GROUP_STAGE_KEYS_ENV = "LOREGARDEN_GROUP_STAGE_KEYS"
 
 
 def orchestrated_from_env(environ: Mapping[str, str]) -> bool:

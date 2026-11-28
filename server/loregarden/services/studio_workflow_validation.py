@@ -15,6 +15,9 @@ from __future__ import annotations
 
 from loregarden.agents.registry import list_agents as list_builtin_agents
 from loregarden.models.domain import StudioAgent, StudioWorkflow, StudioWorkflowStage
+from loregarden.services.agent_group_validation import (  # re-exported for studio_service
+    validate_agent_groups as validate_agent_groups,
+)
 from loregarden.services.studio_drift import StageRemovalNeedsConfirmation, detect_drift
 from loregarden.services.studio_routing import TERMINAL_STAGE_KEY
 from loregarden.skills.registry import list_skills

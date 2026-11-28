@@ -36,6 +36,11 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     Workspace,
 )
+from loregarden.services.agent_group_runs import (
+    advance_group_cursor,
+    group_run_for_completion,
+    judged_stage_def,
+)
 from loregarden.services.artifact_service import record_blocking_issue
 from loregarden.services.block_classification import looks_like_human_work
 from loregarden.services.block_settlement import BlockSettlement, RepairPolicy, settle_block
@@ -127,6 +132,23 @@ def _refuse_before_writes(
     if claim_from_tool_outcome(outcome) is StageReportStatus.PASS:
         refuse_pass_with_unsettled(session, ticket, stage.key, retry_tool=McpTool.COMPLETE_STAGE)
     refuse_unshown_reject(session, ticket, stage, run, outcome=outcome, findings=findings)
+
+
+def _reconcile_and_advance_group(
+    session: Session,
+    orch: OrchestrationService,
+    ticket: Ticket,
+    group_run: AgentRun | None,
+    *,
+    completed_key: str,
+    stage_map: dict[str, StageStatus],
+) -> Ticket:
+    orch.reconcile_ticket(ticket)
+    session.refresh(ticket)
+    advance_group_cursor(
+        session, ticket, group_run, completed_key=completed_key, stage_map=stage_map
+    )
+    return ticket
 
 
 class OrchestrationCallbackService:
@@ -526,7 +548,8 @@ class OrchestrationCallbackService:
         if not instance or not stages:
             raise ValueError("Ticket has no workflow instance")
         stage_def = next(s for s in stages if s.key == stage_key)
-        run = self._latest_stage_run(ticket.id, stage_key)
+        # Before any write: a live group run refuses any step but its current one.
+        group_run, run = self._stage_runs(ticket.id, stage_key)
         agent_id = (run.agent_id if run else "") or stage_def.agent_id
         # Before anything is written: the agent is still live.
         _refuse_before_writes(self.session, ticket, stage_def, run, outcome, findings)
@@ -559,7 +582,7 @@ class OrchestrationCallbackService:
                 ticket,
                 report=report,
                 tool_outcome=tool_claim,
-                stage_def=stage_def,
+                stage_def=judged_stage_def(stages, stage_def, run=run),
                 handoff_expected=handoff_expected_for(stage_def),
                 agent_id=agent_id,
             )
@@ -663,9 +686,29 @@ class OrchestrationCallbackService:
                     "workflow_stage_key": ticket.workflow_stage_key,
                 },
             )
-        self.orch.reconcile_ticket(ticket)
-        self.session.refresh(ticket)
-        return ticket
+        # A passed step moves a group run on to its next step (a vetoed pass,
+        # a reject, a block or an opened gate leave it where it is).
+        passed = advance and gate is None and verdict.status is StageReportStatus.PASS
+        return _reconcile_and_advance_group(
+            self.session,
+            self.orch,
+            ticket,
+            group_run if passed else None,
+            completed_key=stage_key,
+            stage_map=parse_stage_map(instance, stages),
+        )
+
+    def _stage_runs(
+        self, ticket_id: str, stage_key: str
+    ) -> tuple[AgentRun | None, AgentRun | None]:
+        """`(live group run, newest run on stage_key)` for a completion of `stage_key`.
+
+        Raises when a live group run is on another step (`group_run_for_completion`).
+        """
+        return (
+            group_run_for_completion(self.session, ticket_id, stage_key),
+            self._latest_stage_run(ticket_id, stage_key),
+        )
 
     def _latest_stage_run(self, ticket_id: str, stage_key: str) -> AgentRun | None:
         return self.session.exec(

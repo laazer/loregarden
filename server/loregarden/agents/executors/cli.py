@@ -25,6 +25,7 @@ from loregarden.agents.executors.run_evidence import (
     run_paths_before,
 )
 from loregarden.agents.executors.stage_turn import spawn_stage_turn
+from loregarden.agents.group_context import build_group_steps_block
 from loregarden.agents.inherited_wisdom import InheritedWisdom, build_inherited_wisdom
 from loregarden.agents.mcp_context import (
     CONTROL_PLANE_MODULE_CAP,
@@ -67,6 +68,7 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.acceptance_criteria import load_criteria
+from loregarden.services.agent_group_runs import group_run_env
 from loregarden.services.branch_takes_target import MergeTurnSeat
 from loregarden.services.cli_settings import (
     get_ticket_orchestration_runtime,
@@ -353,6 +355,8 @@ class CliAgentExecutor:
                     advance_workflow=advance_workflow,
                 )
 
+            # The stop hook reads it: a group turn ends only once its last step is reported.
+            invocation.env.update(group_run_env(run))
             plan, first = prepare_round(
                 self.session,
                 run,
@@ -995,11 +999,16 @@ class CliAgentExecutor:
             stage_def=stage_def,
             adapter=adapter,
         )
+        template_stages = self._resolve_template_stages(ticket)
+        # A group run's steps replace the one stage's skill and role (`group_context`).
+        group_steps = build_group_steps_block(
+            self.session, ticket, run, template_stages, agent_context_dir
+        )
         orchestration_context = build_orchestration_context(
             ticket=ticket,
             run=run,
             stage_def=stage_def,
-            stages=self._resolve_template_stages(ticket),
+            stages=template_stages,
             posture=resolve_compatibility_posture(self.session, ticket, workspace),
             session=self.session,
             assigned_exit_actions=assigned_exit_actions,
@@ -1110,8 +1119,14 @@ class CliAgentExecutor:
             # run on cursor, which does not pick up CLAUDE.md the way Claude
             # Code does.
             titled_block("## Repository map", code_map_reference(repo_root)),
-            skill_prompt_block(skill_name, skill_body),
-            titled_block(AGENT_ROLE_HEADING, role_body),
+            *(
+                [group_steps]
+                if group_steps
+                else [
+                    skill_prompt_block(skill_name, skill_body),
+                    titled_block(AGENT_ROLE_HEADING, role_body),
+                ]
+            ),
             raw_block(build_studio_prompt_sections(agent, transport=transport, stage_run=True)),
             titled_block(
                 "## Loregarden control-plane module",
