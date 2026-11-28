@@ -82,6 +82,7 @@ from loregarden.services.invariant_registry import (
     LANDED_WORK_IS_COMMITTED,
     LANDED_WORK_REACHES_THE_BASE,
     LANDING_BLOCKS_CLEAR,
+    LANDING_RESOLVERS_HAVE_A_LOOP,
     LANDINGS_CARRY_THE_WORK,
     LANDINGS_SURVIVE_THEIR_BRANCH,
     LIVE_WORKSPACES_HAVE_REAL_REPOS,
@@ -239,6 +240,10 @@ PERIODIC_STEPS: tuple[SweepStep, ...] = (
     # parked tickets kept a restarted server dark for over half an hour; the
     # timer lands them a tick later, on a worker thread.
     SweepStep("finish_parked_terminal_tickets", finish_parked_terminal_tickets, at_startup=False),
+    # After the sweep, which gets the first go at a resolver pin no orchestration
+    # holds (it re-lands, and blocks if the conflict is still there): what it
+    # skipped (a parent) or what armed since is blocked here.
+    _invariant(LANDING_RESOLVERS_HAVE_A_LOOP, at_startup=False),
     # Same selection rule (nothing live behind the ticket), for the BLOCKED
     # terminal stage the step above leaves alone. It acts only when a read-only
     # merge preview says the landing would now succeed, so a conflict that is

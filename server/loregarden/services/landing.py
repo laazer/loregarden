@@ -41,11 +41,20 @@ implement stage, because a run finishing the terminal stage would derive
 PENDING, so the only path to `done` still runs through this module. With the
 flag off, or `max_conflict_resolve_attempts` spent, a conflict blocks and the
 message says so.
+
+An armed turn is consumed only by a live orchestration's loop, and a landing
+also runs where there is none: the terminal stage sweep, the land tool. A turn
+armed there sat PENDING with nothing to run it, and the next sweep landed,
+conflicted and armed again, every ~90s, never spending an attempt; six
+tickets looped that way on 2026-11-27. `stranded_resolver_pins` now starts an
+orchestration for such a pin (the sweep right after landing, the reconciler
+for any other path), or blocks when one cannot be started.
 """
 
 from __future__ import annotations
 
 import logging
+from enum import Enum
 
 from loregarden.agents.registry import REPAIR_AGENT_ID, get_agent
 from loregarden.core.event_bus import event_bus
@@ -82,6 +91,14 @@ from loregarden.services.workflow_state import parse_stage_map, set_stage_status
 from sqlmodel import Session
 
 logger = logging.getLogger(__name__)
+
+
+class ResolverRefusal(Enum):
+    """Why a landing conflict got no resolution turn: each blocks with its own words."""
+
+    DISABLED = "auto_resolve_conflicts is off"
+    SPENT = "auto_resolve_conflicts is set; its resolution attempts are spent"
+    NO_AGENT = "the repair agent is not registered"
 
 
 def land_before_done(
@@ -124,11 +141,20 @@ def land_before_done(
             schedule_tree_publish(subtree_root(session, ticket).id, workspace.id)
         return True
 
-    if result.conflicted and _offer_conflict_resolution(
-        session, ticket, instance, stages, stage_key=stage_key, result=result, workspace=workspace
-    ):
-        return False
-    _block(session, ticket, instance, stages, stage_key, _block_message(result, workspace, ticket))
+    refusal = None
+    if result.conflicted:
+        refusal = _offer_conflict_resolution(
+            session,
+            ticket,
+            instance,
+            stages,
+            stage_key=stage_key,
+            result=result,
+            workspace=workspace,
+        )
+        if refusal is None:
+            return False
+    _block(session, ticket, instance, stages, stage_key, _block_message(result, refusal))
     return False
 
 
@@ -159,8 +185,9 @@ def _offer_conflict_resolution(
     stage_key: str,
     result: LandResult,
     workspace: Workspace,
-) -> bool:
-    """Arm the terminal stage for a resolution turn. True when it was armed.
+) -> ResolverRefusal | None:
+    """Arm the terminal stage for a resolution turn. None when it was armed,
+    otherwise why not.
 
     The ticket passed every stage; the only thing between it and done is a
     merge someone has to do. So the resolver is dispatched on the stage the
@@ -177,19 +204,21 @@ def _offer_conflict_resolution(
     - The run cannot finish the ticket behind the landing's back —
       `run_completion` leaves a terminal stage PENDING, so the only path to
       `done` still runs through `land_before_done`.
+    - Only an orchestration's loop consumes the pin. Armed where none is
+      live, `stranded_resolver_pins` starts one or blocks.
     """
     automation = resolve_git_automation(workspace, ticket)
     if not automation.auto_resolve_conflicts:
-        return False
+        return ResolverRefusal.DISABLED
     if repair_turns_spent(session, ticket, stage_key) >= automation.max_conflict_resolve_attempts:
-        return False
+        return ResolverRefusal.SPENT
     if get_agent(REPAIR_AGENT_ID) is None:
         # Pinning an agent that cannot resolve would re-arm the stage forever.
         logger.warning(
             "repair agent %r is not registered; landing conflict left for a person",
             REPAIR_AGENT_ID,
         )
-        return False
+        return ResolverRefusal.NO_AGENT
 
     arm_repair_turn(
         session,
@@ -225,7 +254,33 @@ def _offer_conflict_resolution(
         result.target,
         ", ".join(result.conflicted_files),
     )
-    return True
+    return None
+
+
+def block_stranded_resolver(
+    session: Session,
+    ticket: Ticket,
+    instance: WorkflowInstance,
+    stages: list[WorkflowStageDef],
+    stage_key: str,
+    why: str,
+) -> None:
+    """Block a terminal stage armed for a resolver that no orchestration will run.
+
+    The pin is cleared with it: left set, the next orchestration started would
+    dispatch a resolver for a conflict the block already handed to a person.
+    """
+    ticket.next_agent = ""
+    session.add(ticket)
+    _block(
+        session,
+        ticket,
+        instance,
+        stages,
+        stage_key,
+        f"A landing resolver was armed on '{stage_key}' but never ran: {why}. "
+        "Start an orchestration (loregarden_start_orchestration) to resolve and land it.",
+    )
 
 
 def _transitions(session: Session, ticket: Ticket) -> list[dict[str, str]]:
@@ -258,7 +313,7 @@ def _block(
     logger.warning("Ticket %s did not land: %s", ticket.external_id, message)
 
 
-def _block_message(result: LandResult, workspace: Workspace, ticket: Ticket) -> str:
+def _block_message(result: LandResult, refusal: ResolverRefusal | None) -> str:
     """What the attention row and the reader show for a landing that did not happen.
 
     The lead comes from `land_verification` rather than being spelled here: it
@@ -270,9 +325,7 @@ def _block_message(result: LandResult, workspace: Workspace, ticket: Ticket) -> 
     lead = LAND_BLOCK_LEAD.format(branch=result.branch, target=result.target)
     if result.conflicted:
         files = ", ".join(result.conflicted_files)
-        note = ""
-        if resolve_git_automation(workspace, ticket).auto_resolve_conflicts:
-            note = " (auto_resolve_conflicts is set; its resolution attempts are spent)"
+        note = f" ({refusal.value})" if refusal is not None else ""
         return (
             f"{lead}merge conflicts in {files}. "
             f"Resolve them on the ticket branch and requeue.{note}"

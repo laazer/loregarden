@@ -275,8 +275,18 @@ interface Subtree {
 }
 
 interface Site {
-  /** Source path relative to `client/src/`, with the 1-based line. */
+  /** Source path relative to `client/src/`, with the 1-based line. For reading, never a key. */
   where: string;
+  /**
+   * The site's identity: `file::<tag classes>`, with `#n` for the nth element
+   * in the file carrying that same signature. Lines are not identity: every
+   * edit above a site moved its `where`, and the frozen lists keyed on it
+   * refused unrelated tickets' landings (lg-milestone-that-1424 and
+   * lg-protocol-executors-1612 on 2026-11-27, each by inserting or deleting
+   * lines above a site it never touched). The fix class is left out, so
+   * fixing a site does not rename it.
+   */
+  key: string;
   tag: string;
   classes: string[];
   tabbable: boolean;
@@ -583,14 +593,20 @@ function readSites(program: ts.Program): Map<string, Site[]> {
     if (!file.startsWith(SRC) || !file.endsWith(".tsx")) continue;
     if (/__tests__|\.test\./.test(file)) continue;
 
+    const signatures = new Map<string, number>();
     const walkNode = (node: ts.Node): void => {
       const element = ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) ? node : undefined;
       if (element) {
         const open = ts.isJsxElement(element) ? element.openingElement : element;
         const classes = classesOf(open);
         if (classes.length > 0) {
+          const tag = open.tagName.getText(source);
+          const signature = `<${[tag, ...classes.filter((token) => token !== FIX_CLASS)].join(" ")}>`;
+          const nth = (signatures.get(signature) ?? 0) + 1;
+          signatures.set(signature, nth);
           const site: Site = {
             where: at(open),
+            key: `${path.relative(SRC, file)}::${signature}${nth > 1 ? `#${nth}` : ""}`,
             tag: open.tagName.getText(source),
             classes,
             tabbable: isTabStop(attribute(open, "tabIndex")),
@@ -694,7 +710,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
       ...new Map(
         candidate.classes
           .flatMap((token) => sitesByClass.get(token) ?? [])
-          .map((site) => [site.where, site]),
+          .map((site) => [site.key, site]),
       ).values(),
     ];
     return { candidate, sites: sites.map((site) => ({ site, verdict: verdictFor(site) })) };
@@ -734,7 +750,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // sidebar's resolves to four links. That is the distinction the Program
     // buys, and unlike the pre-fix verdict it is stable across the fix.
     const pane = everySite.find(
-      ({ site }) => site.where === "components/PreparedActionPanel.tsx:107",
+      ({ site }) => site.key === "components/PreparedActionPanel.tsx::<pre prepared-action-output>",
     );
     expect(pane).toBeDefined();
     expect(pane?.site.subtree.open).toEqual([]);
@@ -1016,7 +1032,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
 
   /**
    * Every site the fix set was computed from, measured at `c7f90df13`, paired
-   * with the line that site sits at now.
+   * with the key (`Site.key`) its verdict is read under now.
    *
    * The pair is not decoration. A one-column list keyed on `file:line` cannot
    * survive the fix it is guarding, because four of the fixes insert lines
@@ -1026,48 +1042,51 @@ describe("bounded scrolling regions, measured on both axes", () => {
    * whether they were fixed or quietly dropped — which is the failure this
    * list exists to make impossible.
    *
-   * So the LEFT column is the frozen pre-fix identity and never changes; the
-   * RIGHT column is re-derived when a fix moves a site, and is the key the
-   * verdict is read under. Deleting a row is still the only way out, and it
-   * is still a visible edit to a committed literal.
+   * So the LEFT column is the frozen pre-fix identity and never changes. The
+   * RIGHT column was a `file:line` too, re-derived by hand whenever any edit
+   * moved a site, and an edit above a site it never touched refused that
+   * ticket's landing. It is now the site's key, which no line insertion
+   * moves; it changes only when the element's own tag or classes do, or its
+   * file is renamed. Deleting a row is still the only way out, and it is
+   * still a visible edit to a committed literal.
    */
-  const FIX_SET_AT_FREEZE: { frozen: string; now: string }[] = [
-    { frozen: "components/BranchCheckoutConfirmModal.tsx:46", now: "components/BranchCheckoutConfirmModal.tsx:46" },
-    { frozen: "components/BranchWorktreesModal.tsx:84", now: "components/BranchWorktreesModal.tsx:84" },
-    { frozen: "components/DeleteTicketConfirmModal.tsx:46", now: "components/DeleteTicketConfirmModal.tsx:46" },
-    { frozen: "components/DeleteViewConfirmModal.tsx:44", now: "components/DeleteViewConfirmModal.tsx:44" },
-    { frozen: "components/ImportTicketsModal.tsx:207", now: "components/ImportTicketsModal.tsx:207" },
-    { frozen: "components/PreparedActionPanel.tsx:107", now: "components/PreparedActionPanel.tsx:107" },
-    { frozen: "components/StageFanoutReview.tsx:170", now: "components/StageFanoutReview.tsx:183" },
-    { frozen: "components/UsageModal.tsx:160", now: "components/UsageModal.tsx:172" },
-    { frozen: "components/chat/ComposerNotes.tsx:34", now: "components/chat/ComposerNotes.tsx:34" },
-    { frozen: "components/chat/LiveThinkingStream.tsx:75", now: "components/chat/LiveThinkingStream.tsx:77" },
-    { frozen: "components/chat/primitives/AgentPrimitive.tsx:86", now: "components/chat/primitives/AgentPrimitive.tsx:86" },
-    { frozen: "components/chat/primitives/TerminalPrimitive.tsx:36", now: "components/chat/primitives/TerminalPrimitive.tsx:40" },
-    { frozen: "components/dashboard/TicketTimeline.tsx:454", now: "components/dashboard/TicketTimeline.tsx:455" },
-    { frozen: "components/dashboard/TicketTimeline.tsx:503", now: "components/dashboard/TicketTimeline.tsx:513" },
-    { frozen: "components/initiatives/plan/RedraftConfirmModal.tsx:40", now: "components/initiatives/plan/RedraftConfirmModal.tsx:40" },
-    { frozen: "components/livingMap/LivingMap.tsx:264", now: "components/livingMap/LivingMap.tsx:264" },
-    { frozen: "components/machine/DiskCleanupModal.tsx:216", now: "components/machine/DiskCleanupModal.tsx:216" },
-    { frozen: "components/machine/DiskCleanupModal.tsx:291", now: "components/machine/DiskCleanupModal.tsx:298" },
-    { frozen: "components/machine/DiskFoldersModal.tsx:131", now: "components/machine/DiskFoldersModal.tsx:131" },
-    { frozen: "components/studio/AgentDeleteConfirm.tsx:60", now: "components/studio/AgentDeleteConfirm.tsx:60" },
-    { frozen: "components/studio/AgentVersionHistory.tsx:95", now: "components/studio/AgentVersionHistory.tsx:98" },
-    { frozen: "components/studio/GateCommandList.tsx:254", now: "components/studio/GateCommandList.tsx:255" },
-    { frozen: "components/views/primitives/queueLanePrimitive.tsx:82", now: "components/views/primitives/queueLanePrimitive.tsx:82" },
-    { frozen: "components/workspaceDashboard/MergeQueueSection.tsx:278", now: "components/mergeQueue/MergeQueueRow.tsx:190" },
-    { frozen: "components/workspaces/WorkspaceFixDialog.tsx:94", now: "components/workspaces/WorkspaceFixDialog.tsx:94" },
-    { frozen: "components/workspaces/WorkspaceGatePresetsPanel.tsx:201", now: "components/workspaces/WorkspaceGatePresetsPanel.tsx:201" },
+  const FIX_SET_AT_FREEZE: { frozen: string; key: string }[] = [
+    { frozen: "components/BranchCheckoutConfirmModal.tsx:46", key: "components/BranchCheckoutConfirmModal.tsx::<div modal-body>" },
+    { frozen: "components/BranchWorktreesModal.tsx:84", key: "components/BranchWorktreesModal.tsx::<div branch-worktrees-info>" },
+    { frozen: "components/DeleteTicketConfirmModal.tsx:46", key: "components/DeleteTicketConfirmModal.tsx::<div modal-body>" },
+    { frozen: "components/DeleteViewConfirmModal.tsx:44", key: "components/DeleteViewConfirmModal.tsx::<div modal-body>" },
+    { frozen: "components/ImportTicketsModal.tsx:207", key: "components/ImportTicketsModal.tsx::<ul import-selected-list>" },
+    { frozen: "components/PreparedActionPanel.tsx:107", key: "components/PreparedActionPanel.tsx::<pre prepared-action-output>" },
+    { frozen: "components/StageFanoutReview.tsx:170", key: "components/StageFanoutReview.tsx::<pre fanout-attempt__diff>" },
+    { frozen: "components/UsageModal.tsx:160", key: "components/UsageModal.tsx::<div modal-body usage-modal-body>" },
+    { frozen: "components/chat/ComposerNotes.tsx:34", key: "components/chat/ComposerNotes.tsx::<ul lg-composer-help-list>" },
+    { frozen: "components/chat/LiveThinkingStream.tsx:75", key: "components/chat/LiveThinkingStream.tsx::<div lg-thinking-stream-body>" },
+    { frozen: "components/chat/primitives/AgentPrimitive.tsx:86", key: "components/chat/primitives/AgentPrimitive.tsx::<pre lg-primitive-terminal-body>" },
+    { frozen: "components/chat/primitives/TerminalPrimitive.tsx:36", key: "components/chat/primitives/TerminalPrimitive.tsx::<pre lg-primitive-terminal-body>" },
+    { frozen: "components/dashboard/TicketTimeline.tsx:454", key: "components/dashboard/TicketTimeline.tsx::<pre tl-stderr>" },
+    { frozen: "components/dashboard/TicketTimeline.tsx:503", key: "components/dashboard/TicketTimeline.tsx::<pre tl-stderr>#2" },
+    { frozen: "components/initiatives/plan/RedraftConfirmModal.tsx:40", key: "components/initiatives/plan/RedraftConfirmModal.tsx::<div modal-body plan-redraft-body>" },
+    { frozen: "components/livingMap/LivingMap.tsx:264", key: "components/livingMap/LivingMap.tsx::<div living-map-detail-text>" },
+    { frozen: "components/machine/DiskCleanupModal.tsx:216", key: "components/machine/DiskCleanupModal.tsx::<ul disk-cleanup-list>#2" },
+    { frozen: "components/machine/DiskCleanupModal.tsx:291", key: "components/machine/DiskCleanupModal.tsx::<ul disk-cleanup-list>#3" },
+    { frozen: "components/machine/DiskFoldersModal.tsx:131", key: "components/machine/DiskFoldersModal.tsx::<ul disk-folders-list>#2" },
+    { frozen: "components/studio/AgentDeleteConfirm.tsx:60", key: "components/studio/AgentDeleteConfirm.tsx::<div modal-body>" },
+    { frozen: "components/studio/AgentVersionHistory.tsx:95", key: "components/studio/AgentVersionHistory.tsx::<pre studio-version-body>" },
+    { frozen: "components/studio/GateCommandList.tsx:254", key: "components/studio/GateCommandList.tsx::<pre gate-row-output>" },
+    { frozen: "components/views/primitives/queueLanePrimitive.tsx:82", key: "components/views/primitives/queueLanePrimitive.tsx::<div queue-lane>" },
+    { frozen: "components/workspaceDashboard/MergeQueueSection.tsx:278", key: "components/mergeQueue/MergeQueueRow.tsx::<pre mq-log>" },
+    { frozen: "components/workspaces/WorkspaceFixDialog.tsx:94", key: "components/workspaces/WorkspaceFixDialog.tsx::<div modal-body>" },
+    { frozen: "components/workspaces/WorkspaceGatePresetsPanel.tsx:201", key: "components/workspaces/WorkspaceGatePresetsPanel.tsx::<pre gate-preset-output>" },
   ];
 
-  /** The sites this file could not decide at `c7f90df13`, and why. */
+  /** The sites this file could not decide at `c7f90df13`, by key. */
   const UNMEASURABLE_AT_FREEZE = [
-    "components/chat/primitives/PrimitiveCard.tsx:179",
-    "components/initiatives/plan/InitiativeNow.tsx:49",
-    "components/views/primitives/chatPanePrimitive.tsx:125",
+    "components/chat/primitives/PrimitiveCard.tsx::<div lg-primitive-card-body>",
+    "components/initiatives/plan/InitiativeNow.tsx::<div queue-slot-body>",
+    "components/views/primitives/chatPanePrimitive.tsx::<div pane-chat-primitive>",
   ];
 
-  /** The placeholder branches at `c7f90df13` — AC10(d)(4), AC8. */
+  /** The placeholder branches at `c7f90df13`, by key — AC10(d)(4), AC8. */
   const PLACEHOLDERS_AT_FREEZE = [
     // Added by AC2's fix, deliberately and visibly: `.modal-body
     // usage-modal-body` held the loading line, the error line AND the loaded
@@ -1075,14 +1094,14 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // over the word "Loading…". AC8 required the three substitute states to
     // move into their own pane in its place, and that pane is a placeholder
     // branch by measurement — one line of text, no control, no collection.
-    "components/UsageModal.tsx:190",
-    "components/chat/DockChatWelcome.tsx:57",
-    "pages/BranchTriagePage.tsx:242",
-    "pages/InitiativePlanPage.tsx:247",
+    "components/UsageModal.tsx::<div modal-body usage-modal-body usage-modal-empty>",
+    "components/chat/DockChatWelcome.tsx::<div dock-welcome>",
+    "pages/BranchTriagePage.tsx::<div branch-triage-main branch-triage-empty>",
+    "pages/InitiativePlanPage.tsx::<div plan-main>#3",
   ];
 
-  const whereOf = (verdict: Verdict): string[] =>
-    [...new Set(everySite.filter((entry) => entry.verdict === verdict).map(({ site }) => site.where))].sort();
+  const keysOf = (verdict: Verdict): string[] =>
+    [...new Set(everySite.filter((entry) => entry.verdict === verdict).map(({ site }) => site.key))].sort();
 
   it("fixes every site the fix set was computed from, rather than relabelling it — mutant 9", () => {
     // The no-narrowing half, asserted on the IDENTITY of the set and not on
@@ -1091,10 +1110,14 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // the ONLY verdict a frozen member may end on. `focusable-descendant`
     // reached by putting the tab stop on a descendant, or by moving a control
     // inside the region, is the narrowing (g1) cannot see.
-    const byWhere = new Map(everySite.map(({ site, verdict }) => [site.where, verdict]));
-    const notFixed = FIX_SET_AT_FREEZE.filter(({ now }) => byWhere.get(now) !== "tabbable").map(
-      ({ frozen, now }) =>
-        `${frozen} (now ${now}): ${byWhere.get(now) ?? "no longer a measured site"}, not tabbable`,
+    const byKey = new Map(everySite.map((entry) => [entry.site.key, entry]));
+    const notFixed = FIX_SET_AT_FREEZE.filter(({ key }) => byKey.get(key)?.verdict !== "tabbable").map(
+      ({ frozen, key }) => {
+        const found = byKey.get(key);
+        return found
+          ? `${frozen} (now ${key} at ${found.site.where}): ${found.verdict}, not tabbable`
+          : `${frozen} (${key}): no longer a measured site — its tag, classes or file changed, or it was removed`;
+      },
     );
     expect(notFixed).toEqual([]);
     // The frozen column is the identity, so its size is the claim: twenty-six
@@ -1111,7 +1134,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // the fix set and into this term with nothing objecting. The term is the
     // one AC10(h) exists to keep from becoming a parking space, and an
     // unasserted count is exactly that parking space.
-    expect(whereOf("unmeasurable")).toEqual([...UNMEASURABLE_AT_FREEZE].sort());
+    expect(keysOf("unmeasurable")).toEqual([...UNMEASURABLE_AT_FREEZE].sort());
   });
 
   it("lets no site reach the placeholder term that was not already there — mutant 10", () => {
@@ -1122,7 +1145,7 @@ describe("bounded scrolling regions, measured on both axes", () => {
     // contradiction, so this is shrink-only rather than a fixed figure: a new
     // one is added to this list deliberately and visibly, which is the whole
     // difference between a measurement and an allowlist.
-    expect(whereOf("placeholder-site")).toEqual([...PLACEHOLDERS_AT_FREEZE].sort());
+    expect(keysOf("placeholder-site")).toEqual([...PLACEHOLDERS_AT_FREEZE].sort());
   });
 
 });

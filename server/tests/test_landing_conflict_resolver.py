@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+from uuid import uuid4
 
 import pytest
 from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.models.domain import (
+    OrchestrationRunStatus,
     StageStatus,
     Ticket,
     TicketState,
@@ -29,6 +31,7 @@ from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.target_branch import resolve_target_branch
 from loregarden.services.workflow_state import parse_stage_map
 from sqlmodel import Session
+from tests.factories import make_orchestration_run
 from tests.history_helpers import decision_kinds
 from tests.worktree_helpers import at_terminal_stage, blocking_text, commit_on, git, make_repo
 
@@ -94,14 +97,31 @@ def conflicted_fixture(session, workspace, repo, milestone):
     return ticket
 
 
-def _land(session, ticket):
+def _land(session, ticket, *, in_orchestration: bool = True):
+    """Land as the loop does: from inside a RUNNING orchestration
+    (`_handle_agentless_stage`), which then ends, so a test that starts its own
+    orchestration afterwards is not refused as a second one."""
+    live = None
+    if in_orchestration:
+        live = make_orchestration_run(
+            session,
+            workspace_id=ticket.workspace_id,
+            ticket_id=ticket.id,
+            run_code=f"ORCH-{uuid4().hex[:8]}",
+        )
+        live.status = OrchestrationRunStatus.RUNNING
+        session.add(live)
+        session.commit()
     orch = OrchestrationService(session)
     instance, stages = orch._resolve_stages(ticket)
-    return (
-        land_before_done(session, ticket, instance, stages, stage_key=ticket.workflow_stage_key),
-        instance,
-        stages,
+    derived = land_before_done(
+        session, ticket, instance, stages, stage_key=ticket.workflow_stage_key
     )
+    if live is not None:
+        live.status = OrchestrationRunStatus.SUCCEEDED
+        session.add(live)
+        session.commit()
+    return derived, instance, stages
 
 
 def test_a_conflict_arms_the_resolver_instead_of_blocking(session, conflicted):

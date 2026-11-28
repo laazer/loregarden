@@ -9,6 +9,7 @@ from loregarden.services.gate_prep import gate_prep_target
 from loregarden.services.person_judgment import PersonJudgment
 from loregarden.services.recheck_round import recheck_context_lines
 from loregarden.services.repair_brief import gate_fix_brief_for, repair_brief_for
+from loregarden.services.requeue import pending_requeue_reason
 from loregarden.services.rework_feedback import render_rework_feedback
 from loregarden.services.stage_verdict import (
     StageVerdict,
@@ -240,6 +241,16 @@ def _why_youre_here_lines(
     gate_brief = gate_fix_brief_for(session, ticket, run=run) if session else ""
     if gate_brief:
         lines += ["", "## Why you're here — the transition gate refused this stage", gate_brief]
+    requeued = pending_requeue_reason(session, ticket, stage_key, run) if session else ""
+    if requeued:
+        lines += [
+            "",
+            "## Why you're here — a person requeued this stage",
+            "Their reason, which says what to change. A pass that changes nothing "
+            "leaves the ticket exactly where it was stopped:",
+            "",
+            requeued,
+        ]
     if feedback and feedback not in (brief, gate_brief):
         lines += [
             "",

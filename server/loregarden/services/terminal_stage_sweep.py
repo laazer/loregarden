@@ -25,12 +25,21 @@ account for — no agent run, no orchestration — and hands each to
 the landing now succeeds the ticket lands and derives done. If it still fails
 it blocks again *with git's own reason*, which is visible, and a BLOCKED stage
 is no longer PENDING, so the sweep does not select it twice.
+
+A conflict is the exception: with `auto_resolve_conflicts` the landing arms a
+resolver instead of blocking, which leaves the stage PENDING under the repair
+pin. Only an orchestration consumes that pin, and the sweep runs because there
+is none, so it starts one (`serve_stranded_resolver`) or blocks. A ticket
+already holding the pin is not selected again: re-landing it would only arm
+the same pin and log another dispatch, which is how six tickets looped every
+~90s on 2026-11-27.
 """
 
 from __future__ import annotations
 
 import logging
 
+from loregarden.agents.registry import REPAIR_AGENT_ID
 from loregarden.core.workflow_terminal import find_terminal_stage
 from loregarden.models.domain import (
     AgentRun,
@@ -41,6 +50,7 @@ from loregarden.models.domain import (
     Ticket,
     TicketState,
 )
+from loregarden.services.block_repair import repair_pinned
 from loregarden.services.discovered_work import has_owned_children
 from loregarden.services.land_ticket import landing_would_succeed
 from loregarden.services.landing import parked_on_failed_landing
@@ -49,6 +59,7 @@ from loregarden.services.orchestration import (
     OrchestrationService,
 )
 from loregarden.services.orchestrator_decisions import record_orchestrator_decision
+from loregarden.services.stranded_resolver_pins import serve_stranded_resolver
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.workflow_service import resolve_ticket_stages
 from loregarden.services.workflow_state import parse_stage_map
@@ -117,6 +128,8 @@ def finish_parked_terminal_tickets(
         col(Ticket.state_locked).is_(False),
         col(Ticket.id).not_in(live_run_tickets),
         col(Ticket.id).not_in(live_orch_tickets),
+        # A resolver pin is `stranded_resolver_pins`' to serve, not a landing to retry.
+        Ticket.next_agent != REPAIR_AGENT_ID,
     )
     if ticket_id:
         query = query.where(Ticket.id == ticket_id)
@@ -144,6 +157,8 @@ def finish_parked_terminal_tickets(
             )
             session.rollback()
             continue
+        if repair_pinned(ticket, stage_key):
+            serve_stranded_resolver(session, ticket)
         record_orchestrator_decision(
             session,
             ticket,
