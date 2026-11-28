@@ -246,6 +246,34 @@ def test_a_chat_tree_whose_branch_has_landed_resolves_a_receipt(session, workspa
     assert path.is_dir()
 
 
+def test_a_chat_tree_squashed_into_base_resolves_a_receipt(session, workspace):
+    """A squash merge leaves the branch's commits out of base's history but its
+    content in base; only the chat arm reads content, so only it gives a receipt."""
+    repo = Path(workspace.repo_path)
+    row, _path = _chat_tree(session, workspace, repo)
+    git(repo, "merge", "-q", "--squash", row.branch)
+    git(repo, "commit", "-q", "-m", "squash the thread's work")
+
+    answer = resolve_receipt(session, row)
+
+    assert isinstance(answer, Receipt)
+    assert answer.branch == "main"
+
+
+def test_a_tree_whose_workspace_is_gone_is_unreadable_not_a_verdict(session):
+    orphan = Worktree(
+        workspace_id="no-such-workspace",
+        agent_run_id="no-run",
+        worktree_path="/nowhere",
+        branch="b",
+    )
+
+    answer = resolve_receipt(session, orphan)
+
+    assert isinstance(answer, Unresolved)
+    assert answer.reason is KeepReason.UNREADABLE
+
+
 def test_a_chat_tree_whose_work_is_nowhere_else_is_refused(session, workspace):
     """The arm's negative case, and the mutation it kills.
 

@@ -1,5 +1,6 @@
 """Cooperative cancellation of in-flight agent and orchestration runs."""
 
+import logging
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -18,6 +19,8 @@ from loregarden.models.domain import (
     StageStatus,
     Ticket,
 )
+from loregarden.models.domain.process_enums import DetachedStopOutcome
+from loregarden.services import run_cancellation
 from loregarden.services.orchestration import OrchestrationService
 from loregarden.services.run_cancellation import (
     cancel_refusal,
@@ -67,6 +70,28 @@ def test_request_cancel_sets_the_flag(db_session: Session):
     updated = request_cancel(db_session, run)
     assert updated.cancel_requested_at is not None
     assert cancel_requested(run.id) is True
+
+
+@pytest.mark.parametrize(
+    ("outcome", "warned"),
+    [(DetachedStopOutcome.NOT_OURS, True), (DetachedStopOutcome.SIGNALLED, False)],
+    ids=["pid-reused", "signalled"],
+)
+def test_a_stop_that_could_not_signal_its_pid_is_logged(
+    db_session: Session, caplog, outcome, warned
+):
+    ticket = _seed_ticket(db_session)
+    run = _run(db_session, ticket)
+
+    with (
+        patch.object(run_cancellation, "stop_detached_process", return_value=outcome) as stop,
+        caplog.at_level(logging.WARNING, logger=run_cancellation.logger.name),
+    ):
+        request_cancel(db_session, run)
+
+    stop.assert_called_once()
+    own = [r for r in caplog.records if r.name == run_cancellation.logger.name]
+    assert bool([r for r in own if r.levelno >= logging.WARNING]) is warned
 
 
 def test_a_finished_run_cannot_be_cancelled(db_session: Session):

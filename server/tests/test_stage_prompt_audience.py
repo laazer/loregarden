@@ -114,6 +114,22 @@ def test_chat_and_triage_still_get_the_full_tool_guide():
     assert "**When to use:**" in sections
 
 
+def test_the_full_guide_names_unguided_tools_and_flags_orchestrator_only_ones():
+    orchestrator_only = next(g.name for g in MCP_TOOL_GUIDES if g.orchestrator_only)
+    ordinary = next(g.name for g in MCP_TOOL_GUIDES if not g.orchestrator_only)
+    sections = build_studio_prompt_sections(
+        {"mcp_tools": [ordinary, orchestrator_only, "loregarden_no_guide_tool"]}
+    )
+
+    assert "loregarden_no_guide_tool" in sections, "listed by name"
+    assert "### loregarden_no_guide_tool" not in sections, "but given no section"
+    bodies = {
+        block.split("\n", 1)[0]: block.split("\n## ", 1)[0].strip().splitlines()
+        for block in sections.split("### ")[1:]
+    }
+    assert len(bodies[orchestrator_only]) == len(bodies[ordinary]) + 1, "it carries a caution"
+
+
 def test_a_marker_naming_no_audience_is_refused_not_dropped():
     text = "<!-- loregarden:audience=reviewers -->\nrule\n<!-- /loregarden:audience -->\n"
 

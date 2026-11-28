@@ -266,6 +266,34 @@ def test_a_review_with_no_question_reads_for_its_workspaces_and_initiatives(ctx)
     assert carrier.title.endswith("open read for what it serves")
 
 
+def test_adding_a_waiting_source_takes_the_persons_question_reason_and_priority(ctx):
+    session, world, _other, _initiative, _ = ctx
+    url = "https://github.com/acme/rewaited"
+    proposed = SourceIn(
+        workspace_slugs=[world.workspace_slug], kind=SurveySourceKind.REPO, url=url,
+        question="the agent's question", queued_reason="the agent's reason",
+    )  # fmt: skip
+    waiting = enqueue_source(session, proposed).source
+    before = waiting.updated_at
+
+    added = enqueue_source(
+        session,
+        SourceIn(
+            workspace_slugs=[world.workspace_slug],
+            kind=SurveySourceKind.REPO,
+            url=url,
+            question="the person's question",
+            priority=7,
+        ),  # fmt: skip
+        admitted=True,
+    ).source
+
+    assert added.question == "the person's question"
+    assert added.queued_reason == "the agent's reason", "a blank reason keeps the one recorded"
+    assert added.priority == 7
+    assert added.updated_at > before
+
+
 def test_adding_a_source_still_waiting_on_its_card_queues_it_and_closes_the_card(ctx):
     session, world, _other, _initiative, _ = ctx
     body = SourceIn(
