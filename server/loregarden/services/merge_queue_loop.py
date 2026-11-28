@@ -98,6 +98,7 @@ from loregarden.services.merge_queue import (
     transition,
 )
 from loregarden.services.merge_queue_behind import relabel_behind
+from loregarden.services.merge_queue_cards import close_card
 from loregarden.services.merge_queue_failures import (
     LostVerdict,
     failed_elsewhere,
@@ -123,7 +124,6 @@ from loregarden.services.merge_queue_pull_heads import (
 )
 from loregarden.services.merge_queue_reports import (
     artifact_open,
-    close_card,
     file_conflict_artifact,
     report_still_blocked,
     report_stopped,

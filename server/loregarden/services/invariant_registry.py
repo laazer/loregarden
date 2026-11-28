@@ -64,6 +64,7 @@ from loregarden.services.learning_ledger_invariants import (
 from loregarden.services.live_run_refusal_blocks import tickets_blocked_by_a_live_run_refusal
 from loregarden.services.merge_queue_behind import QUEUED_ENTRIES_NAME_THE_CURRENT_HEAD
 from loregarden.services.merge_queue_closed_prs import STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR
+from loregarden.services.merge_queue_stale_cards import STOPPED_CARDS_CLOSE_WHEN_QUEUED_AGAIN
 from loregarden.services.oversized_ticket_census import tickets_over_a_write_cap
 from loregarden.services.parallel_queue import (
     last_lane_entry,
@@ -1325,6 +1326,7 @@ INVARIANTS: tuple[Invariant, ...] = (
     NO_STAGE_RUNS_PAST_AN_UNRUN_GATE,
     TICKETS_ARE_CREATED_UNDER_THE_SIZE_CAPS,
     STOPPED_ENTRIES_OUTLIVE_NO_CLOSED_PR,
+    STOPPED_CARDS_CLOSE_WHEN_QUEUED_AGAIN,
     QUEUED_ENTRIES_NAME_THE_CURRENT_HEAD,
     ORPHANED_SYMBOL_MAP_PARTITION,
     CONCLUDED_RUNS_GRADE_THEIR_LEARNINGS,

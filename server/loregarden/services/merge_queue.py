@@ -36,6 +36,7 @@ from loregarden.models.domain import (
     Workspace,
     utcnow,
 )
+from loregarden.services.merge_queue_cards import close_card
 from sqlalchemy import and_, exists, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import aliased
@@ -343,6 +344,8 @@ def _insert(
                 )
             continue  # lost the position to a concurrent admission; read the next one
         session.refresh(entry)
+        # A stop of this PR's asks for a decision this admission just made.
+        close_card(session, entry, reason=f"PR #{entry.pr_number} queued again")
         ahead = ahead_of(session, entry)
         logger.info(
             "Merge queue %s: admitted PR #%s (%s) at position %s, %s ahead",
@@ -481,6 +484,7 @@ def retry(session: Session, entry_id: str) -> MergeQueueEntry:
         if not moved:
             raise QueueRefusal(f"PR #{entry.pr_number} moved while being retried; read it again")
         session.refresh(entry)
+        close_card(session, entry, reason=f"PR #{entry.pr_number} retried")
         return entry
     raise RuntimeError(f"could not claim a merge queue position for PR #{entry.pr_number}")
 

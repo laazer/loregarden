@@ -21,8 +21,8 @@ from loregarden.models.domain.pull_request_enums import PullRequestState
 from loregarden.services.github_pr_listing import GitHubReadError
 from loregarden.services.invariants import Invariant, Violation
 from loregarden.services.merge_queue import is_superseded, transition
+from loregarden.services.merge_queue_cards import close_card
 from loregarden.services.merge_queue_github import GhQueueGitHub, QueueGitHub
-from loregarden.services.merge_queue_reports import close_card
 from loregarden.services.workspace_paths import resolve_workspace_root
 from sqlmodel import Session, col, select
 
