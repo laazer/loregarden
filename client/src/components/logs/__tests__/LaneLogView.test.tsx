@@ -24,6 +24,8 @@ function runLog(overrides: Partial<RunLog> = {}): RunLog {
     stage_key: "implement",
     status: "running",
     command: "",
+    adapter: "claude",
+    call_lines_expected: true,
     started_at: null,
     finished_at: null,
     lines: [],

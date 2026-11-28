@@ -252,3 +252,79 @@ def test_the_stop_timestamp_is_the_same_iso_shape_as_the_rest_of_the_payload(
     assert stamped.endswith("Z") or "+" in stamped, (
         f"{stamped!r} carries no zone, so the client cannot place it on a clock"
     )
+
+
+# ---- S1b: the payload says which adapter ran, and whether it writes call lines -------------------
+#
+# Neither `LedgerAttempt` nor the run-log payload carried the adapter, so the Hive map had no input
+# for "this adapter writes no tool-call lines" and rendered every such run as idle
+# (lg-hive-office-2784, S1b / S7).
+
+_COMMANDS = {
+    "claude": "/Users/x/.local/bin/claude -p --output-format stream-json",
+    "cursor": "/Users/x/.local/bin/cursor-agent agent -p --trust",
+    "codex": "/Users/x/.local/bin/codex exec --json",
+    "": "",
+}
+
+
+def _seed_run_with_command(session: Session, command: str) -> AgentRun:
+    ticket = session.exec(select(Ticket)).first()
+    assert ticket
+    run = AgentRun(
+        run_code=f"run_ad{abs(hash(command)) % 10000}",
+        ticket_id=ticket.id,
+        workspace_id=ticket.workspace_id,
+        agent_id="backend_implementer",
+        skill_name="",
+        stage_key="implement",
+        status=RunStatus.SUCCEEDED,
+        command=command,
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def test_run_log_reports_the_adapter_and_whether_call_lines_are_expected(
+    client: TestClient, db_session: Session
+):
+    """S1-AC3. Both fields, on one response each, over the three resolvable adapters and the
+    unresolvable empty command. `call_lines_expected` is false for everything but Claude."""
+    for adapter, command in _COMMANDS.items():
+        run = _seed_run_with_command(db_session, command)
+        body = client.get(f"/api/runs/{run.id}/log").json()
+        assert body["adapter"] == adapter, command
+        assert body["call_lines_expected"] is (adapter == "claude"), command
+        # The raw command stays on the payload beside the derived adapter; the client renders
+        # neither from the other.
+        assert body["command"] == command
+
+
+def test_the_two_new_fields_are_always_present_and_never_null(
+    client: TestClient, db_session: Session
+):
+    """A missing key and `false` are different answers, and the client branches on both. An
+    unresolvable adapter is `""` — never `null`, which would make `adapter` optional on the
+    client and let `activity unknown — adapter not recorded` fall through to a default."""
+    run = _seed_run_with_command(db_session, "")
+    body = client.get(f"/api/runs/{run.id}/log").json()
+    assert "adapter" in body
+    assert "call_lines_expected" in body
+    assert body["adapter"] == ""
+    assert body["call_lines_expected"] is False
+    assert isinstance(body["call_lines_expected"], bool)
+
+
+def test_a_run_with_no_log_artifact_still_reports_its_adapter(
+    client: TestClient, db_session: Session
+):
+    """The adapter comes from `AgentRun.command`, not from the log, so a run that streamed nothing
+    still says what ran it. This is the common case the fields exist for: a run with no lines and
+    no adapter is `unknown`, while a Claude run with no lines is `no calls yet`."""
+    run = _seed_run_with_command(db_session, _COMMANDS["claude"])
+    body = client.get(f"/api/runs/{run.id}/log").json()
+    assert body["lines"] == []
+    assert body["adapter"] == "claude"
+    assert body["call_lines_expected"] is True

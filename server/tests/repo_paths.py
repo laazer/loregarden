@@ -19,6 +19,16 @@ So the root is found by what it holds, not where it is:
 
 ``REPO_ROOT`` is resolved once, at import — collection time, before any test
 can point the environment variable at a ``tmp_path`` of its own.
+
+``OWN_CHECKOUT_ROOT`` is the same walk with the override ignored: the checkout
+*this file* lives in. Use it for a file that belongs to the test rather than to
+whatever checkout the process was told about — a fixture this branch committed
+is in this branch's tree, and reading it through the override makes a branch's
+own fixtures look missing (a criteria check inherits ``LOREGARDEN_REPO_ROOT``
+naming the primary checkout while ``cwd`` is the ticket's worktree). Keep
+``REPO_ROOT`` for files that belong to the checkout under test
+(``lefthook.yml``, ``.lefthook/scripts/``), where following the override is the
+point.
 """
 
 from __future__ import annotations
@@ -54,3 +64,6 @@ def find_repo_root(start: Path, environ: Mapping[str, str] = os.environ) -> Path
 
 
 REPO_ROOT = find_repo_root(Path(__file__).parent)
+
+#: The checkout holding the tests themselves, never redirected by the override.
+OWN_CHECKOUT_ROOT = find_repo_root(Path(__file__).parent, environ={})

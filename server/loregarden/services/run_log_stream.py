@@ -44,7 +44,11 @@ from loregarden.services.log_storage import (
 )
 from loregarden.services.sqlite_retry import sqlite_write_retry
 from loregarden.services.tool_body import command_outcome, with_tool_output
-from loregarden.services.tool_call_line import tool_call_lines
+from loregarden.services.tool_call_line import (
+    TOOL_RESULT_BLOCK,
+    tool_call_lines,
+    tool_result_line,
+)
 from sqlmodel import Session, select
 
 
@@ -104,7 +108,8 @@ _OPENCODE_EVENT_TYPES = frozenset(get_args(OpencodeEvent))
 #: block inside a `user` message. Named here for the same reason `OpencodeEvent`
 #: is a `Literal`: the vocabulary is the adapter's, and an enum would imply
 #: Loregarden gets a say in when it changes.
-TOOL_RESULT_BLOCK = "tool_result"  # py-org: allow-string - adapter vocabulary
+#: `TOOL_RESULT_BLOCK` is re-exported from `tool_call_line`, which owns both halves of the
+#: exchange: the call line and the result line are written from the same vocabulary.
 TOOL_USE_BLOCK = "tool_use"  # py-org: allow-string - adapter vocabulary
 TOOL_CALL_EVENT = "tool_call"  # py-org: allow-string - adapter vocabulary
 _TOOL_EXCHANGE_EVENTS = frozenset({TOOL_USE_BLOCK, TOOL_RESULT_BLOCK})
@@ -141,22 +146,6 @@ def _format_opencode_stream_payload(
     return None
 
 
-def _tool_result_text(content: object) -> str:
-    """The text a tool handed back, from either shape the CLIs send it in."""
-    if isinstance(content, str):  # py-org: allow-isinstance - third-party CLI payload
-        return content
-    if not isinstance(content, list):  # py-org: allow-isinstance - third-party CLI payload
-        return ""
-    parts: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
-            continue
-        text = block.get("text") or block.get("tool_name")
-        if text:
-            parts.append(str(text))
-    return "\n".join(parts)
-
-
 def _format_user_event(payload: dict[str, Any]) -> LogLine | None:
     """A `user` event is what went *into* the agent, not what came out of it.
 
@@ -170,6 +159,9 @@ def _format_user_event(payload: dict[str, Any]) -> LogLine | None:
     because the Claude adapter logs no body for a tool call. The opening prompt
     is the run's input, reconstructible from the ticket and the stage, so it is
     recorded by size rather than stored again.
+
+    The result line itself — including whether the call failed, which this
+    function used to drop — is `tool_call_line.tool_result_line`.
     """
     message = payload.get("message") or {}
     content = message.get("content")
@@ -177,18 +169,15 @@ def _format_user_event(payload: dict[str, Any]) -> LogLine | None:
         return SYS / "prompt" / size(len(content))
     if not isinstance(content, list):  # py-org: allow-isinstance - third-party CLI payload
         return None
-    results: list[str] = []
+    result = tool_result_line(content)
+    if result is not None:
+        return result
     prompt_chars = 0
     for block in content:
         if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
             continue
-        if block.get("type") == TOOL_RESULT_BLOCK:
-            results.append(_tool_result_text(block.get("content")))
-        elif block.get("text"):
+        if block.get("type") != TOOL_RESULT_BLOCK and block.get("text"):
             prompt_chars += len(str(block["text"]))
-    body = "\n".join(part for part in results if part.strip())
-    if body.strip():
-        return (TOOL / "result").with_body(body)
     if prompt_chars:
         return SYS / "prompt" / size(prompt_chars)
     return None

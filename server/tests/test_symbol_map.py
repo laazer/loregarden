@@ -1592,8 +1592,11 @@ def test_nothing_builds_or_schedules_the_map(surface):
     offenders = [
         path.name
         for path in sources
+        # A recorded fixture is data, not a caller: client/src/test/fixtures/
+        # hive-runs/failing.json quotes a run's `git status` naming symbol_map.py.
         if path.is_file()
         and "__pycache__" not in path.parts
+        and "fixtures" not in path.parts
         and "build_symbol_map" in path.read_text(encoding="utf-8", errors="ignore")
     ]
 

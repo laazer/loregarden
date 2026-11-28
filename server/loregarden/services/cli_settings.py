@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 from dataclasses import dataclass
+from pathlib import PurePath
 
 from loregarden.config import settings
 from loregarden.models.domain import (
@@ -50,6 +51,46 @@ ADAPTER_BINARIES: dict[str, tuple[str, str]] = {
     "codex": ("codex", "LOREGARDEN_CODEX_BIN"),
     "opencode": ("opencode", "LOREGARDEN_OPENCODE_BIN"),
 }
+
+
+#: `AgentRun.command` carries this instead of an argv when a harness outside this process ran the
+#: turn. Mirrors `external_harness.EXTERNAL_HARNESS_COMMAND_PREFIX`, spelled here rather than
+#: imported because that module imports half the service layer and this one is a leaf.
+_EXTERNAL_HARNESS_PREFIX = "[external-harness] "
+
+#: Each adapter's binary name, for reading a command backwards. Built from `ADAPTER_BINARIES`
+#: so the two sides cannot drift: `cursor-agent` is the binary, `cursor` is the adapter id, and
+#: both spellings occur in the live `command` column.
+_ADAPTER_BY_TOKEN: dict[str, str] = {
+    **{binary: adapter for adapter, (binary, _env) in ADAPTER_BINARIES.items()},
+    **{adapter: adapter for adapter in ADAPTER_BINARIES},
+}
+
+
+def adapter_for_command(command: str) -> str:
+    """Which CLI ran an agent turn, read from the argv the run recorded.
+
+    No column records the adapter, so `AgentRun.command` is the only evidence — which is the
+    point: a workspace or ticket pin can override an agent's configured adapter, and this is what
+    actually ran. The Hive map needs it to tell "this adapter writes no tool-call lines" from
+    "this run has made no call yet" (lg-hive-office-2784, S7).
+
+    `""` means no adapter could be resolved, and is an answer rather than a failure: 790 of 6,211
+    live rows carry an empty command, and S7 renders them `activity unknown — adapter not
+    recorded`. A guess would be worse than nothing, so only the *first* word is read (a Claude
+    command naming `cursor-agent` in a `--add-dir` path is still a Claude run) and only an exact
+    binary or adapter name resolves — `claudette`, `my-claude-wrapper` and `claude.backup` are all
+    `""`, which a substring or suffix-tolerant test would claim for Claude.
+
+    `[external-harness] claude_code` resolves to `""` on purpose. The prefix is followed by an
+    `ExternalHarness` value, not a binary, so `claude_code` names no adapter — and those 367 runs
+    stream nothing into `run_log_lines` (0 of them carry one `call ·` line), so unknown activity
+    is the honest reading. Mapping it through to `claude` would render every one `no calls yet`.
+    """
+    tokens = command.removeprefix(_EXTERNAL_HARNESS_PREFIX).split()
+    if not tokens:
+        return ""
+    return _ADAPTER_BY_TOKEN.get(PurePath(tokens[0]).name, "")
 
 
 def adapter_available(adapter: str) -> bool:

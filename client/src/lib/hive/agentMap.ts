@@ -26,90 +26,132 @@ export type MapStationId =
   | "agents"
   | "skills";
 
-export interface MapStation {
-  id: MapStationId;
+/**
+ * Every place a call can happen: the ten ring stations, plus the agent's own desk.
+ *
+ * The desk is where a tool with no station of its own is used — 255 of 27,319 recorded call
+ * lines, every one of which used to land silently at Shell. It is deliberately *not* an
+ * eleventh ring row: `stationPoint` divides the circle by the number of ring rows, so an
+ * eleventh would move all ten existing positions and the CSS geometry pinned to them.
+ */
+export type MapPlaceId = MapStationId | "desk";
+
+export interface MapPlace {
+  id: MapPlaceId;
   label: string;
-  /** What lights it, for the station's accessible description. */
+  /** What lights it, for the place's accessible description. */
   hint: string;
   /** SVG path on a 20-unit box centred on 0,0. */
   icon: string;
+  /** True for the ten places drawn on the ring; false for the desk, which is the agent's own point. */
+  ring: boolean;
 }
 
 function ring(x: number, y: number, r: number): string {
   return `M${x - r} ${y}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
 }
 
-/** In ring order, clockwise from the top. Icons are lot-map's, where it has one. */
-export const MAP_STATIONS: readonly MapStation[] = [
+/**
+ * One table decides where a call happens. The ring rows come first, in ring order
+ * clockwise from the top; the desk is last and off the ring. Icons are lot-map's, where it
+ * has one.
+ */
+export const MAP_PLACES: readonly MapPlace[] = [
   {
     id: "inbox",
     label: "Inbox",
     hint: "questions, permission requests and refusals",
     icon: `${ring(0, -3.6, 3.4)}M-6.5 8c0-4 3-6.2 6.5-6.2s6.5 2.2 6.5 6.2`,
+    ring: true,
   },
   {
     id: "model",
     label: "Model",
     hint: "the agent thinking and answering",
     icon: "M-5 -5h10v10h-10zM-2 -8.5v3.5M2 -8.5v3.5M-2 5v3.5M2 5v3.5M-8.5 -2h3.5M-8.5 2h3.5M5 -2h3.5M5 2h3.5",
+    ring: true,
   },
   {
     id: "memory",
     label: "Memory",
     hint: "loregarden memory and learnings",
     icon: `M-5 4.5L0 -5L6 3.5M-5 4.5L6 3.5${ring(-5, 4.5, 2.1)}${ring(0, -5, 2.1)}${ring(6, 3.5, 2.1)}`,
+    ring: true,
   },
   {
     id: "control",
     label: "Loregarden",
     hint: "control-plane tools: tickets, stages, artifacts",
     icon: "M-7 -7h14v14h-14zM-7 -2h14M-2 -2v9",
+    ring: true,
   },
   {
     id: "files",
     label: "Files",
     hint: "reads, edits, searches and file-only shell commands",
     icon: "M-5.5 -8h7.5l3.5 3.5v12.5h-11zM2 -8v3.5h3.5",
+    ring: true,
   },
   {
     id: "shell",
     label: "Shell",
     hint: "every other shell command",
     icon: "M-7.5 -5l5 5l-5 5M0 6h7.5",
+    ring: true,
   },
   {
     id: "network",
     label: "Network",
     hint: "web fetch and search, gh, git push, other MCP servers",
     icon: `${ring(0, 0, 7.8)}M-7.8 0h15.6M0 -7.8c-4.2 4.2 -4.2 11.4 0 15.6M0 -7.8c4.2 4.2 4.2 11.4 0 15.6`,
+    ring: true,
   },
   {
     id: "browser",
     label: "Browser",
     hint: "browser tools",
     icon: "M-8.5 -6.5h17v13h-17zM-8.5 -2.8h17M-6.3 -4.7h.1M-3.8 -4.7h.1",
+    ring: true,
   },
   {
     id: "agents",
     label: "Subagents",
     hint: "subagents the run started",
     icon: `M0 -4v3.5M0 -.5L-6 4M0 -.5L6 4${ring(0, -6, 2.1)}${ring(-6.5, 5.5, 2.1)}${ring(6.5, 5.5, 2.1)}`,
+    ring: true,
   },
   {
     id: "skills",
     label: "Skills",
     hint: "skills and tool search",
     icon: "M1.5 -8.5L-5.5 1h4.5l-1.5 7.5l7.5 -9.8h-4.5z",
+    ring: true,
+  },
+  {
+    id: "desk",
+    label: "Desk",
+    hint: "tools with no station of their own, used where the agent sits",
+    icon: "M-8.5 -1h17v2.5h-17zM-6.5 1.5v6M6.5 1.5v6M-5 -1v-5.5h10v5.5",
+    ring: false,
   },
 ];
+
+/** The ten places on the ring, derived from the one table so their order and count cannot drift. */
+export const MAP_STATIONS: readonly MapPlace[] = MAP_PLACES.filter((place) => place.ring);
 
 // ---- classifying one line ------------------------------------------------------------------------
 
 export type LineEvent =
-  | { kind: "call"; station: MapStationId; tool: string; label: string; failed: boolean }
-  | { kind: "result" }
+  /** A tool call, at the one place the table gives it. */
+  | { kind: "call"; place: MapPlaceId; tool: string; label: string; failed: boolean }
+  /** A result line. `failed` is the server's `result · failed` marker, and nothing else. */
+  | { kind: "result"; failed: boolean }
   | { kind: "model" }
+  /** `ERR`/`FAIL`: about the run, never about a call. */
   | { kind: "error" };
+
+/** The one marker the server writes on a result headline (`tool_call_line.RESULT_FAILED`). */
+const RESULT_FAILED = "failed";
 
 const SEP = " · ";
 
@@ -137,43 +179,51 @@ function words(name: string): string {
 }
 
 /** A Bash subject is `<head>` or `<head>: <description>` (see `tool_call_line.command_head`). */
-function classifyShell(subject: string): { station: MapStationId; label: string } {
+function classifyShell(subject: string): { place: MapPlaceId; label: string } {
   const colon = subject.indexOf(": ");
   const head = colon >= 0 ? subject.slice(0, colon) : subject;
   const label = colon >= 0 ? subject.slice(colon + 2) : subject;
   const first = head.split(" ")[0] ?? "";
   if (NETWORK_COMMANDS.has(head) || NETWORK_COMMANDS.has(first) || first === "gh") {
-    return { station: "network", label: label || head };
+    return { place: "network", label: label || head };
   }
-  if (FILE_COMMANDS.has(head) || FILE_COMMANDS.has(first)) return { station: "files", label: label || head };
-  return { station: "shell", label: label || head || "shell" };
+  if (FILE_COMMANDS.has(head) || FILE_COMMANDS.has(first)) return { place: "files", label: label || head };
+  return { place: "shell", label: label || head || "shell" };
 }
 
-function classifyMcp(tool: string): { station: MapStationId; label: string } | null {
+function classifyMcp(tool: string): { place: MapPlaceId; label: string } | null {
   const match = /^mcp__(.+?)__(.+)$/.exec(tool);
   if (!match) return null;
   const [, server, name] = match;
   if (server === "loregarden") {
     const bare = name.replace(/^loregarden_/, "");
-    const station = MEMORY_TOOL_WORDS.some((w) => bare.includes(w)) ? "memory" : "control";
-    return { station, label: words(bare) };
+    const place = MEMORY_TOOL_WORDS.some((w) => bare.includes(w)) ? "memory" : "control";
+    return { place, label: words(bare) };
   }
-  if (BROWSER_SERVERS.has(server)) return { station: "browser", label: words(name) };
-  return { station: "network", label: `${server}: ${words(name)}` };
+  if (BROWSER_SERVERS.has(server)) return { place: "browser", label: words(name) };
+  return { place: "network", label: `${server}: ${words(name)}` };
 }
 
-export function classifyTool(tool: string, subject: string): { station: MapStationId; label: string } {
+/**
+ * Where one call happens, and what to call it.
+ *
+ * A tool the table does not know goes to the **desk**, under its own name. It used to fall
+ * through to `shell`, which was a silent lie about both the place and the tool: 255 recorded
+ * call lines across seven tool names, every one of them shown as a shell command.
+ */
+export function classifyTool(tool: string, subject: string): { place: MapPlaceId; label: string } {
   if (tool === "Bash" || tool === "shell") return classifyShell(subject);
   const mcp = classifyMcp(tool);
   if (mcp) return mcp;
   const label = subject || tool;
-  if (FILE_TOOLS.has(tool)) return { station: "files", label };
-  if (NETWORK_TOOLS.has(tool)) return { station: "network", label };
-  if (AGENT_TOOLS.has(tool)) return { station: "agents", label };
-  if (SKILL_TOOLS.has(tool)) return { station: "skills", label };
-  if (INBOX_TOOLS.has(tool)) return { station: "inbox", label: "question for you" };
-  if (MODEL_TOOLS.has(tool)) return { station: "model", label: words(tool) };
-  return { station: "shell", label };
+  if (FILE_TOOLS.has(tool)) return { place: "files", label };
+  if (NETWORK_TOOLS.has(tool)) return { place: "network", label };
+  if (AGENT_TOOLS.has(tool)) return { place: "agents", label };
+  if (SKILL_TOOLS.has(tool)) return { place: "skills", label };
+  if (INBOX_TOOLS.has(tool)) return { place: "inbox", label: "question for you" };
+  if (MODEL_TOOLS.has(tool)) return { place: "model", label: words(tool) };
+  // At the desk the tool's own name is the label: there is no subject convention to read.
+  return { place: "desk", label: tool };
 }
 
 /**
@@ -188,7 +238,13 @@ export function classifyLine(line: LogLine): LineEvent | null {
   if (tag === "ERR" || tag === "FAIL") return { kind: "error" };
   if (tag !== "TOOL") return null;
   const headline = text.split("\n", 1)[0] ?? "";
-  if (headline === "result" || headline.startsWith(`result${SEP}`)) return { kind: "result" };
+  if (headline === "result") return { kind: "result", failed: false };
+  if (headline.startsWith(`result${SEP}`)) {
+    // Only the one marker means failure. Any other suffix anyone appends later — a truncation
+    // note, a size, a duration — is still a result, and so is "Error" in the body (22,147 live
+    // result bodies carry it as ordinary content).
+    return { kind: "result", failed: headline.slice(`result${SEP}`.length) === RESULT_FAILED };
+  }
   if (headline.startsWith(`call${SEP}`)) {
     const rest = headline.slice(`call${SEP}`.length);
     const at = rest.indexOf(SEP);
@@ -197,10 +253,10 @@ export function classifyLine(line: LogLine): LineEvent | null {
     return { kind: "call", ...classifyTool(tool, subject), tool, failed: false };
   }
   if (headline.startsWith("Denied")) {
-    return { kind: "call", station: "inbox", tool: "permission", label: "refused", failed: true };
+    return { kind: "call", place: "inbox", tool: "permission", label: "refused", failed: true };
   }
   if (headline.startsWith("Permission requested") || headline === "Agent asked clarifying questions") {
-    return { kind: "call", station: "inbox", tool: "permission", label: "asked you", failed: false };
+    return { kind: "call", place: "inbox", tool: "permission", label: "asked you", failed: false };
   }
   // Codex logs a shell call as `$ <command>`; OpenCode logs the bare tool name.
   if (headline.startsWith("$ ")) {
@@ -229,20 +285,24 @@ export interface MapRunInput {
   lines: readonly LogLine[];
 }
 
-export type MapCallState = "running" | "done" | "failed";
+/**
+ * What the log says about one call, and nothing it does not say.
+ *
+ * `done` needs a clean `result` line. `failed` needs a `result · failed` one. A call still open
+ * on an active run is `running`; one superseded by the next call with no result of its own, or
+ * left open by a run that has ended, is `unknown` — never `done`, and not forever `running`.
+ */
+export type MapCallState = "running" | "done" | "failed" | "unknown";
 
 export interface MapCall {
   /** Stable across polls while the line stays in the log's 1000-line tail. */
   id: string;
   runId: string;
-  agentName: string;
-  station: MapStationId;
+  place: MapPlaceId;
   tool: string;
   label: string;
   time: string;
   state: MapCallState;
-  /** Finished calls folded into this feed row: same run, same station, back to back. */
-  folded: number;
 }
 
 export interface MapAgent {
@@ -258,8 +318,8 @@ export interface MapAgent {
   failures: number;
 }
 
-export interface MapStationState {
-  station: MapStation;
+export interface MapPlaceState {
+  place: MapPlace;
   /** Calls made to it, over every run on the map. Drives the worn spoke. */
   uses: number;
   running: number;
@@ -270,11 +330,8 @@ export interface MapStationState {
 
 export interface AgentMapModel {
   agents: MapAgent[];
-  stations: MapStationState[];
-  /** Newest first, at most FEED_ROWS; model steps left out. */
-  feed: MapCall[];
-  /** Every call on the map, oldest first; the view pulses the ones it has not seen. */
-  calls: MapCall[];
+  /** All eleven places, the desk included, so a desk call is counted and not dropped. */
+  places: MapPlaceState[];
   anyActive: boolean;
 }
 
@@ -284,102 +341,91 @@ export function agentDisplayName(agentId: string): string {
   return words(agentId);
 }
 
-function runCalls(run: MapRunInput, active: boolean): MapCall[] {
-  const name = agentDisplayName(run.agentId);
+/**
+ * One run's calls, in the order its log wrote them.
+ *
+ * Nothing here infers a state the log does not state. In particular a run-level `ERR`/`FAIL`
+ * line marks no call: those are about the run (951 `ERR` + 312 `FAIL` of 344,888 lines, and in
+ * run `fcc2a8a7` only at seq 178-180, after 82 clean calls), and blaming the last call for them
+ * accused whichever tool the run happened to touch before it died.
+ */
+export function runCalls(run: Pick<MapRunInput, "runId" | "agentId" | "lines">, active: boolean): MapCall[] {
   const calls: MapCall[] = [];
   const seen = new Map<string, number>();
   // A holder, not a `let`: TypeScript cannot see the closure below assign it.
   const cursor: { open: MapCall | null } = { open: null };
   let inModel = false;
-  const push = (event: { station: MapStationId; tool: string; label: string; failed: boolean }, time: string) => {
-    if (cursor.open) cursor.open.state = "done";
-    const key = `${run.runId}|${time}|${event.station}|${event.tool}|${event.label}`;
+  const make = (
+    event: { place: MapPlaceId; tool: string; label: string },
+    time: string,
+    state: MapCallState,
+  ): MapCall => {
+    const key = `${run.runId}|${time}|${event.place}|${event.tool}|${event.label}`;
     const n = seen.get(key) ?? 0;
     seen.set(key, n + 1);
     const call: MapCall = {
       id: `${key}|${n}`,
       runId: run.runId,
-      agentName: name,
-      station: event.station,
+      place: event.place,
       tool: event.tool,
       label: event.label,
       time,
-      state: event.failed ? "failed" : "running",
-      folded: 0,
+      state,
     };
     calls.push(call);
-    cursor.open = event.failed ? null : call;
+    return call;
   };
-  for (const line of run.lines) {
+  run.lines.forEach((line) => {
     const event = classifyLine(line);
-    if (event === null) continue;
+    if (event === null) return;
     if (event.kind === "model") {
-      // A run of THINK/OUT lines is one model step, not one per streamed chunk.
-      if (!inModel) push({ station: "model", tool: "model", label: "thinking", failed: false }, line.time);
+      // A run of THINK/OUT lines is one model step, not one per streamed chunk. A model step is
+      // not a call: it has no result line of its own, so it is never `done`, and it leaves the
+      // open call alone rather than closing it.
+      if (!inModel) make({ place: "model", tool: "model", label: "thinking" }, line.time, "unknown");
       inModel = true;
-      continue;
+      return;
     }
     inModel = false;
     if (event.kind === "result") {
-      if (cursor.open) cursor.open.state = "done";
+      if (cursor.open) cursor.open.state = event.failed ? "failed" : "done";
       cursor.open = null;
-    } else if (event.kind === "error") {
-      const last = calls[calls.length - 1];
-      if (last) last.state = "failed";
-      cursor.open = null;
-    } else {
-      push(event, line.time);
+    } else if (event.kind === "call") {
+      // The call it supersedes did not succeed; the log simply never said what became of it.
+      if (cursor.open) cursor.open.state = "unknown";
+      const call = make(event, line.time, event.failed ? "failed" : "running");
+      cursor.open = event.failed ? null : call;
     }
-  }
-  // A finished run has nothing in flight, whatever its last line was.
-  if (!active && cursor.open) cursor.open.state = "done";
+  });
+  // A run that has ended has nothing in flight, and did not finish what it was holding.
+  if (!active && cursor.open) cursor.open.state = "unknown";
   return calls;
 }
 
-/** Back-to-back finished calls of one run at one station read as one row, `+N`. */
-function foldFeed(calls: readonly MapCall[]): MapCall[] {
-  const rows: MapCall[] = [];
-  for (const call of calls) {
-    const prev = rows[rows.length - 1];
-    if (
-      prev &&
-      prev.runId === call.runId &&
-      prev.station === call.station &&
-      prev.state === "done" &&
-      call.state === "done"
-    ) {
-      rows[rows.length - 1] = { ...call, folded: prev.folded + 1 };
-      continue;
-    }
-    rows.push(call);
-  }
-  return rows;
-}
-
 export function buildAgentMap(runs: readonly MapRunInput[]): AgentMapModel {
-  const stations: MapStationState[] = MAP_STATIONS.map((station) => ({
-    station,
+  const places: MapPlaceState[] = MAP_PLACES.map((place) => ({
+    place,
     uses: 0,
     running: 0,
     failures: 0,
     usesByRun: {},
   }));
-  const byId = new Map(stations.map((s) => [s.station.id, s]));
+  const byId = new Map(places.map((p) => [p.place.id, p]));
   const agents: MapAgent[] = [];
-  const all: MapCall[] = [];
 
   runs.forEach((run) => {
     const active = ACTIVE_LEDGER_STATUSES.has(run.status.toLowerCase());
     const calls = runCalls(run, active);
     for (const call of calls) {
-      const state = byId.get(call.station);
+      // Every place the classifier can name is in this table, the desk included, so nothing
+      // here can silently drop a call.
+      const state = byId.get(call.place);
       if (!state) continue;
       state.uses += 1;
       state.usesByRun[run.runId] = (state.usesByRun[run.runId] ?? 0) + 1;
       if (call.state === "running") state.running += 1;
       if (call.state === "failed") state.failures += 1;
     }
-    all.push(...calls);
     agents.push({
       runId: run.runId,
       runCode: run.runCode,
@@ -393,18 +439,11 @@ export function buildAgentMap(runs: readonly MapRunInput[]): AgentMapModel {
     });
   });
 
-  // Lines carry a wall-clock time only (HH:MM:SS); a stable sort keeps each
-  // run's own order for calls in the same second.
-  const ordered = [...all].sort((a, b) => a.time.localeCompare(b.time));
-  return {
-    agents,
-    stations,
-    // Model steps light their station but stay out of the feed: one sits
-    // between every pair of calls, and would fill half its rows with "thinking".
-    feed: foldFeed(ordered.filter((c) => c.station !== "model")).slice(-FEED_ROWS).reverse(),
-    calls: ordered,
-    anyActive: agents.some((a) => a.active),
-  };
+  // Only what a component reads: the run list, the place counts, and whether anything is at
+  // work. Collapsing consecutive calls into acts is `buildToolActs`'s job and only its job
+  // (S10) — a second rule here folded `done` pairs alone and disagreed with it on an
+  // `unknown`-state run.
+  return { agents, places, anyActive: agents.some((a) => a.active) };
 }
 
 // ---- geometry ------------------------------------------------------------------------------------

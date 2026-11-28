@@ -21,14 +21,31 @@ import shlex
 from urllib.parse import urlsplit
 
 from loregarden.dot_line import TOOL, LogLine, clip
+from loregarden.models.domain.enums import CliAdapter
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
 TOOL_USE_BLOCK = "tool_use"  # py-org: allow-string - Claude stream-json vocabulary
+TOOL_RESULT_BLOCK = "tool_result"  # py-org: allow-string - Claude stream-json vocabulary
 
 #: The first word of a call line, the way `result` is the first of a result line.
 CALL_HEAD = "call"
+
+#: The first word of a result line. Every result line starts here, failed or not.
+RESULT_HEAD = "result"
+
+#: The suffix that marks a result line as a failed call: `result · failed`. The Hive map's
+#: `classifyLine` keys on that exact rendered headline and reads every other `result · <suffix>`
+#: as a clean result, so this is a shared vocabulary and not a private label — renaming it
+#: without the client is the bug the constant exists to make visible.
+RESULT_FAILED = "failed"
+
+#: The adapters whose streams this module can read a call out of. Only the Claude adapter sends
+#: `tool_use` blocks, so only a Claude run is *expected* to carry `call ·` lines; a run on any
+#: other adapter with none is unknown activity, not an idle one (lg-hive-office-2784, S7).
+#: It lives here, beside the writer, because the writer is what makes the prediction true.
+CALL_LINE_ADAPTERS = frozenset({CliAdapter.CLAUDE})
 
 SUBJECT_CHARS = 80
 
@@ -148,3 +165,58 @@ def tool_call_lines(content: object) -> list[LogLine]:
         if block.type == TOOL_USE_BLOCK:
             lines.append(tool_call_line(block))
     return lines
+
+
+def _result_text(content: object) -> str:
+    """The text a tool handed back, from either shape the CLIs send it in."""
+    if isinstance(content, str):  # py-org: allow-isinstance - third-party CLI payload
+        return content
+    if not isinstance(content, list):  # py-org: allow-isinstance - third-party CLI payload
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
+            continue
+        text = block.get("text") or block.get("tool_name")
+        if text:
+            parts.append(str(text))
+    return "\n".join(parts)
+
+
+def tool_result_line(blocks: object) -> LogLine | None:
+    """The one result line a `user` event's `tool_result` blocks write.
+
+    `is_error` used to be read by nobody: the formatter kept the block's `content` and dropped
+    the flag, so a failed call and a clean one produced the byte-identical `result` line and no
+    reader could tell them apart (lg-hive-office-2784, S1a).
+
+    The headline is `result · failed` when **any** block in the event carries `is_error` exactly
+    `True`, and `result` otherwise. The log keeps one line per event, so a multi-block event with
+    one error is one failed line: a partial success reading as success would hide the failure,
+    which is the whole point of recording it.
+
+    Only the boolean `True` is a failure. 6 of the 16 `tool_result` blocks in the recorded payload
+    `data/run-logs/run_75d1f3-2cd98e21.out` carry no `is_error` key at all, so an `is not False`
+    test would call every one of them failed; a truthiness test would do the same to the string
+    `"false"`. The body is untouched — the word "Error" inside a result is ordinary content (22,147
+    live result bodies carry it), and S4 rejects reading failure out of it.
+
+    `None` when the blocks carry no text, which is today's behaviour for an empty result and the
+    reason the marker cannot smuggle a bodiless line into the log.
+    """
+    if not isinstance(blocks, list):  # py-org: allow-isinstance - third-party CLI payload
+        return None
+    texts: list[str] = []
+    failed = False
+    for block in blocks:
+        if not isinstance(block, dict):  # py-org: allow-isinstance - third-party CLI payload
+            continue
+        if block.get("type") != TOOL_RESULT_BLOCK:
+            continue
+        texts.append(_result_text(block.get("content")))
+        failed = failed or block.get("is_error") is True
+    body = "\n".join(text for text in texts if text.strip())
+    if not body.strip():
+        return None
+    headline = TOOL / RESULT_HEAD / (RESULT_FAILED if failed else "")
+    return headline.with_body(body)
