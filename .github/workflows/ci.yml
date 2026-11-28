@@ -217,6 +217,16 @@ jobs:
       - name: Unreachable modules
         run: node ../.lefthook/scripts/ts_unreachable_check.cjs --repo .. --scope branch
 
+      # The runner's speed on fixed work, just before the suite on the same runner,
+      # so the suite-time check can tell a slow runner from a change that slowed
+      # every file (.github/scripts/runner_calibration.py). A failure here only
+      # leaves the check without that reading, which its summary says.
+      - name: Runner benchmark
+        continue-on-error: true
+        run: |
+          mkdir -p ../.profile
+          node ../.github/scripts/runner_bench.mjs > ../.profile/client-runner.json
+
       # Per-file timings for the suite-timing job; jest still prints its usual
       # report, and writes the file whether or not the tests passed. jest does not
       # create the file's directory: without the mkdir it fails after a green run.
@@ -230,7 +240,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: profile-client
-          path: .profile/client-jest.json
+          path: |
+            .profile/client-jest.json
+            .profile/client-runner.json
           if-no-files-found: error
 
   # Per-file test time on every run, and on a pull request a check that fails when

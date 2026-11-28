@@ -158,11 +158,111 @@ def test_a_slowdown_no_runner_explains_still_fails(tmp_path):
 
 def test_a_suite_with_too_few_files_to_read_a_speed_from_is_compared_unscaled(tmp_path):
     """Twelve files where thirteen are needed: no median to trust, so the raw total is compared."""
-    with mock.patch.object(timing, "SPEED_MIN_FILES", 13):
+    with mock.patch.object(timing.calibration, "SPEED_MIN_FILES", 13):
         code, text = _check_against_main(tmp_path, _run(scale=1.35))
     assert code == 1, text
     assert "❌ server:" in text
     assert "server: compared unscaled; fewer than 13 files" in text
+
+
+# -- the client's runner benchmark --------------------------------------------------
+
+
+def _benched(scale: float = 1.0, bench_ms: float = 1000.0, version: int = 1) -> dict[str, dict]:
+    """A run whose client job also timed the runner benchmark."""
+    run = _run(scale)
+    run["client.json"]["runner"] = {"version": version, "ms": bench_ms}
+    return run
+
+
+def _check_benched(
+    tmp_path: Path, mains: list[dict[str, dict]], pull: dict[str, dict]
+) -> tuple[int, str, dict]:
+    """Store main's baseline from `mains` (oldest first, the last one this push's), check `pull`."""
+    github = FakeGitHub()
+    for n, run in enumerate(mains[:-1]):
+        github.add(timing.PROFILES_ARTIFACT, "main", run, run_id=100 + n)
+    baseline = tmp_path / "baseline" / timing.BASELINE_FILE
+    current = str(_write(tmp_path / "m", mains[-1]))
+    argv = ["baseline", "--repo", REPO, "--run-id", "1", "--current", current]
+    with github.patched():
+        assert timing.main([*argv, "--work", str(tmp_path / "w1"), "--out", str(baseline)]) == 0
+    stored = json.loads(baseline.read_text())
+    github.add(timing.BASELINE_ARTIFACT, "main", {timing.BASELINE_FILE: stored})
+    summary = tmp_path / "summary.md"
+    argv = ["check", "--repo", REPO, "--current", str(_write(tmp_path / "pull", pull))]
+    with github.patched():
+        code = timing.main([*argv, "--work", str(tmp_path / "w2"), "--summary", str(summary)])
+    return code, summary.read_text(), stored
+
+
+# Main's runners vary 0.8-1.3x, and its benchmark varied with them.
+NOISY_MAIN = [_benched(s, 1000 * s) for s in (0.8, 1.3, 1.0, 1.1, 0.9, 1.2, 1.0, 0.85, 1.25, 1.0)]
+
+
+def test_a_client_wide_slowdown_the_benchmark_does_not_explain_fails(tmp_path):
+    """Every client file 1.4x slower on a normal runner: under the clamp, so only this catches it.
+
+    The cap allows main's largest ratio plus `MARGIN` (1.10x here), and the check
+    then allows 20% over that, so a uniform slowdown shows from about 1.32x.
+    """
+    code, text, stored = _check_benched(tmp_path, NOISY_MAIN, _benched(1.4, 1000))
+    assert code == 1, text
+    assert "❌ client:" in text
+    assert "allows files up to 1.10x, and they took 1.40x" in text
+    calibrated = stored["suites"]["client"]["runner"]
+    assert calibrated["version"] == 1
+    assert len(calibrated["ratios"]) == profile_delta.DEFAULT_RUNS
+    assert "runner" not in stored["suites"]["server"]
+
+
+def test_a_slower_runner_the_benchmark_confirms_passes(tmp_path):
+    code, text, _stored = _check_benched(tmp_path, NOISY_MAIN, _benched(1.3, 1300))
+    assert code == 0, text
+    assert "runner benchmark 1.30x main's agrees" in text
+
+
+def test_a_slightly_noisy_benchmark_reading_does_not_fail_a_clean_run(tmp_path):
+    """The benchmark read the runner 8% fast; the margin over main's ratios absorbs it."""
+    code, text, _stored = _check_benched(tmp_path, NOISY_MAIN, _benched(1.2, 1200 / 1.08))
+    assert code == 0, text
+
+
+def test_the_benchmark_waits_for_enough_main_runs(tmp_path):
+    """Seven of main's ten runs predate the benchmark: it is not applied, as before it existed."""
+    mains = [_run(1.0)] * 7 + [_benched(1.0, 1000)] * 3
+    code, text, _stored = _check_benched(tmp_path, mains, _benched(1.3, 1000))
+    assert code == 0, text
+    assert "runner benchmark not applied: 3 of the 8 main runs it needs" in text
+
+
+def test_a_benchmark_that_does_not_track_main_s_runners_is_not_applied(tmp_path):
+    """On main the benchmark moved apart from the files: it cannot be trusted to fail anyone."""
+    mains = [_benched(s, 1000) for s in (0.8, 1.3, 1.0, 1.1, 0.9, 1.2, 1.0, 0.85, 1.25, 1.0)]
+    code, text, _stored = _check_benched(tmp_path, mains, _benched(1.3, 1000))
+    assert code == 0, text
+    assert "runner benchmark not applied: on main's runs it tracks the runner only within" in text
+
+
+def test_a_changed_benchmark_waits_for_main_runs_of_its_own_version(tmp_path):
+    code, text, _stored = _check_benched(tmp_path, NOISY_MAIN, _benched(1.3, 1000, version=2))
+    assert code == 0, text
+    assert "this run's benchmark is version 2, main's baseline holds version 1" in text
+
+
+def test_a_run_without_its_benchmark_is_compared_as_before(tmp_path):
+    code, text, _stored = _check_benched(tmp_path, NOISY_MAIN, _run(1.3))
+    assert code == 0, text
+    assert "runner benchmark not applied: this run recorded no benchmark" in text
+
+
+def test_the_baseline_ignores_main_runs_of_an_older_benchmark(tmp_path):
+    mains = [_benched(1.0, 5000, version=1)] * 4 + [_benched(1.0, 1000, version=2)] * 6
+    _code, _text, stored = _check_benched(tmp_path, mains, _benched(1.0, 1000, version=2))
+    calibrated = stored["suites"]["client"]["runner"]
+    assert calibrated["version"] == 2
+    assert calibrated["bench_ms"] == 1000
+    assert len(calibrated["ratios"]) == 6
 
 
 def test_the_baseline_reads_only_main_runs_of_this_repository(tmp_path):
@@ -245,6 +345,40 @@ def test_a_run_records_every_server_shard_and_the_client_in_one_schema(tmp_path)
     measured = profile_delta.measure(profile_delta.load_run(out))
     assert measured["server"].files == {"tests/test_1.py": 2.0, "tests/test_2.py": 2.0}
     assert measured["client"].files == {"src/a.test.ts": 3.0}
+
+
+def test_a_run_records_the_client_runner_benchmark_beside_its_files(tmp_path):
+    root = _downloaded(tmp_path / "dl")
+    bench = {"version": 1, "ms": 512, "rounds": [530, 512], "workers": 3}
+    (root / "profile-client" / "client-runner.json").write_text(json.dumps(bench))
+    out = tmp_path / "run"
+    assert (
+        timing.main(
+            ["collect", "--profiles", str(root), "--client-root", "/w/client", "--out", str(out)]
+        )
+        == 0
+    )
+    client = json.loads((out / "client.json").read_text())
+    assert client["runner"] == {"version": 1, "ms": 512}
+    assert profile_delta.measure(profile_delta.load_run(out))["client"].files == {
+        "src/a.test.ts": 3.0
+    }
+
+
+@pytest.mark.parametrize("written", [None, "not json", '{"version": 1}', '{"version": 1, "ms": 0}'])
+def test_a_missing_or_malformed_benchmark_is_left_out_and_said(tmp_path, capsys, written):
+    root = _downloaded(tmp_path / "dl")
+    if written is not None:
+        (root / "profile-client" / "client-runner.json").write_text(written)
+    out = tmp_path / "run"
+    assert (
+        timing.main(
+            ["collect", "--profiles", str(root), "--client-root", "/w/client", "--out", str(out)]
+        )
+        == 0
+    )
+    assert "runner" not in json.loads((out / "client.json").read_text())
+    assert "::warning title=Client timing::" in capsys.readouterr().out
 
 
 def test_a_run_with_no_profiles_at_all_is_an_error(tmp_path, capsys):
@@ -354,6 +488,15 @@ def test_both_suites_upload_their_timings_on_every_run(jobs):
     upload = _step(jobs["client"], "Upload the client suite's timings")
     assert upload["if"] == "always()"
     assert upload["with"]["name"] == "profile-client"
+    assert upload["with"]["path"].split() == [
+        f".profile/{timing.JEST_RESULTS}",
+        f".profile/{timing.calibration.BENCH_FILE}",
+    ]
+    names = [step.get("name") for step in jobs["client"]["steps"]]
+    assert names.index("Runner benchmark") == names.index("Test") - 1
+    bench = _step(jobs["client"], "Runner benchmark")
+    assert f"> ../.profile/{timing.calibration.BENCH_FILE}" in bench["run"]
+    assert (SCRIPTS / "runner_bench.mjs").is_file()
     server = _step(jobs["server-tests"], "Upload the server suite's profile")
     assert server["if"] == "always()"
     assert server["with"]["path"].split() == [
