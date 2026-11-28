@@ -25,7 +25,10 @@ read, so a pull request cannot raise the bar it is measured against.
 
 `check`, on a pull request, compares the run with main's newest stored baseline,
 failing when a suite grew more than `profile_delta.DEFAULT_THRESHOLD` and naming
-the files that grew most.
+the files that grew most. The baseline is first scaled by the runner's speed
+(`runner_speed`): GitHub's runners differ by a third, and main's own unchanged
+runs swung 329-560s on the client, so an unscaled total failed pull requests that
+changed nothing it measures.
 
 `ceiling` is a hard limit rather than a trend: each server shard's pytest wall
 time, and all shards summed (about what one runner would take), must stay within
@@ -41,6 +44,7 @@ import io
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import sys
 import time
@@ -64,6 +68,18 @@ SERVER_WALL = "server-wall.json"
 CEILING_MINUTES = 30
 #: Every suite CI records; main's history is read until each has a full baseline.
 SUITES = ("server", "client")
+#: A run's speed is read from files with at least this much time in main's baseline
+#: (shorter ones are mostly fixed overhead) ...
+SPEED_FILE_SECONDS = 1.0
+#: ... and only when a suite has this many of them; with fewer it is compared unscaled.
+SPEED_MIN_FILES = 10
+#: The runner speeds main's own runs showed, widened: measured 2026-11-28 over 20
+#: runs as 0.79-1.37 (client and server). A run outside it is clamped, so a
+#: slowdown no runner explains still counts as growth. It cannot tell a slower
+#: runner from code that slowed every file alike by less than the clamp: on the
+#: server the 30-minute `ceiling` still holds that; on the client nothing does,
+#: so a client-wide slowdown under 1.5x passes this check.
+RUNNER_SPEED = (0.75, 1.5)
 
 Reader = Callable[[str], Any]
 Fetcher = Callable[[str, int], bytes]
@@ -222,6 +238,60 @@ def _baseline(args: argparse.Namespace) -> int:
     return profile_delta.main(argv)
 
 
+def runner_speed(before: dict, now: profile_delta.Measurement) -> tuple[float, int] | None:
+    """How fast this runner ran main's files: the median of each file's now/baseline.
+
+    A median over a suite's files is the runner, not the change: a pull request
+    that slows a few of the client's ~70 files or the server's ~450 barely moves it.
+    Returns (clamped speed, files read), or None when too few files to tell.
+    """
+    ratios = [
+        now.files[path] / seconds
+        for path, seconds in before["files"].items()
+        if seconds >= SPEED_FILE_SECONDS and path in now.files
+    ]
+    if len(ratios) < SPEED_MIN_FILES:
+        return None
+    low, high = RUNNER_SPEED
+    return min(max(statistics.median(ratios), low), high), len(ratios)
+
+
+def at_runner_speed(
+    base: dict, current: dict[str, profile_delta.Measurement]
+) -> tuple[dict, list[str]]:
+    """`base` with each suite scaled to this runner's speed, and a line per suite saying so."""
+    try:
+        suites = base["suites"]
+        scaled = {**base, "suites": dict(suites)}
+        notes = []
+        for name, before in suites.items():
+            now = current.get(name)
+            if now is None:
+                continue
+            read = runner_speed(before, now)
+            if read is None:
+                notes.append(
+                    f"- {name}: compared unscaled; fewer than {SPEED_MIN_FILES} files "
+                    f"of {SPEED_FILE_SECONDS:.0f}s or more to read the runner's speed from"
+                )
+                continue
+            speed, files = read
+            scaled["suites"][name] = {
+                **before,
+                "total_seconds": before["total_seconds"] * speed,
+                "files": {path: s * speed for path, s in before["files"].items()},
+            }
+            low, high = RUNNER_SPEED
+            clamped = " (clamped to the range runners show)" if speed in (low, high) else ""
+            notes.append(
+                f"- {name}: this runner took {speed:.2f}x main's median time per file "
+                f"(median over {files} files){clamped}; the baseline above is scaled by it"
+            )
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise profile_delta.ProfileError(f"not a baseline: {exc!r}") from exc
+    return scaled, notes
+
+
 def _check(args: argparse.Namespace) -> int:
     try:
         stored = main_artifacts(args.repo, BASELINE_ARTIFACT, read_api)
@@ -235,14 +305,22 @@ def _check(args: argparse.Namespace) -> int:
         # after this landed), or every one expired. Said where the PR shows it.
         print("::warning title=Suite time::main has stored no baseline yet; not compared")
         return 0
-    argv = ["compare", "--baseline", str(args.work / "baseline" / BASELINE_FILE)]
-    argv += ["--current", str(args.current)]
+    base = json.loads((args.work / "baseline" / BASELINE_FILE).read_text(encoding="utf-8"))
+    current = profile_delta.measure(profile_delta.load_run(args.current))
+    scaled, notes = at_runner_speed(base, current)
+    verdicts = profile_delta.compare(scaled, current)
+    text = profile_delta.report(verdicts) + "\n### Runner speed\n\n" + "\n".join(notes) + "\n"
+    print(text)
     if args.summary is not None:
-        argv += ["--summary", str(args.summary)]
-    code = profile_delta.main(argv)
-    if code == 1:
-        print("::error title=Suite time::a suite grew more than 20% over main; see the summary")
-    return code
+        with args.summary.open("a", encoding="utf-8") as summary:
+            summary.write(text)
+    if all(verdict.passed for verdict in verdicts):
+        return 0
+    print(
+        "::error title=Suite time::a suite grew more than 20% over main at this runner's "
+        "speed; see the summary"
+    )
+    return 1
 
 
 # -- the wall-time ceiling ---------------------------------------------------------

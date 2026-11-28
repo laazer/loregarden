@@ -60,7 +60,9 @@ def _run(scale: float = 1.0, outcome: str = "passed", slow: float = 0.0) -> dict
     return {
         "server-1.json": _profile(shard_1, outcome=outcome),
         "server-2.json": _profile(shard_2, outcome=outcome),
-        "client.json": _profile({"src/a.test.ts": 30.0 * scale}, suite="client"),
+        "client.json": _profile(
+            {f"src/{n}.test.ts": 5.0 * (n + 1) * scale for n in range(12)}, suite="client"
+        ),
     }
 
 
@@ -100,6 +102,67 @@ def test_a_pull_request_25_percent_slower_than_main_fails_and_10_percent_passes(
     assert ("❌ server:" in text) is (exit_code == 1)
     assert "| `tests/test_0.py` |" in text
     assert ("::error title=Suite time::" in capsys.readouterr().out) is (exit_code == 1)
+
+
+def _check_against_main(tmp_path: Path, pull: dict[str, dict]) -> tuple[int, str]:
+    """Store main's baseline from twelve identical runs, then check `pull` against it."""
+    github = FakeGitHub()
+    for n in range(12):
+        github.add(timing.PROFILES_ARTIFACT, "main", _run(), run_id=100 + n)
+    baseline = tmp_path / "baseline" / timing.BASELINE_FILE
+    argv = [
+        "baseline",
+        "--repo",
+        REPO,
+        "--run-id",
+        "1",
+        "--current",
+        str(_write(tmp_path / "m", _run())),
+    ]
+    with github.patched():
+        assert timing.main([*argv, "--work", str(tmp_path / "w1"), "--out", str(baseline)]) == 0
+    github.add(
+        timing.BASELINE_ARTIFACT, "main", {timing.BASELINE_FILE: json.loads(baseline.read_text())}
+    )
+    summary = tmp_path / "summary.md"
+    argv = ["check", "--repo", REPO, "--current", str(_write(tmp_path / "pull", pull))]
+    with github.patched():
+        code = timing.main([*argv, "--work", str(tmp_path / "w2"), "--summary", str(summary)])
+    return code, summary.read_text()
+
+
+def test_a_slower_runner_alone_does_not_fail_the_check(tmp_path):
+    """Main's own unchanged client runs took 329-560s; a 1.35x runner is not growth."""
+    code, text = _check_against_main(tmp_path, _run(scale=1.35))
+    assert code == 0, text
+    assert "✅ server:" in text
+    assert (
+        "server: this runner took 1.35x main's median time per file (median over 12 files)" in text
+    )
+
+
+def test_one_file_growing_still_fails_on_a_slower_runner(tmp_path):
+    """The runner's speed is a median over files, so one file's growth cannot hide in it."""
+    code, text = _check_against_main(tmp_path, _run(scale=1.3, slow=0.25))
+    assert code == 1, text
+    assert "❌ server:" in text
+    assert "server: this runner took 1.30x" in text
+
+
+def test_a_slowdown_no_runner_explains_still_fails(tmp_path):
+    """Every file twice as slow is past the runner speeds main has shown: clamped, and growth."""
+    code, text = _check_against_main(tmp_path, _run(scale=2.0))
+    assert code == 1, text
+    assert "1.50x main's median time per file (median over 12 files) (clamped" in text
+
+
+def test_a_suite_with_too_few_files_to_read_a_speed_from_is_compared_unscaled(tmp_path):
+    """Twelve files where thirteen are needed: no median to trust, so the raw total is compared."""
+    with mock.patch.object(timing, "SPEED_MIN_FILES", 13):
+        code, text = _check_against_main(tmp_path, _run(scale=1.35))
+    assert code == 1, text
+    assert "❌ server:" in text
+    assert "server: compared unscaled; fewer than 13 files" in text
 
 
 def test_the_baseline_reads_only_main_runs_of_this_repository(tmp_path):
