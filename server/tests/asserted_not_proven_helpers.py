@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -189,55 +188,6 @@ def workspace_fixture(db_session, repo):
 @pytest.fixture(name="ticket")
 def ticket_fixture(db_session, workspace):
     return make_ticket(db_session, workspace, number=1)
-
-
-# --------------------------------------------------------------------------- #
-# "This change ships no X" — measured against this ticket's own commits.
-#
-# R1.2 and R5.10 are both of the form "the change adds no file under <prefix>",
-# and the obvious proxy — every path in `origin/main...HEAD` — is wrong on a
-# branch that has merged an integration branch. This one carries
-# lg-code-knowledge-299's `db/versions/code_signals.py` that way, and the
-# migration assertion failed on a migration this ticket did not write.
-#
-# Attribution is fail-closed: a path counts against this change unless the
-# commit that ADDED it positively names a different ticket.
-# --------------------------------------------------------------------------- #
-
-TICKET = "lg-code-knowledge-1055"
-_TICKET_ID = re.compile(r"\b[a-z]{2,4}-[a-z-]+-\d+\b")
-
-
-def _git_out(root: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k not in _SCRUBBED_ENV_KEYS}
-    return subprocess.run(
-        ["git", *args], cwd=root, capture_output=True, text=True, check=False, env=env
-    )
-
-
-def paths_this_change_adds(root: Path, prefixes: tuple[str, ...]) -> list[str] | None:
-    """Branch-diff paths under ``prefixes`` this ticket's own commits added.
-
-    ``None`` when there is no comparable ``origin/main`` to diff against, which
-    the caller skips on — the same thing it did before, said once here.
-    """
-    changed = _git_out(root, "diff", "--name-only", "origin/main...HEAD")
-    if changed.returncode != 0:
-        return None
-    candidates = [line for line in changed.stdout.split() if line.startswith(prefixes)]
-    mine: list[str] = []
-    for path in candidates:
-        introduced = _git_out(
-            root, "log", "--diff-filter=A", "--format=%s", "-1", "origin/main...HEAD", "--", path
-        )
-        others = {
-            found for found in _TICKET_ID.findall(introduced.stdout.lower()) if found != TICKET
-        }
-        if introduced.returncode == 0 and others and TICKET not in introduced.stdout.lower():
-            # Positively another ticket's: inherited through an integration merge.
-            continue
-        mine.append(path)
-    return mine
 
 
 def mark_a_code_site(repo: Path, relpath: str, *, line: str = "500 tickets") -> str:
