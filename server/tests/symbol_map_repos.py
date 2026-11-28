@@ -530,3 +530,269 @@ def empty_tree_repo_fixture(tmp_path: Path) -> Path:
 def _build_empty_tree_empty_tree_repo(root: Path) -> None:
     root = _init(root)
     _git(root, "commit", "-q", "--allow-empty", "-m", "chore: nothing yet")
+
+
+# --------------------------------------------------------------------------
+# Fingerprints and grounding (lg-code-knowledge-368).
+#
+# Scaffolding only. Nothing here imports the ticket's own modules, so a
+# collection error in `test_symbol_fingerprints.py` cannot take the 281 suite
+# down with it.
+# --------------------------------------------------------------------------
+
+#: The module whose every fingerprint is hardcoded in `GOLDEN_FINGERPRINTS`.
+#: Eight symbols, one of each shape `python_ast` records plus a decorated
+#: function and an async one, because an interpreter upgrade that changed
+#: `ast.unparse` for any one of those shapes would silently re-fingerprint a
+#: stored corpus (risk 2 / criterion 1).
+GOLDEN_MODULE = '''\
+"""A module whose every fingerprint is pinned by a golden test."""
+
+import os
+
+SCHEME_NAME = "sym1"
+RETRIES: int = 3
+
+
+class Ledger:
+    """A class whose fingerprint covers its whole body."""
+
+    def record(self, amount):
+        return amount + 1
+
+    async def flush(self):
+        return None
+
+
+def apply_stage_route(ticket, stage):
+    """The function the ticket's own opening paragraph names."""
+    return (ticket, stage)
+
+
+async def drain(queue):
+    while queue:
+        queue.pop()
+
+
+@staticmethod
+def decorated():
+    return os.sep
+'''
+
+#: qualified_name -> the fingerprint `fingerprint_for(ast.unparse(node))` must
+#: produce for that node of `GOLDEN_MODULE`, written at `pkg/golden.py`.
+#:
+#: Computed by execution on CPython 3.11.15 on 2026-11-18, which is the
+#: interpreter `server/pyproject.toml` pins the floor of. These are not a
+#: derivation anybody repeats at test time: the whole point is that an
+#: interpreter whose `ast.unparse` renders differently reds CI here rather
+#: than re-fingerprinting a stored corpus in silence.
+GOLDEN_FINGERPRINTS = {
+    "pkg.golden.SCHEME_NAME": "sym1:4749999d68f4058965e3db7b3237b399",
+    "pkg.golden.RETRIES": "sym1:0d1ef6fade671cafe52c988f990bbdaa",
+    "pkg.golden.Ledger": "sym1:1182bf44fbff1e964b930fc402925f04",
+    "pkg.golden.Ledger.record": "sym1:dcbd3346e34300fb69e72b85bd10778d",
+    "pkg.golden.Ledger.flush": "sym1:17cd1d9a2d16c9c4b4c290ef1425c51b",
+    "pkg.golden.apply_stage_route": "sym1:9405c71f785f3af8270b458e9e778ddb",
+    "pkg.golden.drain": "sym1:6754142da07de9ce3c7c3661fe4dfa49",
+    "pkg.golden.decorated": "sym1:cac5f843429edaad38bb85fa0106bedd",
+}
+
+#: Four functions, one per verdict the drift produces. Line numbers are
+#: asserted against `GROUNDING_BASE_LINES`; keep the two in step.
+GROUNDING_ALPHA = """\
+def steady(ticket):
+    return ticket.id
+
+
+def edited(ticket):
+    return ticket.id + 1
+
+
+def renamed_away(ticket):
+    return ticket.stage
+
+
+def moving_house(ticket):
+    return ticket.workspace_id
+"""
+
+#: `pkg/alpha.py` after the code moved on: one comment line at the top shifts
+#: every symbol below it, `edited`'s one statement changes, `renamed_away`
+#: becomes `gone_forever`, and `moving_house` leaves for `pkg/gamma.py`
+#: byte-identical.
+GROUNDING_ALPHA_DRIFTED = """\
+# One comment line, so every symbol below it moves.
+def steady(ticket):
+    return ticket.id
+
+
+def edited(ticket):
+    return ticket.id + 2
+
+
+def gone_forever(ticket):
+    return ticket.stage
+"""
+
+GROUNDING_GAMMA = """\
+def moving_house(ticket):
+    return ticket.workspace_id
+"""
+
+GROUNDING_TS = """\
+export function tsThing(): number {
+  return 1;
+}
+"""
+
+#: qualified_name -> (path, line) in the base tree.
+GROUNDING_BASE_LINES = {
+    "pkg.alpha.steady": ("pkg/alpha.py", 1),
+    "pkg.alpha.edited": ("pkg/alpha.py", 5),
+    "pkg.alpha.renamed_away": ("pkg/alpha.py", 9),
+    "pkg.alpha.moving_house": ("pkg/alpha.py", 13),
+}
+
+#: Where each anchored symbol ends up after the drift, for the two verdicts
+#: that carry a location.
+GROUNDING_DRIFTED_LOCATIONS = {
+    "pkg.alpha.steady": "pkg/alpha.py:2",
+    "pkg.alpha.moving_house": "pkg/gamma.py:1",
+}
+
+#: The TypeScript symbol's qualified name, in the regex tier's own spelling.
+TS_ANCHOR_NAME = "web/thing.ts#tsThing"
+
+
+@pytest.fixture(name="golden_repo")
+def golden_repo_fixture(tmp_path: Path) -> Path:
+    """`GOLDEN_MODULE` alone, so the golden hexes can be read off a real build."""
+    root = _init(tmp_path / "golden")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/golden.py", GOLDEN_MODULE)
+    _commit(root, "feat: the golden module")
+    return root
+
+
+@pytest.fixture(name="grounding_repo")
+def grounding_repo_fixture(tmp_path: Path) -> Path:
+    """The tree every verdict is measured against, BEFORE it drifts."""
+    root = _init(tmp_path / "grounding")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/alpha.py", GROUNDING_ALPHA)
+    _write(root, "web/thing.ts", GROUNDING_TS)
+    _commit(root, "feat: four anchorable functions")
+    return root
+
+
+def drift_grounding_repo(root: Path) -> str:
+    """Move the code on, and return the new HEAD sha.
+
+    A helper rather than a fixture because the order matters: anchors are
+    resolved against the tree as it was, and only then does it drift. Every
+    caller is itself a fixture, so a failure here is still an ERROR rather
+    than a plausible-looking red.
+    """
+    _write(root, "pkg/alpha.py", GROUNDING_ALPHA_DRIFTED)
+    _write(root, "pkg/gamma.py", GROUNDING_GAMMA)
+    return _commit(root, "refactor: edit one, rename one, move one")
+
+
+def commit_unindexed_change(root: Path) -> str:
+    """One commit nothing rebuilds the map for, so freshness reads SHA_MISMATCH."""
+    _write(root, "pkg/alpha.py", GROUNDING_ALPHA + "\n\ndef added_later(ticket):\n    return 0\n")
+    return _commit(root, "feat: a commit the map has not seen")
+
+
+# --------------------------------------------------------------------------
+# Adversarial edges of the 7-step rule (lg-code-knowledge-368, test-break).
+#
+# The ticket's own scenario gives each verdict one clean cause. These shapes
+# give two causes at once, which is where an ordered rule either holds its
+# order or quietly reports the wrong fact:
+#
+#   `duplicated`  one fingerprint in two files   -> step 6 with a tie to break
+#   `doubled`     one qualified name twice, the  -> step 4 must match ANY row,
+#                 NON-matching copy written first    not the first one it reads
+#   `forked`      edited in place AND copied     -> step 5 outranks step 6
+#                 away byte-identical
+# --------------------------------------------------------------------------
+
+#: Three functions whose drift collides, one per corner above.
+GROUNDING_BETA = """\
+def duplicated(x):
+    return x
+
+
+def forked(ticket):
+    return ticket.id
+
+
+def doubled(x):
+    return x + 1
+"""
+
+#: `pkg/beta.py` after the drift. `duplicated` has left for two files at once;
+#: `forked` keeps its name and loses its body; `doubled` is defined twice, the
+#: EDITED copy first, so an implementation that compares the first row it finds
+#: reports CHANGED for a symbol whose original body is still in the file.
+GROUNDING_BETA_DRIFTED = """\
+def forked(ticket):
+    return ticket.id + 1
+
+
+def doubled(x):
+    return x + 2
+
+
+def doubled(x):
+    return x + 1
+"""
+
+#: The byte-identical copy of the ORIGINAL `forked`, in a file of its own. Its
+#: fingerprint matches the anchor, and it must not rescue a symbol that is
+#: still present under its own name with a different body.
+GROUNDING_DELTA = """\
+def forked(ticket):
+    return ticket.id
+"""
+
+#: Two byte-identical landing sites for `duplicated`, so the MOVED lookup has
+#: a genuine collision to order. `aaa` sorts before `zzz`, which is the whole
+#: content of the "(path, line)" promise the grounding docstring makes.
+GROUNDING_DUPLICATE_COPY = """\
+def duplicated(x):
+    return x
+"""
+
+#: The three anchors the edges scenario stamps, and what each must decide.
+EDGE_ANCHORS = ("pkg.beta.duplicated", "pkg.beta.forked", "pkg.beta.doubled")
+
+#: Where `duplicated` must be reported after the drift: the first of its two
+#: landing sites ordered by (path, line), never the last and never a coin flip.
+EDGE_MOVED_LOCATION = "pkg/aaa.py:1"
+
+
+@pytest.fixture(name="edges_repo")
+def edges_repo_fixture(tmp_path: Path) -> Path:
+    """The tree the colliding anchors are stamped against, BEFORE it drifts."""
+    root = _init(tmp_path / "edges")
+    _write(root, "pkg/__init__.py", "")
+    _write(root, "pkg/beta.py", GROUNDING_BETA)
+    _commit(root, "feat: three anchorable functions that will collide")
+    return root
+
+
+def drift_edges_repo(root: Path) -> str:
+    """Move the code on so every corner of the rule fires at once.
+
+    A helper rather than a fixture for the reason `drift_grounding_repo` is:
+    the ORDER is the test. Every caller is itself a fixture, so a failure in
+    here is an ERROR rather than a plausible-looking red.
+    """
+    _write(root, "pkg/beta.py", GROUNDING_BETA_DRIFTED)
+    _write(root, "pkg/delta.py", GROUNDING_DELTA)
+    _write(root, "pkg/aaa.py", GROUNDING_DUPLICATE_COPY)
+    _write(root, "pkg/zzz.py", GROUNDING_DUPLICATE_COPY)
+    return _commit(root, "refactor: copy one twice, redefine one, fork one")

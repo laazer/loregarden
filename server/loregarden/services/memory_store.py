@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -35,6 +36,13 @@ from loregarden.services.memory_agent_search import (
     vault_notes_for_terms,
 )
 from loregarden.services.memory_export import export_node_to_vault
+from loregarden.services.memory_graph_schema import (
+    BASE_SCHEMA,
+    decoded_anchors,
+    ensure_anchor_column,
+    ensure_node_columns,
+    ensure_origin_columns,
+)
 from loregarden.services.memory_history import (
     ChangeAttribution,
     NodeContent,
@@ -145,6 +153,9 @@ class MemoryWriteNotAppliedError(RuntimeError):
     Raised rather than returning the unchanged row: a 200 describing a flag
     that was never set is the failure an operator can least afford to miss.
     """
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -263,6 +274,7 @@ class ObsidianMemoryStore:
         discredited: bool | None = None,
         derived: bool = False,
         aliases: list[str] | None = None,
+        anchors: list[str] | None = None,
     ) -> MemoryNote:
         note_id = note_id.strip() or str(uuid4())
         tags = list(tags or [])
@@ -293,6 +305,12 @@ class ObsidianMemoryStore:
                 # Obsidian resolves links through `aliases`, so an export
                 # carrying them links the way the graph recalls.
                 "aliases": list(aliases or []),
+                # `<qualified_name>@<fingerprint>` (368), emitted only when
+                # non-empty: an `anchors: []` on all 614 live notes is churn on
+                # every export and a key that means nothing. `_format_frontmatter`
+                # drops a None already, so it is unchanged — unlike
+                # `aliases`, which emits a bare key on every note.
+                "anchors": list(anchors or []) or None,
                 "ticket_id": ticket_id,
                 "workspace": workspace_slug,
                 "created": created_at,
@@ -597,7 +615,7 @@ class MemoryGraphStore:
     NODE_COLUMNS = (
         "id, title, body, tags_json, ticket_id, workspace_slug, "
         "node_type, created_at, updated_at, discredited, aliases_json, "
-        "origin_kind, origin_ref"
+        "origin_kind, origin_ref, anchors_json"
     )
     VISIBLE_NODES = "COALESCE(discredited, 0) = 0"
 
@@ -626,69 +644,19 @@ class MemoryGraphStore:
         return conn
 
     def _init_schema(self) -> None:
+        """Create the file if it is new, and bring an old one up to date.
+
+        No migration ledger: the graph is a per-workspace SQLite file in a
+        synced vault, so every column added after it shipped is applied here
+        on open. See `services.memory_graph_schema`.
+        """
         with self._connect() as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS memory_nodes (
-                    id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    body TEXT NOT NULL DEFAULT '',
-                    tags_json TEXT NOT NULL DEFAULT '[]',
-                    ticket_id TEXT NOT NULL DEFAULT '',
-                    workspace_slug TEXT NOT NULL DEFAULT '',
-                    node_type TEXT NOT NULL DEFAULT 'memory',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    discredited INTEGER NOT NULL DEFAULT 0
-                );
-                CREATE TABLE IF NOT EXISTS memory_relations (
-                    id TEXT PRIMARY KEY,
-                    source_id TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    relation_type TEXT NOT NULL DEFAULT 'related',
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(source_id) REFERENCES memory_nodes(id),
-                    FOREIGN KEY(target_id) REFERENCES memory_nodes(id)
-                );
-                CREATE INDEX IF NOT EXISTS ix_memory_nodes_ticket ON memory_nodes(ticket_id);
-                CREATE INDEX IF NOT EXISTS ix_memory_nodes_workspace ON memory_nodes(workspace_slug);
-                CREATE INDEX IF NOT EXISTS ix_memory_relations_source ON memory_relations(source_id);
-                """
-            )
-            self._ensure_node_columns(conn)
-            self._ensure_origin_columns(conn)
+            conn.executescript(BASE_SCHEMA)
+            ensure_node_columns(conn)
+            ensure_origin_columns(conn)
+            ensure_anchor_column(conn)
             ensure_history_schema(conn)
             repair_split_json_tags(conn)
-
-    @staticmethod
-    def _ensure_node_columns(conn: sqlite3.Connection) -> None:
-        """Columns added after `memory_nodes` shipped, migrated on open.
-
-        `aliases_json` defaults to `'[]'` honestly: a node written before
-        aliases existed has none, which is a fact rather than an unknown.
-        """
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
-        if "discredited" not in columns:
-            conn.execute(
-                "ALTER TABLE memory_nodes ADD COLUMN discredited INTEGER NOT NULL DEFAULT 0"
-            )
-        if "aliases_json" not in columns:
-            conn.execute(
-                "ALTER TABLE memory_nodes ADD COLUMN aliases_json TEXT NOT NULL DEFAULT '[]'"
-            )
-
-    @staticmethod
-    def _ensure_origin_columns(conn: sqlite3.Connection) -> None:
-        """Provenance columns (766), nullable on purpose.
-
-        A row written before provenance existed has no known origin, and NULL
-        is how it says so. A default — `human`, or `agent` inferred from
-        `node_type` — would be a guess stored as a fact on every old row.
-        """
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(memory_nodes)")}
-        for column in ("origin_kind", "origin_ref"):
-            if column not in columns:
-                conn.execute(f"ALTER TABLE memory_nodes ADD COLUMN {column} TEXT NULL")
 
     def connection(self) -> sqlite3.Connection:
         """A configured connection, for the graph modules that read and write
@@ -698,7 +666,13 @@ class MemoryGraphStore:
     @staticmethod
     def node_row(row: sqlite3.Row) -> dict[str, Any]:
         """One `memory_nodes` row as a dict. Public because
-        `memory_agent_search` maps rows for the agent's term search."""
+        `memory_agent_search` maps rows for the agent's term search.
+
+        An UNANCHORED node's dict is byte-identical to what it was before
+        anchors existed — the key appears only when the column is non-NULL and
+        decodes to a non-empty list, so no existing reader is touched (368).
+        """
+        anchors = decoded_anchors(row["anchors_json"])
         return {
             "id": row["id"],
             "title": row["title"],
@@ -713,6 +687,7 @@ class MemoryGraphStore:
             "aliases": json.loads(row["aliases_json"] or "[]"),
             "origin_kind": row["origin_kind"],
             "origin_ref": row["origin_ref"],
+            **({"anchors": anchors} if anchors else {}),
         }
 
     def upsert_node(
@@ -730,11 +705,15 @@ class MemoryGraphStore:
         aliases: list[str] | None = None,
         origin_kind: MemoryOriginKind | None = None,
         origin_ref: str | None = None,
+        anchors: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Create or replace a node, preserving the version an update replaces.
 
-        `aliases` and `discredited` follow the same rule: None keeps what the
-        node already has, a value replaces it.
+        `aliases`, `discredited` and `anchors` follow the same rule: None keeps
+        what the node already has, a value replaces it. An unrelated retitle
+        therefore cannot silently unground a claim. `anchors=[]` clears it back
+        to NULL — `[]` is never stored, because "written ungrounded" and
+        "grounded against nothing" must not become two spellings of one state.
 
         Origin is who produced the node, so it is set by the write that has
         one and kept by every later write that does not: an operator's retitle
@@ -751,7 +730,7 @@ class MemoryGraphStore:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT title, body, tags_json, updated_at, created_at, discredited, aliases_json, "
-                "origin_kind, origin_ref FROM memory_nodes WHERE id = ?",
+                "origin_kind, origin_ref, anchors_json FROM memory_nodes WHERE id = ?",
                 (node_id,),
             ).fetchone()
             created_at = row["created_at"] if row else now
@@ -763,6 +742,10 @@ class MemoryGraphStore:
                 aliases_json = row["aliases_json"] if row else "[]"
             else:
                 aliases_json = json.dumps(clean_aliases(aliases, title))
+            if anchors is None:
+                anchors_json = row["anchors_json"] if row else None
+            else:
+                anchors_json = json.dumps(anchors) if anchors else None
             if discredited is None:
                 flag = int(row["discredited"]) if row else 0
             else:
@@ -787,8 +770,8 @@ class MemoryGraphStore:
                 INSERT INTO memory_nodes (
                     id, title, body, tags_json, ticket_id, workspace_slug,
                     node_type, created_at, updated_at, discredited, aliases_json,
-                    origin_kind, origin_ref
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    origin_kind, origin_ref, anchors_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     body = excluded.body,
@@ -800,7 +783,8 @@ class MemoryGraphStore:
                     discredited = excluded.discredited,
                     aliases_json = excluded.aliases_json,
                     origin_kind = excluded.origin_kind,
-                    origin_ref = excluded.origin_ref
+                    origin_ref = excluded.origin_ref,
+                    anchors_json = excluded.anchors_json
                 """,
                 (
                     node_id,
@@ -815,6 +799,7 @@ class MemoryGraphStore:
                     flag,
                     aliases_json,
                     *origin,
+                    anchors_json,
                 ),
             )
         return {
@@ -831,6 +816,7 @@ class MemoryGraphStore:
             "aliases": json.loads(aliases_json),
             "origin_kind": origin[0],
             "origin_ref": origin[1],
+            **({"anchors": json.loads(anchors_json)} if anchors_json else {}),
             "sqlite_path": str(self.db_path),
         }
 
@@ -1130,6 +1116,7 @@ class AgentMemoryService:
         aliases: list[str] | None = None,
         origin_kind: MemoryOriginKind | None = None,
         origin_ref: str | None = None,
+        anchors: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Record a learning under a real title (see `memory_links.learning_title`).
 
@@ -1162,6 +1149,7 @@ class AgentMemoryService:
             aliases=aliases or [],
             origin_kind=origin_kind,
             origin_ref=origin_ref,
+            anchors=anchors,
         )
         result["graph"] = node
         if self.obsidian:
@@ -1183,6 +1171,7 @@ class AgentMemoryService:
         aliases: list[str] | None = None,
         origin_kind: MemoryOriginKind | None = None,
         origin_ref: str | None = None,
+        anchors: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         graph = self.graph_for_workspace(workspace_slug)
         if not graph:
@@ -1205,6 +1194,7 @@ class AgentMemoryService:
             aliases=aliases,
             origin_kind=origin_kind,
             origin_ref=origin_ref,
+            anchors=anchors,
         )
         result["graph"] = node
         if self.obsidian:
@@ -1490,6 +1480,10 @@ class AgentMemoryService:
                 "tags": row["tags"],
                 "aliases": row["aliases"],
                 "updated_at": row["updated_at"],
+                # Only when the node has them, so an unanchored candidate's
+                # row is what it was. The briefing reads this to ask for a
+                # verdict; nothing else does.
+                **({"anchors": row["anchors"]} if row.get("anchors") else {}),
             }
             for row in graph.list_nodes(workspace_slug=workspace_slug, limit=RECALL_CANDIDATE_CAP)
         ]

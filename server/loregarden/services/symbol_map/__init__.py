@@ -4,13 +4,15 @@ Deterministic and LLM-free: Python through the stdlib `ast`, TypeScript and
 TSX through a line-anchored regex. Free to build and free to keep current,
 which is what makes everything downstream of it cheap.
 
-    build_symbol_map(session, workspace_id, repo_root)              -> BuildReport
-    refresh_symbol_map(session, workspace_id, repo_root, tree=None) -> RefreshReport
+    build_symbol_map(session, workspace_id, repo_root)                -> BuildReport
+    refresh_symbol_map(session, workspace_id, repo_root, tree=None)   -> RefreshReport
     refresh_at_run_entry(session, workspace_id, repo_root, tree=None) -> RefreshReport
-    definitions_for(session, workspace_id, repo_root, name)         -> MapRead[list[SymbolLocation]]
-    outline_for(session, workspace_id, repo_root, path)             -> MapRead[list[SymbolLocation]]
-    suggest_names(session, workspace_id, repo_root, name, limit=5)  -> MapRead[list[str]]
-    map_status(session, workspace_id, repo_root)                    -> MapStatus
+    definitions_for(session, workspace_id, repo_root, name)           -> MapRead[list[SymbolLocation]]
+    outline_for(session, workspace_id, repo_root, path)               -> MapRead[list[SymbolLocation]]
+    suggest_names(session, workspace_id, repo_root, name, limit=5)    -> MapRead[list[str]]
+    map_status(session, workspace_id, repo_root)                      -> MapStatus
+    resolve_anchors(session, workspace_id, repo_root, names)          -> list[SymbolAnchor]
+    claim_verdicts(session, workspace_id, repo_root, claims)          -> {claim_id: ClaimGrounding}
 
 `repo_root` is explicit on every one of them and the package never reads a
 workspace's recorded path. One derivation at the top of the request: a
@@ -36,6 +38,17 @@ from loregarden.services.symbol_map.freshness import (
     MapStatus,  # noqa: F401 - the verdict value every reader carries
     map_status,
 )
+from loregarden.services.symbol_map.grounding import (
+    ClaimGrounding,  # noqa: F401 - the read paths' value type
+    GroundingCheck,  # noqa: F401 - one anchor's verdict, named by consumers
+    SymbolAnchor,  # noqa: F401 - the anchor record, named by consumers
+    SymbolAnchorError,  # noqa: F401 - the write-time refusals' base
+    SymbolMapUnavailableError,  # noqa: F401 - raised through this surface
+    UnfingerprintableSymbolError,  # noqa: F401 - raised through this surface
+    UnknownSymbolAnchorError,  # noqa: F401 - raised through this surface
+    claim_verdicts,
+    resolve_anchors,
+)
 from loregarden.services.symbol_map.refresh import (
     RefreshFailure,  # noqa: F401 - the closed reason a declined refresh reports
     RefreshReport,  # noqa: F401 - the refresh's return type, named by consumers
@@ -53,13 +66,18 @@ from loregarden.services.symbol_map.store import (
     suggest_names,
 )
 
-#: Exactly the seven functions. Consumers import from here and nothing deeper.
+#: Exactly the nine functions. Consumers import from here and nothing
+#: deeper. 368 added the two that have callers outside the package — the
+#: write-time half and the read paths' entry point; `verdicts_for` is called
+#: by `claim_verdicts` and by nothing else.
 __all__ = [
     "build_symbol_map",
+    "claim_verdicts",
     "definitions_for",
     "map_status",
     "outline_for",
     "refresh_at_run_entry",
     "refresh_symbol_map",
+    "resolve_anchors",
     "suggest_names",
 ]

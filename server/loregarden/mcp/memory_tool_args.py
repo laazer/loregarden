@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from loregarden.mcp.memory_tools import MEMORY_TOOL_NAMES
+from loregarden.mcp.tool_args import coerce_anchor_list as _coerce_anchor_list
 from loregarden.mcp.tool_args import coerce_optional_bool as _coerce_optional_bool
 from loregarden.mcp.tool_args import coerce_optional_int as _coerce_optional_int
 from loregarden.mcp.tool_args import coerce_optional_string as _coerce_optional_string
@@ -30,6 +31,12 @@ def _coerce_aliases(args: dict[str, Any], payload: dict[str, Any]) -> None:
         payload["aliases"] = _coerce_tag_list(args["aliases"], field="aliases")
 
 
+def _coerce_anchors(args: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Anchors arrive in the shapes tags do, and resolve before the write."""
+    if args.get("anchors") is not None:
+        payload["anchors"] = _coerce_anchor_list(args["anchors"], field="anchors")
+
+
 def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "title": _coerce_string(args.get("title"), field="title"),
@@ -41,6 +48,7 @@ def _normalize_upsert_memory_args(args: dict[str, Any]) -> dict[str, Any]:
     if args.get("discredited") is not None:
         payload["discredited"] = _coerce_optional_bool(args.get("discredited"))
     _coerce_tags(args, payload)
+    _coerce_anchors(args, payload)
     return payload
 
 
@@ -53,6 +61,7 @@ def _normalize_append_learning_args(args: dict[str, Any]) -> dict[str, Any]:
     }
     _coerce_tags(args, payload)
     _coerce_aliases(args, payload)
+    _coerce_anchors(args, payload)
     return payload
 
 

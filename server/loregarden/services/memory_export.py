@@ -41,6 +41,13 @@ def export_node_to_vault(
         discredited=bool(node.get("discredited")),
         derived=True,
         aliases=list(node.get("aliases") or []),
+        # Flat `<qualified_name>@<fingerprint>` strings (368): the one
+        # spelling an Obsidian reader and a grep both resolve. The anchor
+        # RECORD stays in the graph, which is the authority for it.
+        anchors=[
+            f"{anchor['qualified_name']}@{anchor['fingerprint']}"
+            for anchor in node.get("anchors") or []
+        ],
     )
     return {"id": note.id, "path": note.path, "updated_at": note.updated_at}
 

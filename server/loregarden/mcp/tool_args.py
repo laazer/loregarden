@@ -182,6 +182,33 @@ def coerce_tag_list(value: Any, *, field: str) -> list[str]:
     return _clean_items(value, field=field)
 
 
+def coerce_anchor_list(value: Any, *, field: str) -> list[str]:
+    """Symbol anchors: the same shapes tags take, but strings only.
+
+    An agent that sends the anchor RECORD (`[{"qualified_name": ...}]`) rather
+    than the name has asked for grounding, and `_clean_items`' `str(item)`
+    would turn that into an anchor literally named `{'qualified_name': ...}`
+    — refused later with a message quoting a dict. Rejecting it here is what
+    keeps the whole write from landing ungrounded or landing at all.
+
+    Duplicates collapse, order is the author's: a model repeating itself in a
+    comma list is not worth refusing a learning over, but two identical
+    records in the column name the same symbol twice on one line.
+    """
+    items = coerce_tag_list(value, field=field)
+    if isinstance(value, list):  # py-org: allow-isinstance - the raw argument's shape
+        for item in value:
+            if not isinstance(item, str):  # py-org: allow-isinstance - same
+                raise ValueError(f"{field} must be a list of symbol names, got {item!r}")
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
 def coerce_optional_bool(value: Any) -> bool:
     if isinstance(value, bool):  # py-org: allow-isinstance
         return value

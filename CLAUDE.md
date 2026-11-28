@@ -418,6 +418,17 @@ Applies to `server/**/*.py`. Enforce, beyond the automated gates:
   type switch; dispatch polymorphically or through a `typing.Protocol`. Same gate, same
   scoping; `# py-org: allow-isinstance` waives a line for genuinely foreign objects
   (`__eq__`, a `TypeDecorator`, a third-party payload not yet modeled).
+- **A ceiling is not a waiver.** A code site that is knowingly insufficient says so where it
+  is, with `# ceiling: <quantity at which this stops holding> — upgrade: <the path>` on the
+  line or in the comment block directly above it. The difference from `silent-ok:` /
+  `py-org: allow` / `ux-ok:` matters: a waiver asserts a rule should not apply here, while a
+  ceiling asserts the code *is* knowingly insufficient and names the quantity that closes it.
+  That quantity is what lets the site be CLOSED later against a measurement, where "this is
+  simplified" can only accumulate. `.lefthook/scripts/py_ceiling_marker_check.py` enforces the
+  shape, diff-scoped, and refuses a waiver offered as a ceiling; the marked sites are
+  enumerable beside the recorded claims through `loregarden_open_claims`
+  (`services/asserted_not_proven/`). As with `silent-ok:`, the quantity is a claim a reviewer
+  checks, not a comment to read past.
 - Migrations append-only, each guarding its own changes; never rewrite an applied id.
 - Test isolation via `unittest.mock` over `monkeypatch`, unless mocking handles the case poorly.
 - No ticket IDs in filenames.

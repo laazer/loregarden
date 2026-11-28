@@ -1,12 +1,13 @@
 """Vocabulary for the per-workspace symbol map (lg-code-knowledge-281).
 
 Its own module rather than a corner of `enums`, following the
-`code_signal_enums` / `merge_queue_enums` precedent. Seven closed sets. The
+`code_signal_enums` / `merge_queue_enums` precedent. Eight closed sets. The
 five stored as TEXT are read by the consumer tickets (282, 283, 284, 300,
 304), so each member value is a wire format and not an implementation detail;
-the two lg-code-knowledge-284 adds (`ChangedPathsOutcome`, `RefreshFailure`)
-are never stored, but they are closed vocabularies all the same and a string
-in their place is what `py-organization` exists to stop.
+the three that are never stored (`ChangedPathsOutcome` and `RefreshFailure`
+from lg-code-knowledge-284, `GroundingVerdict` from lg-code-knowledge-368)
+are closed vocabularies all the same, and a string in their place is what
+`py-organization` exists to stop.
 """
 
 from __future__ import annotations
@@ -88,6 +89,28 @@ class Freshness(StrEnum):
     BUILDING = "building"
 
 
+class GroundingVerdict(StrEnum):
+    """Whether an anchored claim still describes the code in front of a reader.
+
+    Five states, not four (D3). UNVERIFIABLE is not a fifth kind of drift: it
+    means NO VERDICT WAS COMPUTED — no partition for this checkout, a sha
+    mismatch, a stored scheme prefix this build does not compute, or an
+    extractor tier that produces no fingerprint. Collapsing any of those into
+    MISSING would report a deletion nobody observed.
+
+    Claim-level severity, worst first:
+    MISSING > CHANGED > UNVERIFIABLE > MOVED > GROUNDED. UNVERIFIABLE above
+    MOVED is D4's fail-safe direction — an anchor nothing could decide must
+    not be swallowed by a sibling that merely moved.
+    """
+
+    GROUNDED = "grounded"
+    MOVED = "moved"
+    CHANGED = "changed"
+    MISSING = "missing"
+    UNVERIFIABLE = "unverifiable"
+
+
 class ChangedPathsOutcome(StrEnum):
     """Whether `sources.changed_paths` answered, and if not, why not.
 
@@ -125,6 +148,7 @@ __all__ = [
     "ChangedPathsOutcome",
     "ExtractorTier",
     "Freshness",
+    "GroundingVerdict",
     "ParseStatus",
     "RefreshFailure",
     "SourceLanguage",

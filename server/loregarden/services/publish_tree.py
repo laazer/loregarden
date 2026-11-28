@@ -54,6 +54,7 @@ from pathlib import Path
 from loregarden.core.event_bus import event_bus
 from loregarden.models.domain import EventType, MergeQueueAdmission, Ticket, Workspace
 from loregarden.services import merge_queue
+from loregarden.services.asserted_not_proven.tree_section import asserted_not_proven_section
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.git_automation import (
     AutomationResult,
@@ -219,7 +220,8 @@ def _prepare(
             subject, failure=f"could not tell which user-facing files {branch} changes: {exc}"
         )
     fixes = tree_fix_section(session, ticket, branch=branch)
-    body = generated_body(subject.pr_body + section.text + fixes)
+    unproven = asserted_not_proven_section(session, ticket, branch=branch, repo_root=repo_root)
+    body = generated_body(subject.pr_body + section.text + fixes + unproven)
     return _Prepared(
         replace(
             subject,

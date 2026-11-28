@@ -34,6 +34,7 @@ EX_UNAVAILABLE=69
 GATES=(
   "py py_organization_check.py"
   "py py_silent_except_check.py"
+  "py py_ceiling_marker_check.py"
   "md md_report_check.py"
   "ts ts_organization_check.cjs"
   "ts ts_no_silent_failures_check.cjs"

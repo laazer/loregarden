@@ -5,6 +5,11 @@ The bytes go to `ast.parse` rather than a decoded string: `ast` honours PEP
 UTF-8 and reports a real latin-1 module — or any module with a BOM — as
 unparseable.
 
+Every node recorded here carries a fingerprint (368) over its own unparsed
+source — class, function, method and module constant alike. A tier that
+fingerprinted only functions would leave every class anchor permanently
+UNVERIFIABLE.
+
 Four shapes are recorded, which is what the ticket names: classes,
 module-level functions, methods inside a class body, and module-level
 constants. `ast` is walked ONE level into a class body, so a function nested
@@ -18,6 +23,7 @@ from __future__ import annotations
 import ast
 
 from loregarden.models.domain.symbol_map_enums import SymbolKind
+from loregarden.services.symbol_map.fingerprint import fingerprint_for
 from loregarden.services.symbol_map.values import ExtractedSymbol
 
 #: Both function node types, matched by exact type rather than `isinstance`:
@@ -61,6 +67,16 @@ def _constant_name(node: ast.stmt) -> str:
     return ""
 
 
+def _fingerprint(node: ast.AST) -> str:
+    """This node's content hash, over its canonically re-rendered source.
+
+    `ast.unparse` rather than the source segment: comments and formatting are
+    not in the AST, so whitespace, comment and reflow immunity is structural
+    rather than something a normalizer has to defend.
+    """
+    return fingerprint_for(ast.unparse(node))
+
+
 def python_symbols(path: str, data: bytes) -> list[ExtractedSymbol]:
     """Every class, function, method and module constant in *data*.
 
@@ -77,6 +93,7 @@ def python_symbols(path: str, data: bytes) -> list[ExtractedSymbol]:
                     name=node.name,
                     qualified_name=f"{module}.{node.name}",
                     kind=SymbolKind.CLASS,
+                    fingerprint=_fingerprint(node),
                     # `lineno` is the `class`/`def` line and never a decorator
                     # above it; a line taken from the node's source segment or
                     # from `decorator_list[0]` is off by as many lines as the
@@ -93,6 +110,7 @@ def python_symbols(path: str, data: bytes) -> list[ExtractedSymbol]:
                             kind=SymbolKind.METHOD,
                             line=child.lineno,
                             parent=node.name,
+                            fingerprint=_fingerprint(child),
                         )
                     )
         elif type(node) in _FUNCTION_NODES:
@@ -102,6 +120,7 @@ def python_symbols(path: str, data: bytes) -> list[ExtractedSymbol]:
                     qualified_name=f"{module}.{node.name}",
                     kind=SymbolKind.FUNCTION,
                     line=node.lineno,
+                    fingerprint=_fingerprint(node),
                 )
             )
         else:
@@ -113,6 +132,7 @@ def python_symbols(path: str, data: bytes) -> list[ExtractedSymbol]:
                         qualified_name=f"{module}.{name}",
                         kind=SymbolKind.CONSTANT,
                         line=node.lineno,
+                        fingerprint=_fingerprint(node),
                     )
                 )
     return found
