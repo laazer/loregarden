@@ -162,7 +162,11 @@ def _run_locked(plan: dict[str, Any], baseline_only: bool) -> dict[str, Any]:
         only_mutate=list(plan["only_mutate"]),
         pytest_add_cli_args_test_selection=list(plan["tests"]),
         # Every forked pytest gets its own basetemp; see pytest_mutation_basetemp.py.
-        pytest_add_cli_args=[*base.pytest_add_cli_args, "-p", "pytest_mutation_basetemp"],
+        # Set explicitly rather than extending base.pytest_add_cli_args, because
+        # [tool.mutmut] carries the pilot's `-p mutmut_killers` and `--maxfail=0`.
+        pytest_add_cli_args=["-p", "no:cacheprovider", "-p", "pytest_mutation_basetemp"],
+        also_copy=[p for p in base.also_copy if p.name != "mutmut_killers.py"],
+        mutate_only_covered_lines=False,
     )
 
     phases = _Phases()

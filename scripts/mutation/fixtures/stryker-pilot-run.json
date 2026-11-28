@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "2.0",
+  "thresholds": { "high": 80, "low": 60, "break": null },
+  "projectRoot": "/repo/client",
+  "framework": { "name": "StrykerJS", "version": "9.2.0", "branding": { "homepageUrl": "https://stryker-mutator.io" } },
+  "performance": { "setup": 4012, "initialRun": 18233, "mutation": 265110 },
+  "files": {
+    "src/lib/examplePilot.ts": {
+      "language": "typescript",
+      "source": "export function classify(budget: number): string {\n  if (budget > 100) {\n    return 'large';\n  }\n  return 'small';\n}\n",
+      "mutants": [
+        {
+          "id": "1",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "location": { "start": { "line": 2, "column": 7 }, "end": { "line": 2, "column": 20 } },
+          "status": "Killed",
+          "killedBy": ["0", "2"],
+          "coveredBy": ["0", "1", "2"],
+          "testsCompleted": 3,
+          "statusReason": "expected 'small' to be 'large'"
+        },
+        {
+          "id": "2",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "location": { "start": { "line": 5, "column": 10 }, "end": { "line": 5, "column": 17 } },
+          "status": "Survived",
+          "coveredBy": ["1"],
+          "testsCompleted": 1
+        },
+        {
+          "id": "3",
+          "mutatorName": "EqualityOperator",
+          "replacement": ">=",
+          "location": { "start": { "line": 2, "column": 7 }, "end": { "line": 2, "column": 20 } },
+          "status": "NoCoverage",
+          "coveredBy": [],
+          "testsCompleted": 0
+        },
+        {
+          "id": "4",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "location": { "start": { "line": 2, "column": 22 }, "end": { "line": 4, "column": 4 } },
+          "status": "Timeout",
+          "coveredBy": ["0"],
+          "testsCompleted": 1,
+          "statusReason": "Hit limit reached (1001/1000)"
+        },
+        {
+          "id": "5",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "-",
+          "location": { "start": { "line": 2, "column": 7 }, "end": { "line": 2, "column": 20 } },
+          "status": "CompileError",
+          "statusReason": "src/lib/examplePilot.ts(2,7): error TS2365: Operator '-' cannot be applied."
+        },
+        {
+          "id": "6",
+          "mutatorName": "OptionalChaining",
+          "replacement": "?.",
+          "location": { "start": { "line": 5, "column": 3 }, "end": { "line": 5, "column": 18 } },
+          "status": "Ignored",
+          "statusReason": "Ignored by \"ignorers\" config"
+        }
+      ]
+    }
+  },
+  "testFiles": {
+    "src/lib/__tests__/examplePilot.test.ts": {
+      "tests": [
+        { "id": "0", "name": "examplePilot > classifies a large budget", "location": { "start": { "line": 5, "column": 3 } } },
+        { "id": "1", "name": "examplePilot > does not throw on a small budget", "location": { "start": { "line": 11, "column": 3 } } },
+        { "id": "2", "name": "examplePilot > classifies the boundary as small", "location": { "start": { "line": 17, "column": 3 } } }
+      ]
+    }
+  }
+}

@@ -61,3 +61,15 @@ draft/
 
 # Type declarations Claude Code writes beside a plugin it loads from disk.
 claude-plugin/.claude-plugin/types/
+
+# Mutation pilot (lg-build-verification-2639). Mutated code exists ONLY in
+# these trees: mutmut copies server/ to server/mutants/ and mutates the copy,
+# Stryker does the same into client/.stryker-tmp. Neither is ever the working
+# tree, and neither is ever committed.
+server/mutants/
+client/.stryker-tmp/
+mutation-out/
+# run-server.sh stages the kill-matrix plugin here for the duration of a
+# run (mutmut's also_copy resolves against server/ and only copies
+# top-level files). Its trap removes it; a SIGKILL would not.
+server/mutmut_killers.py

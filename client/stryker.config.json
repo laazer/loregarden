@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Mutation-testing PILOT (lg-build-verification-2639). Scoped to ONE file on purpose: this measures what a mutation gate would cost, it is not a gate. Run it with `task mutation:client`, which holds a capacity grant; nothing in lefthook.yml or CI runs it. Concurrency is NOT set here \u2014 scripts/mutation/run-client.sh sizes it from the grant, and forces jest to one worker inside each Stryker worker so the grant is not spent N times over.",
+  "packageManager": "npm",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "configFile": "jest.config.cjs",
+    "config": {
+      "maxWorkers": 1,
+      "testPathIgnorePatterns": [
+        "<rootDir>/src/lib/__tests__/usabilityCheckRepeatedText\\.test\\.ts$"
+      ]
+    }
+  },
+  "mutate": [
+    "src/lib/usabilityCheck.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": [
+    "json",
+    "clear-text",
+    "progress"
+  ],
+  "jsonReporter": {
+    "fileName": "../mutation-out/client-run.json"
+  },
+  "tempDirName": ".stryker-tmp",
+  "ignorePatterns": [
+    ".stryker-tmp",
+    "data/",
+    ".profile/",
+    "server/.venv",
+    "server/mutants",
+    "node_modules/.cache",
+    "dist",
+    "coverage"
+  ],
+  "disableTypeChecks": false,
+  "timeoutMS": 60000,
+  "_comment_jest_workers": "jest.config.maxWorkers is 1 on purpose \u2014 see the jest block. run-client.sh gives the capacity grant to Stryker's concurrency, and each Stryker worker runs jest single-worker so the grant is spent once. The jest-runner also passes runInBand itself (jest-test-adapter.js), which is belt and braces rather than a reason to drop this.",
+  "_comment_ignored_test": "usabilityCheckRepeatedText.test.ts is excluded from the Stryker run, and that exclusion belongs in the review list rather than in a comment nobody reads. It readFileSync's usabilityCheck.ts and asserts the source CONTAINS three regex literals and 'if (text.length < 20) continue;'. Stryker rewrites that file to instrument it, so the assertion cannot hold and the DRY RUN fails - before any mutant is tested, so no json report is written at all. A test that asserts on source text cannot be evaluated by mutation testing in principle: the operators change behaviour and the assertion reads characters. It is the TypeScript twin of server/tests/test_queue_slot_claims.py, dropped from the mutmut selection for the same reason, and both belong to the class this pilot already names - tests guarding something no operator can reach."
+}

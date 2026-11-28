@@ -209,6 +209,51 @@ tasks:
         trap 'rm -rf "$base"' EXIT
         uv run pytest -q -n auto --basetemp "$base" {{.CLI_ARGS}}
 
+  # The first Taskfile tasks to hold a capacity grant. Every other task here
+  # runs a build, a lint or a scoped suite; these two run a mutation campaign —
+  # one whole covering test-suite pass PER MUTANT, which `--maxfail=0` makes
+  # unconditional (see [tool.mutmut] in server/pyproject.toml). That is hours
+  # of the box, not minutes, so it queues on the same ledger the pre-push
+  # suites use (lefthook.yml:190-193) rather than competing with them.
+  #
+  # Both are PILOT commands, measured by lg-build-verification-2639. Neither is
+  # a gate, and nothing in lefthook.yml or the orchestration profiles runs them.
+  mutation:server:
+    desc: Mutation-test the one pilot Python module (mutmut), under the capacity ledger
+    summary: |
+      `task mutation:server -- --control scripts/mutation/fixtures/control-predictions-server.json`
+      No score is reported unless the control's predictions — written BEFORE
+      the run — all match their outcomes.
+
+      Before spending the campaign, check the selection can run at all:
+      `task mutation:server -- --check-selection` runs the configured test
+      files from mutmut's own sandbox copy. A test that resolves paths from
+      its own __file__ fails there, and it fails in the BASELINE run — so the
+      campaign writes no .meta and no score however long it ran.
+
+      `task mutation:server -- --mutants '<glob>'` runs one function's mutants,
+      which proves the pipeline in minutes rather than hours.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - >-
+        bash .lefthook/scripts/capacity-run.sh "mutation pilot server"
+        --footprint heavy --workspace loregarden
+        -- bash scripts/mutation/run-server.sh {{.CLI_ARGS}}
+
+  mutation:client:
+    desc: Mutation-test the one pilot TS module (Stryker), under the capacity ledger
+    summary: |
+      `task mutation:client -- --control scripts/mutation/fixtures/control-predictions-client.json`
+      run-client.sh sizes Stryker's concurrency from the grant AND forces jest
+      to one worker inside each Stryker worker, because jest.config.cjs reads
+      the same capacity variable and would otherwise spend the grant N times.
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - >-
+        bash .lefthook/scripts/capacity-run.sh "mutation pilot client"
+        --footprint heavy --workspace loregarden
+        -- bash scripts/mutation/run-client.sh {{.CLI_ARGS}}
+
   mutation:
     desc: Mutation-test the server functions changed against a base (default origin/main)
     summary: |

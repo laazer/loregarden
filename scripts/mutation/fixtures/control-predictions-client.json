@@ -1,0 +1,8 @@
+{
+  "side": "client",
+  "predicted_before_the_run_at": "2026-11-17T21:00:00Z",
+  "predictions": [
+    { "mutant": "1", "bucket": "killed", "why": "a covering assertion pins the large/small boundary" },
+    { "mutant": "2", "bucket": "survived", "why": "nothing asserts on the returned string for the small branch" }
+  ]
+}

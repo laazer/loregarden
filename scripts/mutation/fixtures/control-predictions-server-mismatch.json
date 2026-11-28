@@ -1,0 +1,16 @@
+{
+  "side": "server",
+  "predicted_before_the_run_at": "2026-11-17T21:00:00Z",
+  "predictions": [
+    {
+      "mutant": "loregarden.services.example_pilot.x_classify__mutmut_1",
+      "bucket": "killed",
+      "why": "(a) a covering assertion pins the rounding this mutant changes"
+    },
+    {
+      "mutant": "loregarden.services.example_pilot.x_threshold__mutmut_1",
+      "bucket": "killed",
+      "why": "wrong on purpose: predicted killed, but its only covering test skips"
+    }
+  ]
+}

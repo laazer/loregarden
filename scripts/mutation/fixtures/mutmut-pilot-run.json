@@ -1,0 +1,159 @@
+{
+  "side": "server",
+  "tool": "mutmut",
+  "tool_version": "3.8.1",
+  "wall_clock_seconds": 611.4,
+  "pilot_module": "loregarden/services/example_pilot.py",
+  "operators_in_play": [
+    "operator_arg_removal",
+    "operator_assignment",
+    "operator_augmented_assignment",
+    "operator_dict_arguments",
+    "operator_if_exp",
+    "operator_keywords",
+    "operator_lambda",
+    "operator_match",
+    "operator_name",
+    "operator_number",
+    "operator_remove_unary_ops",
+    "operator_string",
+    "operator_swap_op",
+    "operator_symmetric_string_methods_swap",
+    "operator_unsymmetrical_string_methods_swap"
+  ],
+  "meta": {
+    "loregarden/services/example_pilot.py": {
+      "exit_code_by_key": {
+        "loregarden.services.example_pilot.x_classify__mutmut_1": 1,
+        "loregarden.services.example_pilot.x_classify__mutmut_2": 0,
+        "loregarden.services.example_pilot.x_classify__mutmut_3": 5,
+        "loregarden.services.example_pilot.x_threshold__mutmut_1": 34,
+        "loregarden.services.example_pilot.x_threshold__mutmut_2": 3,
+        "loregarden.services.example_pilot.x_threshold__mutmut_3": 24,
+        "loregarden.services.example_pilot.x_threshold__mutmut_4": 33,
+        "loregarden.services.example_pilot.x_threshold__mutmut_5": 35,
+        "loregarden.services.example_pilot.x_threshold__mutmut_6": -11,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_1": 1,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_2": null
+      },
+      "hash_by_function_name": {
+        "loregarden.services.example_pilot.x_classify": "6b1f0c2a9d44",
+        "loregarden.services.example_pilot.x_threshold": "0e7a55c31b82",
+        "loregarden.services.example_pilot.xǁBudgetǁspend": "c40d9e6188af"
+      },
+      "type_check_error_by_key": {},
+      "durations_by_key": {
+        "loregarden.services.example_pilot.x_classify__mutmut_1": 41.8,
+        "loregarden.services.example_pilot.x_classify__mutmut_2": 73.2,
+        "loregarden.services.example_pilot.x_classify__mutmut_3": 0.9,
+        "loregarden.services.example_pilot.x_threshold__mutmut_1": 38.7,
+        "loregarden.services.example_pilot.x_threshold__mutmut_2": 12.4,
+        "loregarden.services.example_pilot.x_threshold__mutmut_3": 120.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_4": 0.8,
+        "loregarden.services.example_pilot.x_threshold__mutmut_5": 44.1,
+        "loregarden.services.example_pilot.x_threshold__mutmut_6": 9.6,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_1": 122.3,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_2": 0.0
+      },
+      "estimated_durations_by_key": {
+        "loregarden.services.example_pilot.x_classify__mutmut_1": 40.0,
+        "loregarden.services.example_pilot.x_classify__mutmut_2": 40.0,
+        "loregarden.services.example_pilot.x_classify__mutmut_3": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_1": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_2": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_3": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_4": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_5": 40.0,
+        "loregarden.services.example_pilot.x_threshold__mutmut_6": 40.0,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_1": 40.0,
+        "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_2": 40.0
+      }
+    }
+  },
+  "mutant_index": {
+    "loregarden.services.example_pilot.x_classify__mutmut_1": {
+      "file": "loregarden/services/example_pilot.py", "line": 31, "operator": "operator_swap_op"
+    },
+    "loregarden.services.example_pilot.x_classify__mutmut_2": {
+      "file": "loregarden/services/example_pilot.py", "line": 36, "operator": "operator_string"
+    },
+    "loregarden.services.example_pilot.x_classify__mutmut_3": {
+      "file": "loregarden/services/example_pilot.py", "line": 39, "operator": "operator_number"
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_1": {
+      "file": "loregarden/services/example_pilot.py", "line": 58, "operator": "operator_number"
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_2": {
+      "file": "loregarden/services/example_pilot.py", "line": 61, "operator": "operator_name"
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_3": {
+      "file": "loregarden/services/example_pilot.py", "line": 64, "operator": "operator_swap_op"
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_5": {
+      "file": "loregarden/services/example_pilot.py", "line": 70, "operator": "operator_keywords"
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_6": {
+      "file": "loregarden/services/example_pilot.py", "line": 73, "operator": "operator_arg_removal"
+    },
+    "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_1": {
+      "file": "loregarden/services/example_pilot.py", "line": 91, "operator": "operator_augmented_assignment"
+    },
+    "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_2": {
+      "file": "loregarden/services/example_pilot.py", "line": 94, "operator": "operator_number"
+    }
+  },
+  "kill_matrix": {
+    "loregarden.services.example_pilot.x_classify__mutmut_1": {
+      "failing": [
+        "tests/test_example_pilot.py::test_classify_rounds_to_the_floor",
+        "tests/test_example_pilot.py::test_classify_rejects_a_negative_budget"
+      ],
+      "passed": ["tests/test_example_pilot.py::test_classify_logs_the_budget"],
+      "skipped": [],
+      "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_classify__mutmut_2": {
+      "failing": [],
+      "passed": [
+        "tests/test_example_pilot.py::test_classify_rounds_to_the_floor",
+        "tests/test_example_pilot.py::test_classify_rejects_a_negative_budget",
+        "tests/test_example_pilot.py::test_classify_logs_the_budget"
+      ],
+      "skipped": [],
+      "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_classify__mutmut_3": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_1": {
+      "failing": [],
+      "passed": [],
+      "skipped": ["tests/test_example_pilot.py::test_threshold_reads_the_database"],
+      "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_2": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_3": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_4": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_5": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.x_threshold__mutmut_6": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    },
+    "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_1": {
+      "failing": ["tests/test_example_pilot.py::test_budget_spend_stops_at_zero"],
+      "passed": [],
+      "skipped": [],
+      "timed_out": ["tests/test_example_pilot.py::test_budget_spend_stops_at_zero"]
+    },
+    "loregarden.services.example_pilot.xǁBudgetǁspend__mutmut_2": {
+      "failing": [], "passed": [], "skipped": [], "timed_out": []
+    }
+  }
+}
