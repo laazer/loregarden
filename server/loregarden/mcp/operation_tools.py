@@ -69,6 +69,9 @@ OPERATION_TOOLS: Mapping[str, OperationId] = {
     # A stage's question for the operator, and the ticket's list of them.
     McpTool.ASK_OPERATOR.value: OperationId.OPERATOR_QUESTION_ASK,
     McpTool.LIST_OPERATOR_QUESTIONS.value: OperationId.OPERATOR_QUESTION_LIST,
+    # The asserted-not-proven debt class.
+    McpTool.RECORD_ASSERTED_NOT_PROVEN.value: OperationId.ASSERTED_CLAIM_RECORD,
+    McpTool.OPEN_CLAIMS.value: OperationId.ASSERTED_CLAIMS_OPEN,
     # A stage's question to an earlier stage on its ticket.
     McpTool.ASK_EARLIER_STAGE.value: OperationId.STAGE_ASK,
 }

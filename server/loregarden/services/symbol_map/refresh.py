@@ -86,12 +86,15 @@ _SEED_FILES_SQL = (
     "FROM symbol_map_files WHERE partition_id = ?"
 )
 #: The symbol rows are re-pointed at the NEW file row for the same path, which
-#: is why the file copy has to run first.
+#: is why the file copy has to run first. Every stored column travels,
+#: `fingerprint` included: a copy that drops it does not leave a gap, it leaves
+#: a seeded checkout whose symbols all read '' and whose anchored claims all
+#: ground UNVERIFIABLE while the map looks complete.
 _SEED_SYMBOLS_SQL = (
     "INSERT INTO symbol_map_symbols "
-    "(id, file_id, partition_id, name, qualified_name, kind, line, parent) "
+    "(id, file_id, partition_id, name, qualified_name, kind, line, parent, fingerprint) "
     "SELECT lower(hex(randomblob(16))), new_file.id, ?, s.name, s.qualified_name, s.kind, "
-    "s.line, s.parent "
+    "s.line, s.parent, s.fingerprint "
     "FROM symbol_map_symbols s "
     "JOIN symbol_map_files old_file ON old_file.id = s.file_id "
     "JOIN symbol_map_files new_file "

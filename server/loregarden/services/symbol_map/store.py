@@ -122,6 +122,8 @@ class SymbolLocation:
     line: int
     parent: str
     extractor_tier: ExtractorTier
+    #: `sym1:<32 hex>`, or "" for a tier that produces none (368).
+    fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -338,6 +340,7 @@ def apply_extractions(
                 kind=symbol.kind,
                 line=symbol.line,
                 parent=symbol.parent,
+                fingerprint=symbol.fingerprint,
             )
             for symbol in extraction.symbols
         )
@@ -356,6 +359,7 @@ def _location(row: SymbolMapSymbol, path: str, tier: ExtractorTier) -> SymbolLoc
         line=row.line,
         parent=row.parent,
         extractor_tier=tier,
+        fingerprint=row.fingerprint,
     )
 
 

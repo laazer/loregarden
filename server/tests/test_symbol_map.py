@@ -37,6 +37,7 @@ import pytest
 from loregarden.config import settings
 from loregarden.db.migrations import MIGRATIONS
 from loregarden.db.versions import symbol_map as symbol_map_migration
+from loregarden.db.versions import symbol_map_fingerprint as fingerprint_migration
 from loregarden.models.domain import (
     ExtractorTier,
     Freshness,
@@ -203,9 +204,15 @@ def test_the_migration_builds_all_three_tables_and_exactly_five_named_indexes(mi
 def test_the_models_index_set_equals_the_migrations_index_set(migrated_engine):
     """AC3 wants equality, not containment: a model index the migration never
     builds exists in every test database and in no live one, so the query it
-    was declared for is a table scan only in production."""
+    was declared for is a table scan only in production.
+
+    Both migrations run, because the models carry the union: 368 added
+    `ix_symbol_map_symbol_fingerprint` in its own append-only module rather
+    than editing this one, and the equality is over what a live database
+    actually ends up with."""
     with migrated_engine.begin() as conn:
         symbol_map_migration.m_symbol_map(conn)
+        fingerprint_migration.m_symbol_map_fingerprint(conn)
 
     declared = {
         name for model in MODELS_BY_TABLE.values() for name in _declared_constraint_names(model)
@@ -213,6 +220,7 @@ def test_the_models_index_set_equals_the_migrations_index_set(migrated_engine):
     built = {name for table in EXPECTED_INDEXES for name in _indexes(migrated_engine, table)}
 
     assert declared == built
+    assert "ix_symbol_map_symbol_fingerprint" in built
 
 
 def test_running_the_migration_twice_is_a_no_op(migrated_engine):
@@ -245,6 +253,9 @@ def test_the_migration_is_registered_once_after_the_code_signals_migration():
     follows. The id is permanent: the database records it, and renaming it
     runs the body again under the new name.
 
+    lg-code-knowledge-368 appends `20261118_symbol_map_fingerprint` beside it,
+    for the same reason and under the same rule.
+
     lg-code-knowledge-284 appends `20261118_symbol_map_refresh` beside it.
     That one is its own ticket's test (`test_symbol_map_refresh.py` asserts it
     is registered AFTER this one, which is the ordering that matters); what
@@ -258,10 +269,15 @@ def test_the_migration_is_registered_once_after_the_code_signals_migration():
 
 
 def test_the_symbol_set_is_relational_and_carries_no_source_text(migrated_engine):
-    """AC2: a row per symbol, and none of the four columns the ticket rules
-    out. A JSON blob makes both primary operations a deserialize-and-scan."""
+    """AC2: a row per symbol, and none of the columns the ticket rules out. A
+    JSON blob makes both primary operations a deserialize-and-scan.
+
+    368 added `fingerprint` — a 36-character scheme-prefixed digest, not source
+    text — and deliberately did NOT add `end_line`: `ast.unparse` needs no
+    extent, so the row stays as narrow as 281 left it plus one key."""
     with migrated_engine.begin() as conn:
         symbol_map_migration.m_symbol_map(conn)
+        fingerprint_migration.m_symbol_map_fingerprint(conn)
 
     for table in EXPECTED_INDEXES:
         columns = _columns(migrated_engine, table)
@@ -280,6 +296,7 @@ def test_the_symbol_set_is_relational_and_carries_no_source_text(migrated_engine
         "kind",
         "line",
         "parent",
+        "fingerprint",
     }
     for forbidden in ("source", "body", "text", "end_line", "content_hash"):
         assert forbidden not in symbols
@@ -357,10 +374,14 @@ def test_the_identity_is_derived_in_exactly_one_module():
     """AC4 / AC2.2. A second derivation is where a correct-looking answer gets
     reported: the two spellings disagree and nothing says which one wrote the
     row."""
+    # `fingerprint.py` (368) also hashes, but it hashes a symbol's unparsed
+    # SOURCE and never a path — it is the other content hash in the package,
+    # not a second spelling of the checkout identity. Excluded by name so a
+    # third hashing module still reds this test.
     deriving = [
         module.name
         for module in _package_modules()
-        if "sha256" in module.read_text(encoding="utf-8")
+        if "sha256" in module.read_text(encoding="utf-8") and module.name != "fingerprint.py"
     ]
 
     assert deriving == ["checkout_identity.py"]
@@ -1012,11 +1033,14 @@ def test_the_package_never_reads_the_workspaces_recorded_repo_path():
         assert "repo_path" not in module.read_text(encoding="utf-8"), module.name
 
 
-def test_the_public_surface_is_exactly_seven_functions():
-    """R5, widened by lg-code-knowledge-284: consumers (282, 283, 300, 304,
-    385) import from here and nothing deeper, so the seam is worth pinning.
-    284 adds the writer that keeps the map current and renames the verdict
-    reader; the old spelling is gone rather than aliased (internal posture)."""
+def test_the_public_surface_is_exactly_nine_functions():
+    """R5, widened by lg-code-knowledge-284 and -368: consumers (282, 283,
+    300, 304, 385) import from here and nothing deeper, so the seam is worth
+    pinning. 284 adds the writer that keeps the map current and renames the
+    verdict reader (the old spelling is gone rather than aliased, an internal
+    posture); 368 adds the write-time half and the read paths' entry point.
+    `verdicts_for` is deliberately not here: `claim_verdicts` calls it and
+    nothing outside the package does."""
     exported = {
         name
         for name in getattr(symbol_map_package, "__all__", [])
@@ -1025,8 +1049,10 @@ def test_the_public_surface_is_exactly_seven_functions():
 
     assert exported == {
         "build_symbol_map",
+        "claim_verdicts",
         "definitions_for",
         "outline_for",
+        "resolve_anchors",
         "suggest_names",
         "map_status",
         "refresh_at_run_entry",
@@ -1552,6 +1578,12 @@ def test_nothing_builds_or_schedules_the_map(surface):
 
     `services/invariant_registry.py` is deliberately not in this list: the
     invariant entry is the one reference 281 is supposed to add.
+
+    What is forbidden is a BUILD or a schedule, so the needle is the builder's
+    own name rather than the package's. 368 reads the map from
+    `mcp/memory_tools.py` to annotate a claim with a verdict — a read of
+    whatever 284 eventually builds, which cannot make the map exist and
+    changes nothing about this sentence.
     """
     if not surface.exists():
         pytest.skip(f"{surface} is not present in this checkout")
@@ -1560,7 +1592,9 @@ def test_nothing_builds_or_schedules_the_map(surface):
     offenders = [
         path.name
         for path in sources
-        if path.is_file() and "symbol_map" in path.read_text(encoding="utf-8", errors="ignore")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and "build_symbol_map" in path.read_text(encoding="utf-8", errors="ignore")
     ]
 
     assert offenders == []

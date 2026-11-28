@@ -1136,6 +1136,37 @@ def test_a_seeded_partition_is_this_checkouts_and_leaves_the_ancestor_untouched(
     assert _symbol_shape(session, ancestor.id) == ancestor_shape
 
 
+def test_a_seeded_partition_carries_the_ancestors_fingerprints(
+    session, workspace, same_commit_checkouts
+):
+    """368. The seed copies rows in SQL, so a column it forgets is not a
+    missing value but a wrong one: a warm checkout whose symbols all carry ''
+    grounds every anchored claim UNVERIFIABLE while looking like a full map.
+
+    The same-commit pair is the sharpest case, because it re-analyzes zero
+    files — every fingerprint in the seeded partition came out of the copy.
+    """
+    first, second = same_commit_checkouts
+    build_symbol_map(session, workspace.id, first)
+    ancestor = _partition(session, workspace.id, first)
+    ancestor_prints = {
+        (row.qualified_name, row.fingerprint) for row in _symbol_rows(session, ancestor.id)
+    }
+
+    report = refresh_symbol_map(session, workspace.id, second)
+
+    session.expire_all()
+    assert report.files_reanalyzed == 0, "every row under test came from the copy"
+    seeded = _partition(session, workspace.id, second)
+    seeded_prints = {
+        (row.qualified_name, row.fingerprint) for row in _symbol_rows(session, seeded.id)
+    }
+    python_prints = {print_ for _name, print_ in ancestor_prints if print_}
+    assert python_prints, "the ancestor really was fingerprinted"
+    assert all(print_.startswith("sym1:") for print_ in python_prints)
+    assert seeded_prints == ancestor_prints
+
+
 # ==========================================================================
 # AC7 — the per-checkout keying, proved
 # ==========================================================================

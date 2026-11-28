@@ -104,7 +104,7 @@ from loregarden.services.run_log_stream import RunLogStreamer
 from loregarden.services.spec_snapshot import stamp_run_spec
 from loregarden.services.studio_agent_prompt import build_studio_prompt_sections
 from loregarden.services.studio_routing import VERIFY_STAGE_TYPE
-from loregarden.services.symbol_map import refresh_at_run_entry
+from loregarden.services.symbol_map import claim_verdicts, refresh_at_run_entry
 from loregarden.services.target_branch import TargetBranchError, resolve_target_branch
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket
 from loregarden.services.ticket_worktree import resolve_execution_root, resolve_ticket_root
@@ -898,6 +898,7 @@ class CliAgentExecutor:
         *,
         is_verify: bool,
         assembly_source: MemoryBriefingAssembly,
+        repo_root: Path,
     ) -> str:
         """The inherited-wisdom block, and THE single recording point for its telemetry.
 
@@ -920,8 +921,16 @@ class CliAgentExecutor:
         bound. The `truncated` flag covers the prompt-character cap only, not a
         vault that has outgrown the candidate budget.
 
-        Never raises — `record_briefing` swallows its own failures, and this
-        method adds no guard of its own.
+        The grounding verdict (368) rides on the same seam, and for the same
+        reason: `inherited_wisdom` opens no database, so the lookup is bound
+        here. `repo_root` is handed in rather than derived again — a second
+        `resolve_ticket_root` is where a correct-looking answer gets reported,
+        because the verdict would then be computed against a tree the prompt
+        does not describe.
+
+        Never raises — `record_briefing` swallows its own failures, the
+        grounding lookup runs inside the briefing's own never-raising guard,
+        and this method adds none of its own.
         """
         if is_verify:
             record_briefing(
@@ -937,6 +946,7 @@ class CliAgentExecutor:
             ticket,
             workspace.slug,
             confidence_lookup=partial(confidence_for, self.session),
+            grounding_lookup=partial(claim_verdicts, self.session, workspace.id, repo_root),
         )
         record_briefing(
             self.session,
@@ -1080,7 +1090,12 @@ class CliAgentExecutor:
             titled_block(
                 "## Inherited context (already decided — do not re-derive)",
                 self._inherited_context(
-                    ticket, run, workspace, is_verify=is_verify, assembly_source=assembly_source
+                    ticket,
+                    run,
+                    workspace,
+                    is_verify=is_verify,
+                    assembly_source=assembly_source,
+                    repo_root=repo_root,
                 ),
             ),
             titled_block(

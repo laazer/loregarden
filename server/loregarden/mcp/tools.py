@@ -12,6 +12,7 @@ from loregarden.agents.executors.tool_auto_approve import (
     reject_orchestrated_tool_denial,
 )
 from loregarden.mcp.artifact_tools import attach_evidence
+from loregarden.mcp.asserted_not_proven_tools import ASSERTED_NOT_PROVEN_TOOL_DEFINITIONS
 from loregarden.mcp.block_ticket_args import normalize_block_ticket
 from loregarden.mcp.branch_moves_tool import TOOL_DEFINITION as BRANCH_MOVES_TOOL_DEFINITION
 from loregarden.mcp.criterion_tools import CRITERION_TOOL_DEFINITIONS, settle_criterion_tool
@@ -556,6 +557,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 ),
                 "aliases": _string_prop("Other names for it: comma-separated or JSON array."),
                 "tags": _string_prop("Optional comma-separated tags or JSON array."),
+                "anchors": _string_prop(
+                    "Optional symbol anchors: qualified names from this checkout's symbol "
+                    "map (e.g. pkg.module.function), comma-separated or a JSON array. Each "
+                    "is resolved against this run's own checkout BEFORE the write and "
+                    "stamped with the fingerprint the code has right now, so a later reader "
+                    "is told whether the claim still describes it. A name the map does not "
+                    "hold refuses the WHOLE write rather than recording it ungrounded."
+                ),
             },
             required=["ticket_id", "workspace_slug", "content"],
         ),
@@ -579,6 +588,14 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "Omit it. A change to the flag needs a reason recorded in the node's "
                     "history, which this tool does not carry, so a value that would change "
                     "it is refused, naming where an operator makes the change."
+                ),
+                "anchors": _string_prop(
+                    "Optional symbol anchors: qualified names from this checkout's symbol "
+                    "map (e.g. pkg.module.function), comma-separated or a JSON array. Each "
+                    "is resolved against this run's own checkout BEFORE the write and "
+                    "stamped with the fingerprint the code has right now, so a later reader "
+                    "is told whether the claim still describes it. A name the map does not "
+                    "hold refuses the WHOLE write rather than recording it ungrounded."
                 ),
             },
             required=["title", "workspace_slug"],
@@ -758,6 +775,7 @@ TOOL_DEFINITIONS.extend(UX_ANSWERS_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(RESEARCH_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(FIX_COVERAGE_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(OPERATOR_QUESTION_TOOL_DEFINITIONS)
+TOOL_DEFINITIONS.extend(ASSERTED_NOT_PROVEN_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(STAGE_ASK_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(DISCOVERY_TOOL_DEFINITIONS)
 TOOL_DEFINITIONS.extend(CRITERION_TOOL_DEFINITIONS)

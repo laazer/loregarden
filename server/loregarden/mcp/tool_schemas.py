@@ -37,6 +37,10 @@ def enum_string_prop(description: str, values: list[str]) -> dict[str, Any]:
     return {"type": "string", "description": description, "enum": values}
 
 
+def number_prop(description: str) -> dict[str, str]:
+    return {"type": "number", "description": description}
+
+
 def boolean_prop(description: str) -> dict[str, str]:
     return {"type": "boolean", "description": description}
 

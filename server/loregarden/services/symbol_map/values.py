@@ -53,6 +53,9 @@ class ExtractedSymbol:
     kind: SymbolKind
     line: int
     parent: str = ""
+    #: `sym1:<32 hex>` over this node's unparsed source (368), or "" for a
+    #: tier that cannot bound a body. See `symbol_map.fingerprint`.
+    fingerprint: str = ""
 
 
 @dataclass(frozen=True)

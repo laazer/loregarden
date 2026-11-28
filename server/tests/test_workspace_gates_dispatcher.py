@@ -82,10 +82,11 @@ def _run(scripts: Path, *args: str, exits: dict[str, int] | None = None):
     return result, calls
 
 
-def test_lists_the_six_workspace_gates():
+def test_lists_the_seven_workspace_gates():
     assert _gates() == [
         "py_organization_check.py",
         "py_silent_except_check.py",
+        "py_ceiling_marker_check.py",
         "md_report_check.py",
         "ts_organization_check.cjs",
         "ts_no_silent_failures_check.cjs",
@@ -106,6 +107,7 @@ def test_each_gate_sees_only_its_own_languages_files(stubbed: Path):
     assert gate_calls == [
         "py_organization_check.py a.py",
         "py_silent_except_check.py a.py",
+        "py_ceiling_marker_check.py a.py",
         "md_report_check.py notes.md",
         "ts_organization_check.cjs b.ts c.tsx",
         "ts_no_silent_failures_check.cjs b.ts c.tsx",
@@ -138,7 +140,7 @@ def test_every_gate_runs_after_one_fails(stubbed: Path):
     result, calls = _run(stubbed, "a.py", "b.ts", exits={"py_organization_check.py": 1})
 
     assert result.returncode == 1
-    assert len([c for c in calls if not c.startswith("via-")]) == 5
+    assert len([c for c in calls if not c.startswith("via-")]) == 6
 
 
 def test_unavailable_alone_exits_unavailable(stubbed: Path):

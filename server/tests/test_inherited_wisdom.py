@@ -1,7 +1,10 @@
 """Prior decisions reach a stage without it having to go looking (#5)."""
 
+import logging
+from pathlib import Path
 from unittest.mock import Mock, patch
 
+import loregarden
 import pytest
 from loregarden.agents.inherited_wisdom import (
     _MAX_CHECKPOINTS,
@@ -9,11 +12,13 @@ from loregarden.agents.inherited_wisdom import (
     MAX_WISDOM_CHARS,
     build_inherited_wisdom,
 )
+from loregarden.models.domain import GroundingVerdict, MemoryRelationType
 from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
 )
+from loregarden.services.symbol_map.grounding import ClaimGrounding, GroundingCheck
 from tests.memory_helpers import briefing_ticket as _ticket
 from tests.memory_helpers import frozen_clock
 
@@ -562,3 +567,398 @@ def test_the_default_char_cap_does_not_bind_on_a_saturated_briefing(tmp_path):
     )
     for i in range(_MAX_CHECKPOINTS):
         assert f"decision {i}" in result.text
+
+
+# ---------------------------------------------------------------------------
+# S1 — the grounding verdict in the briefing (lg-code-knowledge-368, R4).
+#
+# The lookup is INJECTED: this module imports no database module, and it must
+# not learn about the symbol map either. Every test below supplies its own
+# callable, which is also how a read path proves it never guesses a verdict.
+# ---------------------------------------------------------------------------
+
+_GROUNDED_WS = "lg"
+
+
+def _claim(verdict, qualified_name, location="", reason=""):
+    check = GroundingCheck(
+        verdict=verdict, qualified_name=qualified_name, location=location, reason=reason
+    )
+    return ClaimGrounding(verdict=verdict, checks=(check,), reason=reason)
+
+
+@pytest.fixture(name="two_claims")
+def two_claims_fixture(tmp_path):
+    """Two recalled learnings on one topic, so ordering between them is visible."""
+    memory = AgentMemoryService(graph_sqlite_base=tmp_path / "memory.sqlite")
+    ids = {}
+    with frozen_clock("2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"):
+        for key, title in (("first", "Routing lesson one"), ("second", "Routing lesson two")):
+            ids[key] = memory.upsert_memory(
+                title=title,
+                body="Rate limiting on the public API.",
+                workspace_slug=_GROUNDED_WS,
+            )["graph"]["id"]
+    return memory, ids
+
+
+def _briefing(memory, lookup):
+    return build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory, grounding_lookup=lookup)
+
+
+def test_a_changed_claim_is_labelled_and_sorted_after_an_undemoted_one(two_claims):
+    """Criterion 4: CHANGED is demoted — labelled in the line and sorted after —
+    and never hidden. A claim the code has moved on from is still history the
+    agent should see, which is the soft-invalidation contract of ticket 182."""
+    memory, ids = two_claims
+
+    text = _briefing(
+        memory,
+        lambda claims: {ids["first"]: _claim(GroundingVerdict.CHANGED, "pkg.alpha.edited")},
+    ).text
+
+    assert "CHANGED pkg.alpha.edited" in text
+    assert "Routing lesson one" in text, "demoted, not hidden"
+    assert text.index("Routing lesson two") < text.index("Routing lesson one")
+
+
+def test_a_missing_claim_is_demoted_the_same_way(two_claims):
+    memory, ids = two_claims
+
+    text = _briefing(
+        memory,
+        lambda claims: {ids["first"]: _claim(GroundingVerdict.MISSING, "pkg.alpha.renamed_away")},
+    ).text
+
+    assert "MISSING pkg.alpha.renamed_away" in text
+    assert text.index("Routing lesson two") < text.index("Routing lesson one")
+
+
+def test_a_moved_claim_is_labelled_with_its_new_file_and_line_and_does_not_reorder(two_claims):
+    """UX S1's action: the next step is a file to open in this checkout rather
+    than a search. MOVED does not reorder, because the claim is still true of
+    the same code."""
+    memory, ids = two_claims
+    order = [
+        row["title"]
+        for row in memory.recall_related("rate limiting public", workspace_slug=_GROUNDED_WS)
+    ]
+
+    text = _briefing(
+        memory,
+        lambda claims: {
+            ids["first"]: _claim(
+                GroundingVerdict.MOVED, "pkg.alpha.moving_house", location="pkg/gamma.py:1"
+            )
+        },
+    ).text
+
+    assert "MOVED pkg.alpha.moving_house -> pkg/gamma.py:1" in text
+    assert [title for title in order if title in text] == order
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    [GroundingVerdict.GROUNDED, GroundingVerdict.UNVERIFIABLE],
+    ids=["grounded", "unverifiable"],
+)
+def test_grounded_and_unverifiable_render_nothing_at_all(two_claims, verdict):
+    """UX S1. With 0 anchored claims live, an unconditional label would add the
+    same string to all 5 lines of every prompt in the system and train every
+    reader to skip the suffix that already carries supersession."""
+    memory, ids = two_claims
+    reason = "no symbol map for this checkout" if verdict is GroundingVerdict.UNVERIFIABLE else ""
+
+    result = _briefing(
+        memory,
+        lambda claims: {ids["first"]: _claim(verdict, "pkg.alpha.steady", reason=reason)},
+    )
+
+    assert "pkg.alpha.steady" not in result.text
+    assert verdict.value not in result.text.lower()
+
+
+def test_a_briefing_with_no_anchored_claims_is_byte_identical_to_the_pre_change_output(two_claims):
+    """UX S1's first byte-identity case. A lookup that returns no entry for any
+    recalled claim — which is every claim today — must change nothing."""
+    memory, _ids = two_claims
+
+    with_lookup = _briefing(memory, lambda claims: {})
+    without = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert with_lookup.text == without.text
+
+
+def test_a_briefing_in_a_checkout_with_no_symbol_map_is_byte_identical(two_claims):
+    """UX S1's second case, and D4's fail-safe direction. Until 284 builds a map
+    in production every verdict is UNVERIFIABLE, so this is what every real run
+    reads — unchanged, rather than a briefing with every claim demoted."""
+    memory, ids = two_claims
+    unverifiable = {
+        node_id: _claim(
+            GroundingVerdict.UNVERIFIABLE,
+            "pkg.alpha.steady",
+            reason="no symbol map for this checkout",
+        )
+        for node_id in ids.values()
+    }
+
+    with_lookup = _briefing(memory, lambda claims: unverifiable)
+    without = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert with_lookup.text == without.text
+
+
+def test_a_raising_lookup_leaves_every_line_as_it_reads_today_and_logs_once(two_claims, caplog):
+    """UX S1's error state. A never-raising guard mirroring `_confidences`: one
+    warning, a flag on the result, and every line exactly as it reads today. It
+    never shortens the briefing and never guesses a verdict."""
+    memory, _ids = two_claims
+
+    def broken(_claims):
+        raise RuntimeError("symbol map gone")
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.agents.inherited_wisdom"):
+        result = _briefing(memory, broken)
+    unchanged = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert result.grounding_unavailable is True
+    assert result.text == unchanged.text
+    assert result.learnings_injected == unchanged.learnings_injected
+    assert len([r for r in caplog.records if r.levelno == logging.WARNING]) == 1
+
+
+def test_the_grounding_note_sits_between_supersession_and_confidence(two_claims):
+    """UX S1: same slot, same grammar as `superseded by`, and before the
+    confidence note. One `_( … )` suffix whose order is stable is what keeps a
+    reader able to skim it."""
+    memory, ids = two_claims
+    memory.create_relation(
+        source_id=ids["second"],
+        target_id=ids["first"],
+        relation_type=MemoryRelationType.SUPERSEDES,
+        workspace_slug=_GROUNDED_WS,
+    )
+
+    text = _briefing(
+        memory,
+        lambda claims: {ids["first"]: _claim(GroundingVerdict.CHANGED, "pkg.alpha.edited")},
+    ).text
+
+    # The claim's OWN bullet, not the 1-hop digest line that merely names it:
+    # `  - ← _supersedes_: Routing lesson one` matches the title too and
+    # carries no note suffix at all.
+    line = next(line for line in text.splitlines() if line.startswith("- **Routing lesson one**"))
+    assert line.index("superseded by") < line.index("CHANGED pkg.alpha.edited")
+
+
+def test_a_demoted_claim_sorts_after_a_superseded_one(two_claims):
+    """Criterion 4's exact words: demoted claims sort AFTER superseded ones.
+    `superseded` is a human-visible history; a CHANGED verdict is the machine
+    saying the code moved on, which is the weaker claim of the two."""
+    memory, ids = two_claims
+    memory.create_relation(
+        source_id=ids["first"],
+        target_id=ids["second"],
+        relation_type=MemoryRelationType.SUPERSEDES,
+        workspace_slug=_GROUNDED_WS,
+    )
+
+    text = _briefing(
+        memory,
+        lambda claims: {ids["first"]: _claim(GroundingVerdict.CHANGED, "pkg.alpha.edited")},
+    ).text
+
+    assert text.index("Routing lesson two") < text.index("Routing lesson one")
+
+
+def test_the_lookup_is_asked_for_every_recalled_claim_and_nothing_else(two_claims):
+    """The seam's shape: `(claim_id, anchors_json)` pairs, one per recalled
+    learning. A lookup handed a node id it cannot key on silently returns
+    nothing, which reads exactly like a corpus with no anchors in it."""
+    memory, ids = two_claims
+    seen = []
+
+    def record(claims):
+        seen.append(list(claims))
+        return {}
+
+    _briefing(memory, record)
+
+    assert len(seen) == 1
+    assert {claim_id for claim_id, _anchors in seen[0]} == set(ids.values())
+
+
+# ---------------------------------------------------------------------------
+# Criterion 4 — the agent-facing reader census, derived from the capability.
+# ---------------------------------------------------------------------------
+
+#: The two seams that put durable memory in front of an agent. Not a list
+#: somebody maintains: `test_the_agent_facing_reader_census_is_derived` finds
+#: them by what they CALL, so a third one added later reds a test instead of
+#: passing review.
+_AGENT_FACING_READS = ("recall_related(", "memory.search(")
+_EXPECTED_READERS = {"inherited_wisdom.py", "memory_tools.py"}
+
+
+def _agent_facing_modules() -> dict[str, Path]:
+    package = Path(loregarden.__file__).parent
+    roots = (package / "agents", package / "mcp")
+    found: dict[str, Path] = {}
+    for root in roots:
+        for path in root.rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            if any(call in source for call in _AGENT_FACING_READS):
+                found[path.name] = path
+    return found
+
+
+def test_the_agent_facing_reader_census_is_derived_from_the_capability():
+    """Criterion 4: BOTH agent-facing read paths carry the verdict, and a third
+    reader added later reds a test rather than shipping an unverified claim
+    into a prompt. The census is computed from the calls, not maintained."""
+    readers = _agent_facing_modules()
+
+    assert set(readers) == _EXPECTED_READERS
+    for name, path in readers.items():
+        source = path.read_text(encoding="utf-8")
+        assert "grounding" in source, f"{name} reads memory for an agent without a verdict"
+
+
+# ---------------------------------------------------------------------------
+# S1 under an injected lookup that misbehaves (test-break).
+#
+# The lookup is supplied by the caller, so its shape is not something this
+# module can prove at import time — only the guard around it can. The designed
+# suite pins the lookup that RAISES; these pin the ones that return the wrong
+# thing, answer about the wrong claim, or answer about nothing at all, which
+# are the three ways a callable fails without raising.
+# ---------------------------------------------------------------------------
+
+
+def test_the_grounding_flag_is_false_when_the_lookup_answers(two_claims):
+    """`grounding_unavailable` is the honest half of this surface, and a flag
+    that is never False carries no information. Pinned beside the raising case
+    so "the guard fired" and "the guard is always on" cannot look the same."""
+    memory, ids = two_claims
+
+    answered = _briefing(
+        memory, lambda claims: {ids["first"]: _claim(GroundingVerdict.CHANGED, "pkg.alpha.edited")}
+    )
+    silent = _briefing(memory, lambda claims: {})
+
+    assert answered.grounding_unavailable is False
+    assert silent.grounding_unavailable is False
+
+
+def test_no_lookup_at_all_is_not_an_unavailable_lookup(two_claims):
+    """`grounding_lookup=None` is every caller that has not been wired yet —
+    the API, the tests, every non-CLI entry point. None of them is a failure,
+    and a run that reports one teaches an operator to ignore the flag."""
+    memory, _ids = two_claims
+
+    result = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert result.grounding_unavailable is False
+
+
+@pytest.mark.parametrize(
+    "answer", [None, "grounded", [("id", "verdict")]], ids=["none", "str", "list"]
+)
+def test_a_lookup_that_returns_the_wrong_type_is_guarded_like_one_that_raises(
+    two_claims, caplog, answer
+):
+    """A callable injected across a seam fails by returning nonsense at least as
+    often as by raising — a partial refactor, a stub, an adapter that forgot to
+    return. The guard must cover both, or the first one of these assembles no
+    prompt at all on the path that assembles every non-verify prompt.
+    """
+    memory, _ids = two_claims
+
+    with caplog.at_level(logging.WARNING, logger="loregarden.agents.inherited_wisdom"):
+        result = _briefing(memory, lambda claims: answer)
+    unchanged = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert result.text == unchanged.text
+    assert result.learnings_injected == unchanged.learnings_injected
+
+
+def test_a_verdict_about_a_claim_that_was_not_recalled_changes_nothing(two_claims):
+    """The lookup is keyed by node id and the briefing holds five of 614 nodes,
+    so a reply about a claim this briefing never recalled is the normal case of
+    a stale or over-eager cache. It must not append a line nobody asked for."""
+    memory, _ids = two_claims
+
+    result = _briefing(
+        memory,
+        lambda claims: {
+            "a-node-id-not-in-this-briefing": _claim(
+                GroundingVerdict.MISSING, "pkg.alpha.renamed_away"
+            )
+        },
+    )
+    unchanged = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert result.text == unchanged.text
+
+
+def test_a_demoted_line_names_the_anchor_that_was_demoted(two_claims):
+    """UX S1's stated floor: the line names the anchor's qualified name so the
+    next step is a file to open. A claim with two anchors, one fine and one
+    not, must name the one that is NOT fine — naming the healthy sibling is a
+    verdict word pointing at the wrong symbol, which is worse than none."""
+    memory, ids = two_claims
+    mixed = ClaimGrounding(
+        verdict=GroundingVerdict.CHANGED,
+        checks=(
+            GroundingCheck(
+                verdict=GroundingVerdict.GROUNDED,
+                qualified_name="pkg.alpha.steady",
+                location="pkg/alpha.py:1",
+                reason="",
+            ),
+            GroundingCheck(
+                verdict=GroundingVerdict.CHANGED,
+                qualified_name="pkg.alpha.edited",
+                location="",
+                reason="",
+            ),
+        ),
+        reason="",
+    )
+
+    text = _briefing(memory, lambda claims: {ids["first"]: mixed}).text
+
+    assert "CHANGED pkg.alpha.edited" in text
+    assert "pkg.alpha.steady" not in text
+
+
+def test_a_claim_grounding_carrying_no_checks_does_not_break_the_line(two_claims):
+    """A verdict with an empty `checks` tuple has no symbol to name. It is not
+    a shape `claim_verdicts` produces, which is exactly why it is worth one
+    test: the renderer reaching for `checks[0]` turns a future caller's empty
+    tuple into an IndexError inside every prompt this system assembles."""
+    memory, ids = two_claims
+    empty = ClaimGrounding(verdict=GroundingVerdict.CHANGED, checks=(), reason="")
+
+    result = _briefing(memory, lambda claims: {ids["first"]: empty})
+
+    assert "Routing lesson one" in result.text
+
+
+def test_every_claim_demoted_still_briefs_every_claim(two_claims):
+    """Criterion 4's "never hidden", at the volume where hiding is tempting: a
+    checkout where every anchored claim has drifted. Demotion is a sort key,
+    not a filter, so the briefing is the same length — a shorter one is the
+    soft-invalidation contract of ticket 182 turned back into deletion."""
+    memory, ids = two_claims
+    all_changed = {
+        node_id: _claim(GroundingVerdict.CHANGED, "pkg.alpha.edited") for node_id in ids.values()
+    }
+
+    result = _briefing(memory, lambda claims: all_changed)
+    unchanged = build_inherited_wisdom(_ticket(), _GROUNDED_WS, memory=memory)
+
+    assert result.learnings_injected == unchanged.learnings_injected
+    assert "Routing lesson one" in result.text
+    assert "Routing lesson two" in result.text

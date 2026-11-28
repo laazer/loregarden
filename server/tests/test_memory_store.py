@@ -1,15 +1,18 @@
 import json
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from loregarden.models.domain import MemoryRelationType
+from loregarden.services import memory_store as memory_store_module
 from loregarden.services.memory_store import (
     CHECKPOINT_ENTRY_DELIMITER,
     AgentMemoryService,
     MemoryGraphStore,
     ObsidianMemoryStore,
 )
+from tests.import_scan import imported_names
 from tests.memory_helpers import frozen_clock
 
 
@@ -1301,3 +1304,274 @@ def test_recall_related_candidate_cap_unchanged_with_checkpoints_present(vault_d
     assert any(row["title"] == "Trusted server throttle" for row in ranked)
     assert all(row["source"] == "sqlite" for row in ranked)
     assert not any(str(row.get("title", "")).startswith("Checkpoint log") for row in ranked)
+
+
+# ---------------------------------------------------------------------------
+# Anchors on memory nodes and note frontmatter (lg-code-knowledge-368, R2).
+#
+# `memory_store` imports nothing from `symbol_map`: the column is opaque JSON
+# to it, and the five keys below are a contract it never interprets.
+# ---------------------------------------------------------------------------
+
+WS_368 = "lg"
+
+_ANCHOR = {
+    "qualified_name": "pkg.alpha.steady",
+    "fingerprint": "sym1:" + "ab" * 16,
+    "path": "pkg/alpha.py",
+    "checkout_identity": "0123456789abcdef",
+    "extractor_tier": "python_ast",
+}
+_OTHER_ANCHOR = {
+    **_ANCHOR,
+    "qualified_name": "pkg.alpha.edited",
+    "fingerprint": "sym1:" + "cd" * 16,
+}
+
+#: Every key an ungrounded node's `_node_row` dict carried before this ticket.
+#: Hardcoded rather than derived: "byte-identical to today" cannot be measured
+#: against the code that is being changed.
+_UNGROUNDED_NODE_KEYS = {
+    "id",
+    "title",
+    "body",
+    "tags",
+    "ticket_id",
+    "workspace_slug",
+    "node_type",
+    "created_at",
+    "updated_at",
+    "discredited",
+    "aliases",
+    "origin_kind",
+    "origin_ref",
+}
+
+
+@pytest.fixture(name="graph_368")
+def graph_368_fixture(tmp_path) -> MemoryGraphStore:
+    return MemoryGraphStore(tmp_path / "graph.db")
+
+
+@pytest.fixture(name="service_368")
+def service_368_fixture(vault_dir, tmp_path) -> AgentMemoryService:
+    return AgentMemoryService(
+        obsidian=ObsidianMemoryStore(vault_dir), graph_sqlite_base=tmp_path / "memory.sqlite"
+    )
+
+
+def _anchors_json(graph: MemoryGraphStore, node_id: str):
+    with graph._connect() as conn:
+        return conn.execute(
+            "SELECT anchors_json FROM memory_nodes WHERE id = ?", (node_id,)
+        ).fetchone()["anchors_json"]
+
+
+def test_the_anchor_column_is_added_on_open_to_a_graph_that_predates_it(tmp_path):
+    """`_ensure_anchor_column`, called from `_init_schema` beside
+    `_ensure_origin_columns`. TEXT NULL, because NULL is how a row written
+    before anchors existed says it has none — `[]` would be a claim nobody made.
+    """
+    database = tmp_path / "legacy.db"
+    legacy = sqlite3.connect(database)
+    legacy.execute(
+        "CREATE TABLE memory_nodes (id TEXT PRIMARY KEY, title TEXT NOT NULL, "
+        "body TEXT NOT NULL DEFAULT '', tags_json TEXT NOT NULL DEFAULT '[]', "
+        "ticket_id TEXT NOT NULL DEFAULT '', workspace_slug TEXT NOT NULL DEFAULT '', "
+        "node_type TEXT NOT NULL DEFAULT 'memory', created_at TEXT NOT NULL, "
+        "updated_at TEXT NOT NULL)"
+    )
+    legacy.commit()
+    legacy.close()
+
+    MemoryGraphStore(database)
+
+    conn = sqlite3.connect(database)
+    try:
+        columns = {row[1]: row for row in conn.execute("PRAGMA table_info(memory_nodes)")}
+    finally:
+        conn.close()
+    assert columns["anchors_json"][2].upper() == "TEXT"
+    assert columns["anchors_json"][3] == 0, "nullable"
+
+
+def test_an_ungrounded_node_grows_no_new_key(graph_368):
+    """Criterion 2's compatibility pin. An unanchored node's dict is what it was
+    before this ticket, so no reader of it — API, briefing, search — is touched.
+    """
+    written = graph_368.upsert_node(title="Ungrounded", body="b", workspace_slug=WS_368)
+
+    read = graph_368.get_node(written["id"])
+
+    assert set(read) == _UNGROUNDED_NODE_KEYS
+    assert _anchors_json(graph_368, written["id"]) is None
+
+
+def test_a_grounded_node_reads_back_the_fingerprint_it_was_written_with(graph_368):
+    """Criterion 2's other half: the fingerprint, path, checkout identity and
+    extractor tier observed at write time all survive the round trip."""
+    written = graph_368.upsert_node(
+        title="Grounded", body="b", workspace_slug=WS_368, anchors=[_ANCHOR]
+    )
+
+    read = graph_368.get_node(written["id"])
+
+    assert read["anchors"] == [_ANCHOR]
+    assert read["anchors"][0]["fingerprint"] == _ANCHOR["fingerprint"]
+
+
+def test_anchors_follow_the_aliases_rule(graph_368):
+    """None keeps what the row has, a list replaces it, `[]` clears it. The same
+    contract `aliases` and origin already have, so an unrelated retitle cannot
+    silently unground a claim."""
+    node_id = graph_368.upsert_node(title="Grounded", workspace_slug=WS_368, anchors=[_ANCHOR])[
+        "id"
+    ]
+
+    graph_368.upsert_node(node_id=node_id, title="Retitled", workspace_slug=WS_368)
+    assert graph_368.get_node(node_id)["anchors"] == [_ANCHOR]
+
+    graph_368.upsert_node(
+        node_id=node_id, title="Retitled", workspace_slug=WS_368, anchors=[_OTHER_ANCHOR]
+    )
+    assert graph_368.get_node(node_id)["anchors"] == [_OTHER_ANCHOR]
+
+    graph_368.upsert_node(node_id=node_id, title="Retitled", workspace_slug=WS_368, anchors=[])
+    assert "anchors" not in graph_368.get_node(node_id)
+
+
+def test_an_empty_anchor_list_is_stored_as_null_and_never_as_a_json_empty_list(graph_368):
+    """`[]` is never stored (R2). "Written ungrounded" and "grounded against
+    nothing" must not become two spellings of one state in the column."""
+    node_id = graph_368.upsert_node(title="Grounded", workspace_slug=WS_368, anchors=[_ANCHOR])[
+        "id"
+    ]
+
+    graph_368.upsert_node(node_id=node_id, title="Grounded", workspace_slug=WS_368, anchors=[])
+
+    assert _anchors_json(graph_368, node_id) is None
+
+
+def test_the_exported_note_carries_its_anchors_as_flat_strings(service_368, vault_dir):
+    """R2's frontmatter: a list of `<qualified_name>@<fingerprint>`, which is
+    the one spelling an Obsidian reader and a grep both resolve."""
+    service_368.upsert_memory(
+        title="Grounded claim", body="b", workspace_slug=WS_368, anchors=[_ANCHOR, _OTHER_ANCHOR]
+    )
+
+    note = next((vault_dir).rglob("*.md")).read_text(encoding="utf-8")
+
+    assert "anchors:\n" in note
+    assert f"  - {_ANCHOR['qualified_name']}@{_ANCHOR['fingerprint']}" in note
+    assert f"  - {_OTHER_ANCHOR['qualified_name']}@{_OTHER_ANCHOR['fingerprint']}" in note
+
+
+def test_an_ungrounded_notes_frontmatter_gains_nothing(service_368, vault_dir):
+    """Emitted only when non-empty, and `_format_frontmatter` is unchanged. An
+    `anchors: []` on all 614 live notes is churn on every export and a key that
+    means nothing."""
+    service_368.upsert_memory(title="Ungrounded claim", body="b", workspace_slug=WS_368)
+
+    note = next((vault_dir).rglob("*.md")).read_text(encoding="utf-8")
+
+    assert "anchors" not in note
+
+
+def test_memory_store_imports_nothing_from_the_symbol_map(service_368):
+    """R2's seam. The memory graph is per-workspace iCloud SQLite reached by raw
+    sqlite3; the symbol map is control-plane SQLite behind an ORM Session. There
+    is no join, and the column stays opaque JSON on this side of it."""
+    source = Path(memory_store_module.__file__).read_text(encoding="utf-8")
+
+    for name in imported_names(source):
+        assert not name.startswith("loregarden.services.symbol_map"), name
+
+
+# ---------------------------------------------------------------------------
+# The anchor column under values it was not written by (test-break).
+#
+# `anchors_json` is TEXT on a per-workspace SQLite file in a synced vault.
+# Operators edit that vault, iCloud resolves conflicts in it, and ticket 182's
+# manual controls write to it — so "whatever `upsert_node` put there" is not
+# the only thing `_node_row` will ever read back.
+# ---------------------------------------------------------------------------
+
+
+def _write_anchor_column(graph: MemoryGraphStore, node_id: str, raw) -> None:
+    """Put a value in the column that no writer in this codebase would put there."""
+    conn = graph._connect()
+    try:
+        conn.execute("UPDATE memory_nodes SET anchors_json = ? WHERE id = ?", (raw, node_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("raw", [None, "[]", "null"], ids=["null", "empty-list", "json-null"])
+def test_a_column_that_decodes_to_nothing_grows_no_key(graph_368, raw):
+    """R2's rule is "only when `anchors_json` is non-NULL and decodes to a
+    non-empty list". `[]` is never written by this code, but a row that already
+    holds one — from a hand edit, or from a writer this ticket has not met —
+    must read back as the ungrounded node it is, not as a node whose `anchors`
+    key is an empty list every downstream reader then has to special-case.
+    """
+    node_id = graph_368.upsert_node(title="Grounded", workspace_slug=WS_368, anchors=[_ANCHOR])[
+        "id"
+    ]
+    _write_anchor_column(graph_368, node_id, raw)
+
+    read = graph_368.get_node(node_id)
+
+    assert set(read) == _UNGROUNDED_NODE_KEYS
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["{", '{"qualified_name": "pkg.alpha.steady"}', '["pkg.alpha.steady"]', "17"],
+    ids=["truncated", "object", "list-of-strings", "scalar"],
+)
+def test_a_corrupt_column_never_reads_back_as_an_anchor(graph_368, raw):
+    """Every reader of this key indexes `anchor["qualified_name"]`: the search
+    reply, the frontmatter exporter and the verdict lookup all do. So the one
+    thing a corrupt column may not do is hand back something shaped almost
+    like an anchor — a bare string indexes as a character, and a dict with the
+    wrong keys raises inside whichever read path reaches it first.
+    """
+    node_id = graph_368.upsert_node(title="Grounded", workspace_slug=WS_368, anchors=[_ANCHOR])[
+        "id"
+    ]
+    _write_anchor_column(graph_368, node_id, raw)
+
+    read = graph_368.get_node(node_id)
+
+    anchors = read.get("anchors", [])
+    assert all(isinstance(anchor, dict) for anchor in anchors)  # py-org: allow-isinstance
+    assert all("qualified_name" in anchor for anchor in anchors)
+
+
+def test_an_anchored_node_keeps_every_key_an_ungrounded_one_has(graph_368):
+    """The compatibility pin's other direction. Criterion 2 is measured on the
+    unanchored node, so an implementation that returned a different SHAPE for
+    an anchored one — dropping `aliases`, say, by building a second dict —
+    satisfies it and breaks every reader on the rows that matter most.
+    """
+    node_id = graph_368.upsert_node(title="Grounded", workspace_slug=WS_368, anchors=[_ANCHOR])[
+        "id"
+    ]
+
+    read = graph_368.get_node(node_id)
+
+    assert set(read) == _UNGROUNDED_NODE_KEYS | {"anchors"}
+
+
+def test_anchors_survive_a_round_trip_in_the_order_they_were_written(graph_368):
+    """The frontmatter renders them as an ordered list a person reads, so the
+    column is not a set. A JSON codec that sorted its keys or its items would
+    reorder every exported note on the next unrelated write."""
+    node_id = graph_368.upsert_node(
+        title="Grounded", workspace_slug=WS_368, anchors=[_OTHER_ANCHOR, _ANCHOR]
+    )["id"]
+
+    read = graph_368.get_node(node_id)
+
+    assert read["anchors"] == [_OTHER_ANCHOR, _ANCHOR]

@@ -527,6 +527,11 @@ class ArtifactKind(StrEnum):
     #: in the bad state are repaired, which invariant catches re-entry, which test
     #: proves prevention, and the learning (`services.fix_coverage`).
     FIX_COVERAGE = "fix_coverage"
+    #: One claim we believe without proof: the artifact it is owed, the fallback
+    #: named and not built, and the reason it joined the class
+    #: (`services.asserted_not_proven`). The column stays `str`, so this member
+    #: needs no migration.
+    ASSERTED_NOT_PROVEN = "asserted_not_proven"
     #: One landing's verification receipt: whether a suite ran against the tree
     #: this ticket landed, and what it said (`services.land_verification`). A
     #: kind of its own rather than a title convention, because the Outputs tab's

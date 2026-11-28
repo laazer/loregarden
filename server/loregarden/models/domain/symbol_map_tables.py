@@ -11,8 +11,9 @@ every copy; the identity is derived from the filesystem
 (`services.symbol_map.checkout_identity`) precisely so an inherited copy
 reads as absent rather than current.
 
-The rows are narrow on purpose — name, kind, file, line, parent. No source
-text, no `end_line` (368), no `content_hash` (368), no edges (385).
+The rows are narrow on purpose — name, kind, file, line, parent, and 368's
+scheme-prefixed `fingerprint`. No source text, no `end_line` (368 hashes an
+unparsed node, which needs no extent), no edges (385).
 """
 
 from __future__ import annotations
@@ -103,6 +104,9 @@ class SymbolMapSymbol(SQLModel, table=True):
         Index("ix_symbol_map_symbol_qname", "partition_id", "qualified_name"),
         # Outline-by-path's second hop, once the file row is known.
         Index("ix_symbol_map_symbol_file", "file_id"),
+        # 368's MOVED lookup: the partition-wide search by content, for a
+        # qualified name that missed because its file moved.
+        Index("ix_symbol_map_symbol_fingerprint", "partition_id", "fingerprint"),
     )
 
     id: str = Field(default_factory=lambda: str(uuid4()), primary_key=True)
@@ -120,6 +124,11 @@ class SymbolMapSymbol(SQLModel, table=True):
     line: int
     #: The enclosing class name for a Python method, "" otherwise.
     parent: str = ""
+    #: `sym1:<32 hex>` over `ast.unparse(node)` (368). "" for the regex tier,
+    #: which cannot bound a body — anchoring one of those is refused at write
+    #: time rather than hashing a guessed span (D5). Still no `end_line`:
+    #: `ast.unparse` needs no extent.
+    fingerprint: str = ""
 
 
 __all__ = ["SymbolMapFile", "SymbolMapPartition", "SymbolMapSymbol"]

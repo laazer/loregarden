@@ -125,6 +125,12 @@ pre-commit:
             # in a gate went undetected by the gate itself.
             glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
             run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_silent_except_check.py {staged_files}
+          - name: py-ceiling-marker
+            # Python knowingly-insufficient ceiling markers
+            # The gate scripts are graded by the rules they enforce: this one names
+            # the marker in its own messages, so it has to clear its own bar.
+            glob: "{server/**/*.py,.claude/hooks/*.py,.lefthook/scripts/*.py,.github/scripts/*.py}"
+            run: bash .lefthook/scripts/server_python.sh .lefthook/scripts/py_ceiling_marker_check.py {staged_files}
           - name: md-report
             # Report markdown written into the tree
             glob: "{*.md,**/*.md}"

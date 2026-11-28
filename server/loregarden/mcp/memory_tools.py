@@ -1,5 +1,13 @@
 """Dispatch for the memory, learning, blog and checkpoint tools.
 
+This is one of the two agent-facing readers of durable memory, so it carries
+the grounding verdict (lg-code-knowledge-368). On the way in, an `anchors`
+argument is resolved against the RUN's own checkout BEFORE the write and the
+whole write is refused if it cannot be: a claim stored ungrounded when its
+author asked for grounding is the silent failure that ticket exists to
+remove. On the way out, a `loregarden_search_memory` hit that carries anchors
+gains a `grounding` object; one that does not gains nothing at all.
+
 Split from `mcp.tools`, which sits on its 1500-line cap and had reached it twice
 in a day. These handlers are one concern — everything that writes to or reads
 from the memory layer — and they share no state with the ticket and stage
@@ -14,18 +22,34 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from sqlmodel import Session, select
 
 from loregarden.mcp.shaped_errors import UnknownWorkspaceSlug
-from loregarden.models.domain import AgentRun, MemoryOriginKind, Workspace
+from loregarden.models.domain import (
+    AgentRun,
+    GroundingVerdict,
+    MemoryOriginKind,
+    Ticket,
+    Workspace,
+)
 from loregarden.models.domain.enums import MemoryStoreState
 from loregarden.services.artifact_service import block_ticket_for_unresolved_blocker
 from loregarden.services.memory_store import AgentMemoryService
 from loregarden.services.operations.memory_discredit import refuse_unreasoned_discredit
 from loregarden.services.orchestration_callbacks import OrchestrationCallbackService
 from loregarden.services.retrieval_basis import envelope_partial
+from loregarden.services.symbol_map.grounding import (
+    UNGROUNDED_FALLBACK,
+    ClaimGrounding,
+    SymbolMapUnavailableError,
+    anchor_payloads,
+    claim_verdicts,
+    resolve_anchors,
+)
+from loregarden.services.ticket_worktree import resolve_ticket_root
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +150,128 @@ def _write_origin(
     return MemoryOriginKind.AGENT, run_id
 
 
+#: What S2 says when the call carries no run. The verdict is a comparison
+#: against a CHECKOUT, and with no run there is none — saying MISSING would
+#: invent a fact out of a missing argument.
+_NO_RUN_REASON = "this call carries no run, so there is no checkout to verify against"
+
+
+def _run_checkout(session: Session, run_id: str) -> tuple[str, Path] | None:
+    """The workspace and the tree a run is standing in, or None (D8).
+
+    `AgentRun` -> `ticket_id`/`workspace_id` -> `resolve_ticket_root`. A
+    workspace-scoped run (Home chat, `ticket_id` None) falls back to the
+    workspace root. Anchors resolve against THIS tree and not the primary
+    checkout: a run working in a linked worktree writes about the code in
+    front of it.
+    """
+    run = session.get(AgentRun, run_id) if run_id else None
+    if run is None:
+        return None
+    workspace = session.get(Workspace, run.workspace_id)
+    if workspace is None:
+        return None
+    ticket = session.get(Ticket, run.ticket_id) if run.ticket_id else None
+    root = (
+        resolve_ticket_root(session, ticket, workspace)
+        if ticket is not None
+        else Path(workspace.repo_path)
+    )
+    return workspace.id, root
+
+
+def _resolved_anchors(
+    session: Session, arguments: dict[str, Any], run_id: str
+) -> list[dict[str, Any]] | None:
+    """The anchor records to store, or None when the write asked for none.
+
+    Runs BEFORE the write, and every failure raises rather than downgrading:
+    there is no partial record and no silent anchor-stripped row.
+    """
+    names = list(arguments.get("anchors") or [])
+    if not names:
+        return None
+    checkout = _run_checkout(session, run_id)
+    if checkout is None:
+        raise SymbolMapUnavailableError(
+            "this call names no run that can be resolved to a checkout, so there is "
+            "no tree to resolve an anchor against. To record the claim as it "
+            f"stands, {UNGROUNDED_FALLBACK}"
+        )
+    workspace_id, root = checkout
+    return anchor_payloads(resolve_anchors(session, workspace_id, root, names))
+
+
+def _grounding_block(claim: ClaimGrounding | None, anchors: list[dict[str, Any]]) -> dict[str, Any]:
+    """One hit's `grounding` object: the verdict, every anchor, and the reason.
+
+    UNVERIFIABLE always carries a human-readable reason naming which cause it
+    was. A verdict of UNVERIFIABLE with no reason is a defect, not a terse
+    reply, so the no-run case states its own.
+    """
+    if claim is None:
+        return {
+            "verdict": GroundingVerdict.UNVERIFIABLE.value,
+            "anchors": [
+                {
+                    "qualified_name": anchor["qualified_name"],
+                    "status": GroundingVerdict.UNVERIFIABLE.value,
+                    "location": "",
+                }
+                for anchor in anchors
+            ],
+            "reason": _NO_RUN_REASON,
+        }
+    return {
+        "verdict": claim.verdict.value,
+        "anchors": [
+            {
+                "qualified_name": check.qualified_name,
+                "status": check.verdict.value,
+                "location": check.location,
+            }
+            for check in claim.checks
+        ],
+        "reason": claim.reason,
+    }
+
+
+def _annotate_search(session: Session, result: dict[str, Any], run_id: str) -> dict[str, Any]:
+    """Add `grounding` to every ANCHORED graph hit, and to nothing else.
+
+    An unanchored node's JSON is byte-identical to what it was, so no existing
+    reader of this reply is touched. The verdicts are one batched call for the
+    whole page: at 20 hits, a lookup per hit is twenty derivations of the same
+    partition.
+    """
+    hits = result.get("graph") or []
+    anchored = [(hit["id"], hit["anchors"]) for hit in hits if hit.get("anchors")]
+    if not anchored:
+        return result
+    checkout = _run_checkout(session, run_id)
+    graded: dict[str, ClaimGrounding] = {}
+    if checkout is not None:
+        workspace_id, root = checkout
+        graded = dict(
+            claim_verdicts(
+                session,
+                workspace_id,
+                root,
+                [(node_id, json.dumps(anchors)) for node_id, anchors in anchored],
+            )
+        )
+    annotated = {
+        node_id: _grounding_block(graded.get(node_id), anchors) for node_id, anchors in anchored
+    }
+    return {
+        **result,
+        "graph": [
+            {**hit, "grounding": annotated[hit["id"]]} if hit["id"] in annotated else hit
+            for hit in hits
+        ],
+    }
+
+
 def execute_memory_tool(
     session: Session,
     name: str,
@@ -150,6 +296,7 @@ def execute_memory_tool(
 
     if name == "loregarden_append_learning":
         origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
+        anchors = _resolved_anchors(session, arguments, run_id)
         result = memory.append_learning(
             ticket_id=arguments["ticket_id"],
             workspace_slug=arguments["workspace_slug"],
@@ -159,6 +306,7 @@ def execute_memory_tool(
             aliases=arguments.get("aliases"),
             origin_kind=origin_kind,
             origin_ref=origin_ref,
+            anchors=anchors,
         )
         return json.dumps(result, indent=2)
 
@@ -172,6 +320,7 @@ def execute_memory_tool(
             discredited=arguments.get("discredited"),
         )
         origin_kind, origin_ref = _write_origin(session, orchestrated=orchestrated, run_id=run_id)
+        anchors = _resolved_anchors(session, arguments, run_id)
         result = memory.upsert_memory(
             node_id=arguments.get("node_id", ""),
             title=arguments["title"],
@@ -181,6 +330,7 @@ def execute_memory_tool(
             workspace_slug=arguments["workspace_slug"],
             origin_kind=origin_kind,
             origin_ref=origin_ref,
+            anchors=anchors,
         )
         return json.dumps(result, indent=2)
 
@@ -226,6 +376,6 @@ def execute_memory_tool(
             workspace_slug=slug,
             limit=int(arguments.get("limit") or 20),
         )
-        return json.dumps(_search_envelope(result), indent=2)
+        return json.dumps(_annotate_search(session, _search_envelope(result), run_id), indent=2)
 
     raise ValueError(f"{name} is a memory tool with no handler")

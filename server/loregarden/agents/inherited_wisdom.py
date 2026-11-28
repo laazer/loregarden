@@ -18,15 +18,17 @@ before anything is persisted, and its telemetry row is written by
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import MemoryStoreKind, MemoryStoreState
 from loregarden.models.domain.memory_enums import MemoryRelationType, RelationDirection
+from loregarden.models.domain.symbol_map_enums import GroundingVerdict
 from loregarden.services import term_overlap
 from loregarden.services.checkpoint_logs import ticket_checkpoint_logs
 from loregarden.services.learning_confidence import UNOBSERVED, LearningConfidence, describe
@@ -34,6 +36,9 @@ from loregarden.services.memory_store import (
     AgentMemoryService,
     MemoryStoreReadError,
 )
+
+if TYPE_CHECKING:  # The lookup is INJECTED; this module opens no database.
+    from loregarden.services.symbol_map.grounding import ClaimGrounding
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +86,20 @@ _READY_STORES = (MemoryStoreKind.CHECKPOINTS, MemoryStoreKind.VAULT, MemoryStore
 #: Confidence for a set of graph node ids (178). Supplied by the caller, which
 #: owns the database session this module deliberately never imports.
 ConfidenceLookup = Callable[[Sequence[str]], Mapping[str, LearningConfidence]]
+#: Grounding verdicts for `(claim_id, anchors_json)` pairs (368). Supplied by
+#: the caller for the same reason confidence is: the verdict needs the control
+#: plane's session and this module never opens one.
+GroundingLookup = Callable[[Sequence[tuple[str, str]]], Mapping[str, "ClaimGrounding"]]
+
+#: The verdicts that demote a claim: the code it describes has moved on, so it
+#: sorts after a superseded one. MOVED does not reorder — the claim is still
+#: true of the same code, which merely lives somewhere else now.
+_DEMOTING = frozenset({GroundingVerdict.CHANGED, GroundingVerdict.MISSING})
+#: The verdicts that render NOTHING. With 0 anchored claims live, an
+#: unconditional label would add the same string to all five lines of every
+#: prompt in the system and train every reader to skip the suffix that already
+#: carries supersession.
+_SILENT = frozenset({GroundingVerdict.GROUNDED, GroundingVerdict.UNVERIFIABLE})
 
 #: Durable recall consults GRAPH only (Cutover R5/R8). Checkpoints still read
 #: the vault separately; VAULT is not a durable-memory recall store.
@@ -121,6 +140,10 @@ class InheritedWisdom:
     #: True when a confidence lookup was supplied and failed, so the learnings
     #: went out unranked and unannotated rather than silently looking unrated.
     confidence_unavailable: bool = False
+    #: True when a grounding lookup was supplied and failed (368). The briefing
+    #: then reads exactly as it does today — never shorter, never with a
+    #: guessed verdict — and says here that no verdict was available.
+    grounding_unavailable: bool = False
 
     @classmethod
     def not_attempted(cls) -> InheritedWisdom:
@@ -178,21 +201,57 @@ def _memory_hits(
 
 
 def rank_learnings(
-    rows: list[dict[str, Any]], confidence: Mapping[str, LearningConfidence]
+    rows: list[dict[str, Any]],
+    confidence: Mapping[str, LearningConfidence],
+    grounding: Mapping[str, ClaimGrounding] | None = None,
 ) -> list[dict[str, Any]]:
     """Order recalled learnings by the lower bound of their confidence (178).
 
-    Superseded learnings go last. Stable, so learnings with equal bounds — every unobserved one — keep their
+    Demoted learnings go last, then superseded ones. Demotion is CHANGED or
+    MISSING (368): `superseded` is a human-visible history, while a CHANGED
+    verdict is the machine saying the code moved on, which is the weaker claim
+    of the two. Demotion is a sort key and never a filter — a claim the code
+    has moved on from is still history the agent should see, which is the
+    soft-invalidation contract of ticket 182.
+
+    Stable, so learnings with equal bounds — every unobserved one — keep their
     relevance order. The lower bound rather than the mean is what makes this
     sample-size aware: one lucky clean pass does not outrank a long record.
     """
+    verdicts = grounding or {}
     return sorted(
         rows,
         key=lambda row: (
+            _verdict_of(verdicts.get(row["id"])) in _DEMOTING,
             bool(row.get("superseded_by")),
             -confidence.get(row["id"], UNOBSERVED).lower_bound,
         ),
     )
+
+
+def _verdict_of(claim: ClaimGrounding | None) -> GroundingVerdict | None:
+    return claim.verdict if claim is not None else None
+
+
+def _grounding_note(claim: ClaimGrounding | None) -> str:
+    """The one phrase a demoted or moved claim adds to the line's note suffix.
+
+    GROUNDED and UNVERIFIABLE render nothing at all. The others name the
+    ANCHOR that was demoted, not a healthy sibling of it: a verdict word
+    pointing at the wrong symbol is worse than none, and UX S1's floor is that
+    the next step is a file to open rather than a search.
+    """
+    verdict = _verdict_of(claim)
+    if verdict is None or verdict in _SILENT:
+        return ""
+    # `checks` is empty only for a caller this module does not produce; a
+    # renderer reaching for `checks[0]` would turn that into an IndexError
+    # inside every prompt this system assembles.
+    named = next((check for check in claim.checks if check.verdict is verdict), None)
+    if named is None:
+        return ""
+    label = f"{verdict.value.upper()} {named.qualified_name}"
+    return f"{label} -> {named.location}" if named.location else label
 
 
 def rank_related(
@@ -216,11 +275,24 @@ def rank_related(
     )
 
 
-def _learning_line(row: dict[str, Any], confidence: LearningConfidence | None) -> str:
+def _learning_line(
+    row: dict[str, Any],
+    confidence: LearningConfidence | None,
+    grounding: ClaimGrounding | None = None,
+) -> str:
+    """One recalled claim, and the notes that qualify it.
+
+    The note suffix reads supersession, then grounding, then confidence —
+    same slot, same grammar, stable order, which is what keeps a reader able
+    to skim it.
+    """
     title = str(row.get("title") or "").strip()
     summary = " ".join(str(row.get("body") or "").split())[:240]
     line = f"- **{title}** — {summary}" if summary else f"- **{title}**"
     notes = [describe(confidence)] if confidence is not None else []
+    verdict = _grounding_note(grounding)
+    if verdict:
+        notes.insert(0, verdict)
     successors = row.get("superseded_by") or []
     if successors:
         # History, not an error: the agent should know it is no longer current
@@ -302,6 +374,7 @@ def build_inherited_wisdom(
     memory: AgentMemoryService | None = None,
     max_chars: int = MAX_WISDOM_CHARS,
     confidence_lookup: ConfidenceLookup | None = None,
+    grounding_lookup: GroundingLookup | None = None,
 ) -> InheritedWisdom:
     """Checkpoints and learnings this ticket already carries, plus how it went.
 
@@ -380,11 +453,16 @@ def build_inherited_wisdom(
     confidence, confidence_unavailable = _confidences(
         confidence_lookup, [*anchors, *(row["node_id"] for row in related.entries)], ticket
     )
-    ranked = rank_learnings(hits.entries, confidence)
+    grounding, grounding_unavailable = _groundings(grounding_lookup, hits.entries, ticket)
+    ranked = rank_learnings(hits.entries, confidence, grounding)
     digest = _related_lines([row["id"] for row in ranked], related.entries, confidence)
     annotate = confidence_lookup is not None and not confidence_unavailable
     learning_lines = [
-        _learning_line(row, confidence.get(row["id"], UNOBSERVED) if annotate else None)
+        _learning_line(
+            row,
+            confidence.get(row["id"], UNOBSERVED) if annotate else None,
+            grounding.get(row["id"]),
+        )
         for row in ranked
     ]
     learning_blocks = [
@@ -413,6 +491,7 @@ def build_inherited_wisdom(
         learning_node_ids=tuple(surfaced),
         related_injected=sum(len(digest.get(node_id, [])) for node_id in surfaced),
         confidence_unavailable=confidence_unavailable,
+        grounding_unavailable=grounding_unavailable,
     )
 
 
@@ -434,6 +513,53 @@ def _confidences(
             "Inherited wisdom: confidence unavailable for ticket %s", ticket.id, exc_info=True
         )
         return {}, True
+
+
+def _groundings(
+    lookup: GroundingLookup | None, hits: list[dict[str, Any]], ticket: Ticket
+) -> tuple[Mapping[str, ClaimGrounding], bool]:
+    """Verdicts for these recalled claims, and whether the lookup failed.
+
+    A never-raising guard mirroring `_confidences`: one warning, a flag on the
+    result, and every line exactly as it reads today. It never shortens the
+    briefing, never drops a claim and never substitutes a guessed verdict.
+
+    The failure it guards is not only a raise. A callable injected across a
+    seam returns nonsense at least as often — a partial refactor, a stub, an
+    adapter that forgot to return — and the first of those would otherwise
+    assemble no prompt at all on the path that assembles every non-verify
+    prompt in the system.
+
+    `grounding_lookup=None` is NOT a failure: it is every caller not yet
+    wired, and a flag that is never False carries no information.
+    """
+    if lookup is None or not hits:
+        return {}, False
+    claims = [(row["id"], _anchors_json(row)) for row in hits]
+    try:
+        verdicts = dict(lookup(claims).items())
+        # Read the two attributes the renderer needs while still INSIDE the
+        # guard. A Mapping of the wrong values would otherwise sail through
+        # here and raise in `_learning_line`, where nothing catches it.
+        for claim in verdicts.values():
+            _ = (claim.verdict, claim.checks)
+        return verdicts, False
+    except Exception:  # noqa: BLE001 - optional signal; reported on the result and logged
+        logger.warning(
+            "Inherited wisdom: grounding unavailable for ticket %s", ticket.id, exc_info=True
+        )
+        return {}, True
+
+
+def _anchors_json(row: dict[str, Any]) -> str:
+    """The claim's stored anchors, as the column spells them.
+
+    Re-encoded rather than carried through as objects: the lookup's contract
+    is `(claim_id, anchors_json)`, which is what the write path stored and what
+    `claim_verdicts` decodes. An unanchored claim sends "", and gets no entry.
+    """
+    anchors = row.get("anchors")
+    return json.dumps(anchors) if anchors else ""
 
 
 def _bullet(entry: str) -> str:

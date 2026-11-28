@@ -125,6 +125,10 @@ class OperationId(StrEnum):
     #: (`operator_questions.py`), and the list a ticket shows of them.
     OPERATOR_QUESTION_ASK = "operator_question_ask"
     OPERATOR_QUESTION_LIST = "operator_question_list"
+    #: The asserted-not-proven debt class (`asserted_claims.py`): write one
+    #: member, and read the class.
+    ASSERTED_CLAIM_RECORD = "asserted_claim_record"
+    ASSERTED_CLAIMS_OPEN = "asserted_claims_open"
     #: A stage run's question to an earlier stage on its ticket (`stage_asks.py`).
     STAGE_ASK = "stage_ask"
     #: The Review page: the queue, a capture, and the build launcher and try-it

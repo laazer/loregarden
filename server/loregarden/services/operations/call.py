@@ -8,6 +8,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
+from loregarden.services.operations.asserted_claims import ASSERTED_CLAIMS
 from loregarden.services.operations.disk_operations import DISK_OPERATIONS
 from loregarden.services.operations.docker_capacity_operations import DOCKER_CAPACITY_OPERATIONS
 from loregarden.services.operations.github_issue_operations import GITHUB_ISSUE_OPERATIONS
@@ -66,6 +67,7 @@ OPERATIONS: Mapping[OperationId, Operation] = {
         *TICKET_WRITES,
         *PULL_REQUEST_MERGES,
         *OPERATOR_QUESTIONS,
+        *ASSERTED_CLAIMS,
         *PATH_CLAIM_OPERATIONS,
         *HANDOFF_OPERATIONS,
         *STAGE_ASKS,

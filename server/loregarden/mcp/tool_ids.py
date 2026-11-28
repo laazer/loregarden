@@ -31,6 +31,8 @@ class McpTool(StrEnum):
     RECORD_FIX_COVERAGE = "loregarden_record_fix_coverage"
     ASK_OPERATOR = "loregarden_ask_operator"
     LIST_OPERATOR_QUESTIONS = "loregarden_list_operator_questions"
+    RECORD_ASSERTED_NOT_PROVEN = "loregarden_record_asserted_not_proven"
+    OPEN_CLAIMS = "loregarden_open_claims"
     WRITE_DOCUMENT = "loregarden_write_document"
     LIST_ARTIFACTS = "loregarden_list_artifacts"
     READ_ARTIFACT = "loregarden_read_artifact"
@@ -204,6 +206,10 @@ STAGE_DEFAULT_MCP_TOOLS: tuple[McpTool, ...] = (
     # in the inbox with the default it carries on with (`operator_questions`).
     McpTool.ASK_OPERATOR,
     McpTool.LIST_OPERATOR_QUESTIONS,
+    # Any stage may find something it believes without proof; recording it is
+    # the normal path, so every stage can, and every stage can read the class.
+    McpTool.RECORD_ASSERTED_NOT_PROVEN,
+    McpTool.OPEN_CLAIMS,
     # The spec stage's scope round decides the findings filed against its
     # ticket. Offered to every stage like the fix coverage record; the handler
     # refuses any run but the source ticket's own spec (`mcp.discovery_tools`).
@@ -335,6 +341,11 @@ CONTROL_PLANE_WRITE_MCP_TOOLS: frozenset[McpTool] = frozenset(
         # Files an inbox card, or the decision block a stage would raise anyway;
         # gating the question behind a click would ask whether it may ask.
         McpTool.ASK_OPERATOR,
+        # Filing what we believe without proof must be cheaper than staying
+        # quiet about it: an approval card on the record is how the class stays
+        # empty. Reading it is a read.
+        McpTool.RECORD_ASSERTED_NOT_PROVEN,
+        McpTool.OPEN_CLAIMS,
         # A scope round runs unattended, so an inbox card per finding would
         # stall it. The handler admits only the finding's own spec run, and
         # every decision carries a reason on the record.
@@ -565,6 +576,7 @@ TICKET_SCOPED_MCP_TOOLS: frozenset[McpTool] = frozenset(
         McpTool.RECORD_FIX_COVERAGE,
         McpTool.ASK_OPERATOR,
         McpTool.LIST_OPERATOR_QUESTIONS,
+        McpTool.RECORD_ASSERTED_NOT_PROVEN,
         McpTool.ATTACH_EVIDENCE,
         McpTool.APPEND_CHECKPOINT,
         McpTool.APPEND_LEARNING,
