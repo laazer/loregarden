@@ -153,7 +153,7 @@ def live_entries(session: Session, workspace_id: str) -> list[MergeQueueEntry]:
 STOPPED_STATES = MERGE_QUEUE_TERMINAL_STATES - {MergeQueueState.MERGED}
 
 
-def _later_entry_for_same_work():
+def later_entry_for_same_work():
     """SQL: a later entry (higher position) for the same pull request exists.
 
     Re-enqueuing a stopped PR admits a NEW row rather than moving the old one,
@@ -182,7 +182,7 @@ def is_superseded(session: Session, entry: MergeQueueEntry) -> bool:
         and session.exec(
             select(MergeQueueEntry.id)
             .where(MergeQueueEntry.id == entry.id)
-            .where(_later_entry_for_same_work())
+            .where(later_entry_for_same_work())
         ).first()
         is not None
     )
@@ -199,7 +199,7 @@ def entries_for(session: Session, workspace_id: str, *, limit: int = 50) -> list
         select(MergeQueueEntry)
         .where(MergeQueueEntry.workspace_id == workspace_id)
         .where(col(MergeQueueEntry.state).in_(list(MERGE_QUEUE_TERMINAL_STATES)))
-        .where(~and_(stopped, _later_entry_for_same_work()))
+        .where(~and_(stopped, later_entry_for_same_work()))
         .order_by(col(MergeQueueEntry.state_changed_at).desc())
         .limit(limit)
     ).all()
