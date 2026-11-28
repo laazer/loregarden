@@ -111,6 +111,8 @@ def test_parse_repo_url_collapses_subgroups():
         "",
         "not-a-url",
         "file:///etc/passwd",
+        "ftp://github.com/owner/repo",
+        "https:///owner/repo",
         "https://github.com/onlyowner",
         "https://user:token@github.com/owner/repo",
         "https://github.com/owner/../../etc",

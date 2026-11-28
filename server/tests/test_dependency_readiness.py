@@ -306,3 +306,27 @@ def test_the_mcp_blocked_by_entry_keeps_its_reason_and_target_and_gains_no_remed
     assert not any("loregarden_land_ticket" in str(value) for value in entries[0].values()), (
         f"the remedy clause belongs to the prose hold line only: {entries[0]}"
     )
+
+
+def test_an_initiatives_blocked_by_lists_its_unfinished_prerequisites(session):
+    """An initiative has no workspace to land in, so it is blocked by what is not done."""
+    from loregarden.services.ticket_state_payload import blocked_by_summaries
+
+    def initiative(external_id: str, state: TicketState) -> Ticket:
+        ticket = Ticket(
+            external_id=external_id,
+            workspace_id=None,
+            title=external_id,
+            state=state,
+            work_item_type=WorkItemType.INITIATIVE,
+        )
+        session.add(ticket)
+        session.commit()
+        session.refresh(ticket)
+        return ticket
+
+    later = initiative("later", TicketState.BACKLOG)
+    _depends(session, later, initiative("open-first", TicketState.IN_PROGRESS))
+    _depends(session, later, initiative("done-first", TicketState.DONE))
+
+    assert [e["external_id"] for e in blocked_by_summaries(session, later)] == ["open-first"]

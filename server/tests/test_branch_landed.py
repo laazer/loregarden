@@ -147,6 +147,22 @@ def test_an_unrelated_base_commit_reuses_every_verdict(repo: Path):
     assert check.call_count == 0
 
 
+@pytest.mark.parametrize(
+    ("base", "names"),
+    [("main", []), ("no-such-base", LITERAL_BRANCHES)],
+    ids=["no-branches", "unresolvable-base"],
+)
+def test_a_scan_with_nothing_to_memoize_keeps_the_memo(repo: Path, base: str, names: list[str]):
+    """Neither scan has a verdict worth keeping, so neither may replace the ones kept."""
+    landed_branches(repo, "main", LITERAL_BRANCHES)
+
+    assert landed_branches(repo, base, names) == set()
+
+    with patch.object(branch_landed, "_check", wraps=branch_landed._check) as check:
+        landed_branches(repo, "main", LITERAL_BRANCHES)
+    assert check.call_count == 0
+
+
 def test_a_glob_pathspec_is_always_recomputed(repo: Path):
     landed_branches(repo, "main", ["glob"])
     _advance_main(repo, "unrelated commit")

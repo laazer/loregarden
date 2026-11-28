@@ -732,6 +732,13 @@ def test_extract_answers_for_every_input_and_raises_for_none(path, data):
     assert isinstance(result.symbols, list)  # py-org: allow-isinstance - shape of a return value
 
 
+def test_a_language_no_tier_claims_is_unsupported_even_when_it_reads_like_code():
+    result = extract("notes.txt", b"export function looksLikeTypeScript() {}\n")
+
+    assert result.parse_status is ParseStatus.UNSUPPORTED_LANGUAGE
+    assert result.symbols == []
+
+
 def test_extract_knows_nothing_about_a_session_git_or_the_filesystem():
     """AC12 / AC4.8. The dispatcher is pure; reading happens in the build loop,
     which hands it the path and the bytes."""

@@ -23,6 +23,7 @@ from loregarden.models.domain import Ticket
 from loregarden.models.domain.enums import utcnow
 from loregarden.services.ticket_ids import (
     AmbiguousTicketReference,
+    TicketNotFound,
     assign_external_id,
     resolve_one,
 )
@@ -115,6 +116,26 @@ class TestAmbiguousReferencesAreRefused:
         with pytest.raises(AmbiguousTicketReference) as refused:
             resolve_one(db_session, "monitor-escalations")
         assert len(refused.value.candidates) == 2
+
+    def test_an_external_id_that_is_also_a_shared_legacy_id_still_names_its_ticket(
+        self, db_session, twins
+    ):
+        """The exact external id is checked first and wins: two other tickets carrying
+        the same words as their legacy id do not make it ambiguous."""
+        first, second = twins
+        owner = _numbered_ticket(db_session, "owner", "own", number=5)
+        for ticket in (first, second):
+            ticket.legacy_external_id = owner.external_id
+            db_session.add(ticket)
+        db_session.commit()
+
+        assert resolve_one(db_session, owner.external_id).id == owner.id
+
+    def test_a_number_no_workspace_holds_is_not_found_rather_than_ambiguous(
+        self, db_session, twins
+    ):
+        with pytest.raises(TicketNotFound):
+            resolve_one(db_session, "999")
 
 
 class TestTheCliWritePath:

@@ -18,6 +18,8 @@ from loregarden.models.domain import (
     FeatureCriterionStatus,
     Ticket,
     TicketState,
+    WorkItemType,
+    Workspace,
 )
 from loregarden.models.domain.chat_enums import FeatureLoopStatus
 from loregarden.services.acceptance_criteria import MAX_ACCEPTANCE_CRITERIA, load_criteria
@@ -29,6 +31,7 @@ from loregarden.services.chat_feature_loop import (
 )
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, select
+from tests.factories import make_ticket
 
 BASE = "/api/workspaces/loregarden/baxter-chat/sessions"
 
@@ -72,6 +75,115 @@ def test_starting_a_loop_files_a_milestone_and_runs_nothing(loop: dict, started_
     assert feature["status"] == "idle"
     assert feature["criteria"] == []
     started_workflows.assert_not_called()
+
+
+def _new_chat(client: TestClient) -> str:
+    return client.post(BASE, json={}).json()["id"]
+
+
+def _bound_ticket_id(client: TestClient, session_id: str) -> str | None:
+    """What a fresh request reads back, so a bind that was never committed is lost."""
+    feature = client.get(f"{BASE}/{session_id}").json().get("feature")
+    return feature["ticket"]["id"] if feature else None
+
+
+def _workspace_id(db_session: Session) -> str:
+    return db_session.exec(select(Workspace).where(Workspace.slug == "loregarden")).one().id
+
+
+def test_a_started_loop_is_still_bound_on_the_next_request(client: TestClient, loop: dict):
+    assert _bound_ticket_id(client, loop["id"]) == loop["feature"]["ticket"]["id"]
+
+
+def test_a_second_start_is_refused_and_keeps_the_first_ticket(client: TestClient, loop: dict):
+    res = client.post(f"{BASE}/{loop['id']}/feature", json={"title": "Light mode"})
+
+    assert res.status_code == 400
+    assert _bound_ticket_id(client, loop["id"]) == loop["feature"]["ticket"]["id"]
+
+
+def test_an_existing_ticket_is_bound_by_its_padded_external_id(
+    client: TestClient, db_session: Session, started_workflows
+):
+    ticket = make_ticket(
+        db_session, workspace_id=_workspace_id(db_session), external_id="lg-dark-mode-901"
+    )
+    session_id = _new_chat(client)
+
+    res = client.post(
+        f"{BASE}/{session_id}/feature", json={"existing_ticket": "  lg-dark-mode-901 "}
+    )
+
+    assert res.status_code == 200, res.text
+    assert _bound_ticket_id(client, session_id) == ticket.id
+    started_workflows.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [{"existing_ticket": "lg-no-such-ticket-404"}, {"title": "   "}, {}],
+    ids=["unknown-ticket", "blank-title", "nothing"],
+)
+def test_a_start_with_nothing_to_bind_is_refused_and_binds_nothing(client: TestClient, body):
+    session_id = _new_chat(client)
+
+    res = client.post(f"{BASE}/{session_id}/feature", json=body)
+
+    assert res.status_code == 400
+    assert _bound_ticket_id(client, session_id) is None
+
+
+def test_an_initiative_cannot_be_the_loops_ticket(client: TestClient, db_session: Session):
+    initiative = make_ticket(
+        db_session,
+        workspace_id=None,
+        external_id="lg-big-plan-902",
+        work_item_type=WorkItemType.INITIATIVE,
+    )
+    session_id = _new_chat(client)
+
+    res = client.post(f"{BASE}/{session_id}/feature", json={"existing_ticket": initiative.id})
+
+    assert res.status_code == 400
+    assert _bound_ticket_id(client, session_id) is None
+
+
+def test_a_new_feature_under_a_parent_is_a_feature_with_a_trimmed_title(
+    client: TestClient, db_session: Session
+):
+    milestone = make_ticket(
+        db_session,
+        workspace_id=_workspace_id(db_session),
+        external_id="lg-themes-903",
+        work_item_type=WorkItemType.MILESTONE,
+    )
+    session_id = _new_chat(client)
+
+    res = client.post(
+        f"{BASE}/{session_id}/feature",
+        json={"title": "  Dark mode  ", "parent_ticket_id": f" {milestone.id} "},
+    )
+
+    assert res.status_code == 200, res.text
+    db_session.expire_all()
+    ticket = db_session.get(Ticket, _bound_ticket_id(client, session_id))
+    assert (ticket.title, ticket.work_item_type, ticket.parent_ticket_id) == (
+        "Dark mode",
+        WorkItemType.FEATURE,
+        milestone.id,
+    )
+
+
+def test_a_feature_that_cannot_be_created_is_refused(client: TestClient):
+    session_id = _new_chat(client)
+
+    res = client.post(
+        f"{BASE}/{session_id}/feature",
+        json={"title": "Dark mode", "workspace_slug": "no-such-workspace"},
+    )
+
+    assert res.status_code == 400
+    assert _bound_ticket_id(client, session_id) is None
 
 
 def test_proposals_wait_for_the_operator_and_skip_duplicates(
