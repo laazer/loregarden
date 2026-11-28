@@ -59,6 +59,11 @@ STAGE_KEY_COLUMNS: tuple[tuple[str, str], ...] = (
     # Added after this migration shipped (0141); guarded like the waiver above.
     ("learning_applications", "stage_key"),
     ("agent_runs", "stage_key"),
+    # A JSON list of stage keys (an agent-group run's covered steps,
+    # `agent_run_groups`), listed so the schema walk accounts for it. The bare
+    # equality update below can never match a JSON list, and the column was
+    # added after this migration shipped, so no stored list holds a legacy key.
+    ("agent_runs", "covered_stage_keys_json"),
     ("stage_fanout_groups", "stage_key"),
     ("stage_fanout_groups", "pre_fanout_workflow_stage_key"),
 )

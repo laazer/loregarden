@@ -32,8 +32,10 @@ from loregarden.models.domain import (
     WorkflowStageDef,
     WorkflowTemplate,
 )
+from loregarden.services.agent_group_runs import run_covered_keys
 from loregarden.services.capacity_errors import CapacityUnavailable
 from loregarden.services.capacity_line import renew_orchestration_lease, wait_while_line_moves
+from loregarden.services.docker_capacity import resolve_weights
 from loregarden.services.docker_leases import DockerReservation, release_lease, reserve
 from loregarden.services.run_cancellation import cancel_requested
 from loregarden.services.run_wait_log import RunWaitLog
@@ -148,7 +150,11 @@ def stage_def_for_run(session: Session, run: AgentRun) -> WorkflowStageDef | Non
     docstring — but it is logged, because "this stage declares no footprint" and
     "nobody could work out what this stage declares" are different facts.
     """
-    stage_key = (run.stage_key or "").strip()
+    return _stage_def(session, run, (run.stage_key or "").strip())
+
+
+def _stage_def(session: Session, run: AgentRun, stage_key: str) -> WorkflowStageDef | None:
+    """`stage_key`'s definition in the template `run`'s ticket runs under, or None (logged)."""
     if not stage_key or not run.ticket_id:
         return None
 
@@ -185,6 +191,33 @@ def stage_def_for_run(session: Session, run: AgentRun) -> WorkflowStageDef | Non
     return None
 
 
+def group_docker_def(session: Session, run: AgentRun) -> WorkflowStageDef | None:
+    """The heaviest docker footprint among a group run's covered steps, or None.
+
+    One run works every covered step, so it holds the largest claim any of them
+    declared, compared as (memory, cpus); a tie goes to the earliest step.
+    """
+    members = [_stage_def(session, run, key) for key in run_covered_keys(run)]
+    heaviest: WorkflowStageDef | None = None
+    heaviest_weights = (0, 0.0)
+    for member in members:
+        if member is None or member.docker_footprint is DockerFootprint.NONE:
+            continue
+        cpus, memory_mb = resolve_weights(
+            member.docker_footprint, cpus=member.docker_cpus, memory_mb=member.docker_memory_mb
+        )
+        if heaviest is None or (memory_mb, cpus) > heaviest_weights:
+            heaviest, heaviest_weights = member, (memory_mb, cpus)
+    return heaviest
+
+
+def _footprint_stage(session: Session, run: AgentRun) -> WorkflowStageDef | None:
+    """The stage whose footprint `run` holds: its own, or its group's heaviest."""
+    if run_covered_keys(run):
+        return group_docker_def(session, run)
+    return stage_def_for_run(session, run)
+
+
 @contextmanager
 def stage_docker_capacity(session: Session, run: AgentRun) -> Iterator[DockerReservation | None]:
     """Hold whatever docker capacity this run's stage declared, for its duration.
@@ -193,7 +226,7 @@ def stage_docker_capacity(session: Session, run: AgentRun) -> Iterator[DockerRes
     the one signal that means "this run is still alive" on every execution path.
     Yields `None` for the overwhelmingly common stage that declared nothing.
     """
-    stage = stage_def_for_run(session, run)
+    stage = _footprint_stage(session, run)
     if stage is None or stage.docker_footprint is DockerFootprint.NONE:
         with nullcontext():
             yield None

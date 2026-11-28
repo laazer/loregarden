@@ -50,6 +50,7 @@ from loregarden.models.domain import (
     Worktree,
 )
 from loregarden.services import stage_fanout_groups as groups
+from loregarden.services.agent_group_runs import refuse_grouped_fanout
 from loregarden.services.branch_names import resolve_ticket_branch
 from loregarden.services.dependency_hold import refuse_held_dispatch
 from loregarden.services.gate_dispatch_check import refuse_unchecked_gate
@@ -140,6 +141,7 @@ def launch_fanout(
     """
     if not 2 <= attempt_count <= MAX_ATTEMPTS:
         raise FanoutError(f"attempt_count must be between 2 and {MAX_ATTEMPTS}")
+    refuse_grouped_fanout(OrchestrationService(session).stage_definition(ticket, stage_key))
 
     workspace = workspace_for_ticket(session, ticket)
     if not workspace:

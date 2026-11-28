@@ -49,7 +49,7 @@ from pathlib import Path
 
 from loregarden.agents.stage_report_criteria import unsettled_refusal
 from loregarden.agents.stage_report_reject import unshown_reject_refusal
-from loregarden.mcp.caller import RUN_ID_ENV
+from loregarden.mcp.caller import GROUP_STAGE_KEYS_ENV, RUN_ID_ENV
 from loregarden.models.domain import StageReportStatus
 from loregarden.services.stage_report import (
     REPORT_BLOCK_REMINDER,
@@ -175,12 +175,28 @@ def _entries(lines: Iterable[str]) -> list[_Entry]:
     return entries
 
 
-def _calls_complete_stage(block: _Block) -> bool:
+def _calls_complete_stage(block: _Block, last_group_step: str) -> bool:
+    """Whether `block` is a `complete_stage` call that may end the turn.
+
+    In a group run (`last_group_step` set) only a call for the group's last
+    step counts: completing a middle step is not the turn's outcome.
+    """
     if block.type != _TOOL_USE:
         return False
     if block.name.endswith(COMPLETE_STAGE_TOOL):
+        return not last_group_step or block.input.get("stage_key") == last_group_step
+    if block.name != _BASH or COMPLETE_STAGE_TOOL not in json.dumps(block.input):
+        return False
+    if not last_group_step:
         return True
-    return block.name == _BASH and COMPLETE_STAGE_TOOL in json.dumps(block.input)
+    command = str(block.input.get("command", ""))
+    return f"stage_key={last_group_step}" in command.replace('"', " ").replace("'", " ").split()
+
+
+def _last_group_step() -> str:
+    """The last step key of the group run this hook is guarding, or "" when ungrouped."""
+    keys = [key for key in os.environ.get(GROUP_STAGE_KEYS_ENV, "").split(",") if key]
+    return keys[-1] if keys else ""
 
 
 def turn_report(hook_input: StopHookInput, transcript_lines: list[str]) -> StageReport | None:
@@ -206,12 +222,13 @@ def turn_report(hook_input: StopHookInput, transcript_lines: list[str]) -> Stage
 def _completed_by_tool(transcript_lines: list[str]) -> bool:
     """Whether this turn made a ``complete_stage`` call that did not error."""
     entries = _current_turn(_entries(transcript_lines))
+    last_group_step = _last_group_step()
     calls = {
         block.id
         for entry in entries
         if entry.type == _ASSISTANT
         for block in _blocks(entry)
-        if _calls_complete_stage(block)
+        if _calls_complete_stage(block, last_group_step)
     }
     return any(
         block.type == _TOOL_RESULT and block.tool_use_id in calls and not block.is_error

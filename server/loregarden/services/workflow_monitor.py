@@ -52,7 +52,6 @@ from loregarden.models.domain import (
 )
 from loregarden.models.domain.workflow_monitor import MonitorFinding, MonitorFindingView
 from loregarden.services.active_workspaces import active_workspaces
-from loregarden.services.builtin_orchestrator import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.interruption_messages import CONTROL_PLANE_DEATH_MESSAGES
 from loregarden.services.monitor_escalation import escalate_recurring_findings
 from loregarden.services.monitor_harness_cluster import detect_harness_failure_clusters
@@ -67,6 +66,7 @@ from loregarden.services.run_duration_stats import (
     cached_duration_stats,
     load_stage_duration_profiles,
 )
+from loregarden.services.stage_timeouts import STAGE_TIMEOUT_BUDGETS
 from loregarden.services.studio_drift import detect_all_drift
 from loregarden.services.studio_routing import SKIP_CONDITIONS
 from loregarden.services.ticket_workspace_binding import workspace_for_ticket

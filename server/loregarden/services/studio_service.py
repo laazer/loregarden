@@ -77,6 +77,7 @@ from loregarden.services.studio_workflow_validation import (
     available_agent_ids,
     available_skills,
     refuse_unconfirmed_stage_removal,
+    validate_agent_groups,
     validate_alternative_groups,
     validate_classify_routes_are_selectable,
     validate_default_skill,
@@ -425,10 +426,7 @@ def _workflow_view(session: Session, workflow: StudioWorkflow) -> StudioWorkflow
         slug=workflow.slug,
         name=workflow.name,
         description=workflow.description,
-        stages=[
-            StudioWorkflowStage.model_validate(item)
-            for item in json.loads(workflow.stages_json or "[]")
-        ],
+        stages=[_studio_stage_from(item) for item in json.loads(workflow.stages_json or "[]")],
         transitions=json.loads(workflow.transitions_json or "[]"),
         published_template_id=workflow.published_template_id,
         published_template_slug=template_slug,
@@ -469,6 +467,7 @@ _STORED_STAGE_DEFAULTS: dict[str, object] = {
     "gate_commands": list,
     "exit_actions_enabled": False,
     "exit_actions": list,
+    "agent_group": "",
 }
 
 
@@ -886,9 +885,10 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        transitions = body.transitions or _auto_transitions(stages)
+        validate_agent_groups(self.session, stages, transitions)
         for stage in stages:
             validate_against_catalog(stage.exit_actions)
-        transitions = body.transitions or _auto_transitions(stages)
         now = datetime.now(timezone.utc)
         workflow = StudioWorkflow(
             slug=slug,
@@ -922,21 +922,28 @@ class StudioService:
             validate_has_terminal_stage(stages)
             validate_stage_skill_names(stages)
             validate_alternative_groups(stages)
+            # Editing a stage must not destroy hand-authored routes. This used to
+            # regenerate a bare linear chain on every stage edit, silently dropping
+            # every `when: reject` edge — the only thing that routes rework to the
+            # stage a rejecting agent actually asked for. Seed a linear chain only
+            # when there is nothing to preserve; otherwise keep the existing routes,
+            # minus any that now point at a stage that no longer exists.
+            existing = json.loads(workflow.transitions_json or "[]")
+            transitions = body.transitions
+            if transitions is None:
+                transitions = (
+                    _prune_transitions(existing, stages) if existing else _auto_transitions(stages)
+                )
+            validate_agent_groups(self.session, stages, transitions)
             for stage in stages:
                 validate_against_catalog(stage.exit_actions)
             workflow.stages_json = json.dumps([stage.model_dump() for stage in stages])
-            if body.transitions is None:
-                # Editing a stage must not destroy hand-authored routes. This used to
-                # regenerate a bare linear chain on every stage edit, silently dropping
-                # every `when: reject` edge — the only thing that routes rework to the
-                # stage a rejecting agent actually asked for. Seed a linear chain only
-                # when there is nothing to preserve; otherwise keep the existing routes,
-                # minus any that now point at a stage that no longer exists.
-                existing = json.loads(workflow.transitions_json or "[]")
-                workflow.transitions_json = json.dumps(
-                    _prune_transitions(existing, stages) if existing else _auto_transitions(stages)
-                )
-        if body.transitions is not None:
+            workflow.transitions_json = json.dumps(transitions)
+        elif body.transitions is not None:
+            # The route decides whether a group is consecutive, so a route-only
+            # edit is checked against the stored stages.
+            stored = [_studio_stage_from(item) for item in json.loads(workflow.stages_json or "[]")]
+            validate_agent_groups(self.session, stored, body.transitions)
             workflow.transitions_json = json.dumps(body.transitions)
         workflow.updated_at = datetime.now(timezone.utc)
         self.session.add(workflow)
@@ -974,10 +981,7 @@ class StudioService:
             raise ValueError(f"Studio workflow not found: {slug}")
         if not confirm_stage_removal:
             refuse_unconfirmed_stage_removal(self.session, workflow)
-        stages = [
-            StudioWorkflowStage.model_validate(item)
-            for item in json.loads(workflow.stages_json or "[]")
-        ]
+        stages = [_studio_stage_from(item) for item in json.loads(workflow.stages_json or "[]")]
         if not stages:
             raise ValueError("Workflow must have at least one stage")
         validate_stage_agent_ids(self.session, stages)
@@ -986,6 +990,10 @@ class StudioService:
         validate_has_terminal_stage(stages)
         validate_stage_skill_names(stages)
         validate_alternative_groups(stages)
+        transitions = json.loads(workflow.transitions_json or "[]")
+        if not transitions:
+            transitions = _auto_transitions(stages)
+        validate_agent_groups(self.session, stages, transitions)
         for stage in stages:
             validate_against_catalog(stage.exit_actions)
 
@@ -1013,10 +1021,6 @@ class StudioService:
                 payload["agent_id"] = stage.agent_id or default.agent_id
                 payload["skill_name"] = stage.skill_name or default.skill_name
             stage_defs.append(payload)
-
-        transitions = json.loads(workflow.transitions_json or "[]")
-        if not transitions:
-            transitions = _auto_transitions(stages)
 
         template = self.session.exec(
             select(WorkflowTemplate).where(WorkflowTemplate.slug == published_slug)

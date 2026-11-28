@@ -542,6 +542,13 @@ def _evidence_signals(
                 outcome=None,
                 producer_agent_id=agent_id,
                 producer_stage_key=stage_def.key,
+                # Named, so the agent knows which proof it owes once HEAD resolves.
+                detail=(
+                    f"Required evidence ({', '.join(required)}) cannot be judged: this "
+                    "ticket's commit (HEAD) could not be resolved, so no evidence can be "
+                    "matched to it. Make sure the work is in a git checkout, then attach it "
+                    "with loregarden_attach_evidence."
+                ),
             )
         ]
     missing = [

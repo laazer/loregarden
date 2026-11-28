@@ -516,6 +516,10 @@ class AgentRun(SQLModel, table=True):
     rework_feedback_id: str = ""
     resumed_from_run_id: str = ""
     resume_skip_reason: str = ""
+    #: The agent group this run dispatched; "" for an ungrouped run (`agent_run_groups`).
+    agent_group_key: str = ""
+    #: JSON list of the step keys this run was given, in order; "[]" when ungrouped.
+    covered_stage_keys_json: str = "[]"
     #: What this run told the stages after it (its report's `notes_for_next_stage`):
     #: files, symbols and gotchas they would otherwise rediscover (`stage_digest`).
     next_stage_notes: str = ""

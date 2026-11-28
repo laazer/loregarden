@@ -38,6 +38,7 @@ from loregarden.models.domain import (
     WorkflowInstance,
     WorkflowStageDef,
 )
+from loregarden.services.agent_group_runs import judged_stage_def
 from loregarden.services.artifact_service import (
     record_blocking_issue,
     refresh_execution_artifacts,
@@ -802,7 +803,7 @@ def _pass_held(
             ticket,
             report=report,
             tool_outcome=None,
-            stage_def=stage_def,
+            stage_def=judged_stage_def(stages, stage_def, run=run),
             handoff_expected=handoff_expected_for(stage_def),
             agent_id=run.agent_id,
         )
@@ -1210,7 +1211,7 @@ def _settled_pessimistic_report(
                 ticket,
                 report=report,
                 tool_outcome=None,
-                stage_def=stage_def,
+                stage_def=judged_stage_def(stages, stage_def, run=run),
                 handoff_expected=handoff_expected_for(stage_def),
                 agent_id=run.agent_id,
             )
@@ -1251,7 +1252,7 @@ def _stamp_derived_report(
             ticket,
             report=report,
             tool_outcome=None,
-            stage_def=stage_def,
+            stage_def=judged_stage_def(stages, stage_def, run=run),
             handoff_expected=handoff_expected_for(stage_def),
             agent_id=run.agent_id,
         )

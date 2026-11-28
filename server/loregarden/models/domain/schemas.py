@@ -122,6 +122,12 @@ class WorkflowStageDef(ExitActionsStage):
     # pruning every member leaves nothing required unresolved, and the ticket
     # derives DONE having implemented nothing.
     alternative_group: str = ""
+    # Names an AGENT group, unrelated to `alternative_group`: consecutive stages
+    # with the same non-empty key run as one CLI run (one agent turn walks every
+    # step in order), and their gates run once, combined, at the group's end.
+    # Empty means the stage stands alone. `core/agent_groups.py` holds the rules;
+    # `services/agent_group_validation.py` refuses a group that cannot be one run.
+    agent_group: str = ""
     # Whether the agent named above is a DEFAULT that a routing hint may
     # override, rather than the template's final word. True for a stage whose
     # specialist is chosen per ticket — picking a backend or frontend
@@ -146,6 +152,10 @@ class WorkflowStageView(SQLModel):
     stage_type: str = "agent"
     agents: list[ParallelAgentSpec] = Field(default_factory=list)
     model: str = ""
+    #: See `WorkflowStageDef.agent_group`.
+    agent_group: str = ""
+    #: True on a group's last step: where the group's combined gate runs.
+    gates_at_group_end: bool = False
 
 
 class WorkflowTransitionView(SQLModel):
@@ -1090,6 +1100,8 @@ class StudioWorkflowStage(ExitActionsStage):
     timeout_seconds: int = 0
     #: See `WorkflowStageDef.alternative_group`.
     alternative_group: str = ""
+    #: See `WorkflowStageDef.agent_group`.
+    agent_group: str = ""
     #: See `WorkflowStageDef.agent_is_default`.
     agent_is_default: bool = False
     #: See `WorkflowStageDef.docker_footprint`. Here for the reason the comment
