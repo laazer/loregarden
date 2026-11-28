@@ -1,7 +1,7 @@
 """A stopped merge-queue entry whose pull request was closed has nothing left to wait for.
 
 A failed or timed-out entry stays on Home and the Lanes page as "stopped and
-waiting on someone" until its PR is queued again (`_later_entry_for_same_work`).
+waiting on someone" until its PR is queued again (`later_entry_for_same_work`).
 A PR closed or merged outside the queue after its entry stopped never is, so
 the entry waited forever: withdraw refuses a finished entry and retry would
 stage a closed PR. PR #879 sat there after #880 landed its content.

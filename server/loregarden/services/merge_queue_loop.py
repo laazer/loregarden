@@ -94,6 +94,7 @@ from loregarden.services.merge_preservation import target_preserved
 from loregarden.services.merge_queue import (
     entry_ticket,
     head_entry,
+    later_entry_for_same_work,
     retry,
     transition,
 )
@@ -224,12 +225,19 @@ class MergeQueueLoop:
         return True
 
     def _remind_blocked(self) -> None:
-        """Conflict tickets still open are re-reported at notice level; done ones retry."""
+        """Conflict tickets still open are re-reported at notice level; done ones retry.
+
+        An entry whose PR was queued again is history, as in `entries_for`: the
+        later entry answers for it, and `retry` refuses it ("queued again"), so
+        including it re-reported a block nobody had and logged a refused retry
+        every cycle.
+        """
         blocked = self.session.exec(
             select(MergeQueueEntry)
             .where(MergeQueueEntry.workspace_id == self.workspace.id)
             .where(MergeQueueEntry.state == MergeQueueState.FAILED)
             .where(MergeQueueEntry.wait == MergeQueueWait.CONFLICT_ARTIFACT_OPEN)
+            .where(~later_entry_for_same_work())
             .order_by(col(MergeQueueEntry.position))
         ).all()
         for entry in blocked:
