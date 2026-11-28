@@ -53,6 +53,7 @@ def added_entries(base: frozenset[str] | None, current: frozenset[str]) -> list[
 
 
 def _at_fork_point(path: str) -> str | None:
+    # branch-rule: no branch adds an entry to the inherited slow-test lists
     fork_point = run_git(
         ["merge-base", "HEAD", SHIPPED_REF],
         cwd=REPO_ROOT,
